@@ -5,9 +5,12 @@ const appState = {
     fruSingle: null,
     fruCompare: null,
     matrix: null,
+    matrixCompare: null,
     activeTab: 'tab-bkc',
-    bkcMode: 'single', // 'single' or 'compare'
-    fruMode: 'single', // 'single' or 'compare'
+    bkcMode: 'single',    // 'single' or 'compare'
+    fruMode: 'single',    // 'single' or 'compare'
+    matrixMode: 'single', // 'single' or 'compare'
+    matrixSelectedGroup: 'ALL', // selected group_item filter
     bkcSelectedCategory: 'ALL',
     bkcSelectedGroup: 'ALL',
     fruSelectedModule: 'ALL',
@@ -268,11 +271,52 @@ function initEventListeners() {
     });
 
 
+    // Matrix Mode Toggle
+    const btnMatrixSingle  = document.getElementById('matrix-mode-single');
+    const btnMatrixCompare = document.getElementById('matrix-mode-compare');
+
+    btnMatrixSingle.addEventListener('click', () => {
+        appState.matrixMode = 'single';
+        appState.matrixSelectedGroup = 'ALL';
+        btnMatrixSingle.classList.add('active');
+        btnMatrixCompare.classList.remove('active');
+        document.getElementById('matrix-single-controls').style.display = 'flex';
+        document.getElementById('matrix-compare-controls').style.display = 'none';
+        document.getElementById('matrix-only-diff-toggle').checked = false;
+        fetchMatrixData();
+    });
+
+    btnMatrixCompare.addEventListener('click', () => {
+        appState.matrixMode = 'compare';
+        appState.matrixSelectedGroup = 'ALL';
+        btnMatrixCompare.classList.add('active');
+        btnMatrixSingle.classList.remove('active');
+        document.getElementById('matrix-single-controls').style.display = 'none';
+        document.getElementById('matrix-compare-controls').style.display = 'flex';
+        document.getElementById('matrix-only-diff-toggle').checked = true;
+        fetchMatrixCompareData();
+    });
+
     // Matrix Search, Sheet & Diff Toggle
-    document.getElementById('matrix-search-input').addEventListener('input', renderMatrixTable);
-    document.getElementById('matrix-only-diff-toggle').addEventListener('change', renderMatrixTable);
+    document.getElementById('matrix-search-input').addEventListener('input', () => {
+        if (appState.matrixMode === 'compare') renderMatrixCompareTable();
+        else renderMatrixTable();
+    });
+    document.getElementById('matrix-only-diff-toggle').addEventListener('change', () => {
+        if (appState.matrixMode === 'compare') renderMatrixCompareTable();
+        else renderMatrixTable();
+    });
     document.getElementById('matrix-sheet-select').addEventListener('change', (e) => {
+        appState.matrixSelectedGroup = 'ALL';
         fetchMatrixData(e.target.value);
+    });
+    document.getElementById('matrix-base-sheet-select').addEventListener('change', () => {
+        appState.matrixSelectedGroup = 'ALL';
+        fetchMatrixCompareData();
+    });
+    document.getElementById('matrix-target-sheet-select').addEventListener('change', () => {
+        appState.matrixSelectedGroup = 'ALL';
+        fetchMatrixCompareData();
     });
 }
 
@@ -488,7 +532,7 @@ function populateBkcCompareSelects(sheets, activeBase, activeTarget) {
     });
 }
 
-function populateSheetSelect(boxId, selectId, sheets, activeSheet) {
+function populateSheetSelect(boxId, selectId, sheets, activeSheet, forceShow = true) {
     const box = document.getElementById(boxId);
     const select = document.getElementById(selectId);
 
@@ -497,7 +541,8 @@ function populateSheetSelect(boxId, selectId, sheets, activeSheet) {
         return;
     }
 
-    if (box) box.style.display = 'block';
+    // Only show the parent box if forceShow is true (not used for compare controls)
+    if (box && forceShow) box.style.display = 'block';
     if (select) {
         select.innerHTML = '';
         sheets.forEach(s => {
@@ -1529,14 +1574,103 @@ async function fetchMatrixData(sheet = null) {
         if (data.success) {
             appState.matrix = data;
             populateFileSelect('matrix-file-select', data.summary.available_files, appState.selectedFiles.matrix);
-            populateSheetSelect('matrix-sheet-box', 'matrix-sheet-select', data.summary.sheets, data.summary.active_sheet);
+            // Populate single-mode sheet select (shows the box)
+            populateSheetSelect('matrix-single-controls', 'matrix-sheet-select', data.summary.sheets, data.summary.active_sheet, true);
+            // Populate base/target sheet selects WITHOUT showing compare-controls (forceShow=false)
+            // Skip 'Revision History' sheet as default
+            const dataSheets = (data.summary.sheets || []).filter(s => !s.toLowerCase().includes('revision') && !s.toLowerCase().includes('history'));
+            const defaultBase = dataSheets[0] || data.summary.sheets?.[0];
+            const defaultTarget = dataSheets[dataSheets.length - 1] || defaultBase;
+            populateSheetSelect('matrix-compare-controls', 'matrix-base-sheet-select', data.summary.sheets, defaultBase, false);
+            populateSheetSelect('matrix-compare-controls', 'matrix-target-sheet-select', data.summary.sheets, defaultTarget, false);
             renderMatrixConfigCards(data.summary);
             renderMatrixTable();
         }
+
     } catch (err) {
         console.error('Failed to fetch Build Matrix:', err);
     }
 }
+
+async function fetchMatrixCompareData() {
+    try {
+        const baseSheet   = document.getElementById('matrix-base-sheet-select')?.value;
+        const targetSheet = document.getElementById('matrix-target-sheet-select')?.value;
+
+        let url = '/api/build-matrix-compare';
+        const params = [];
+        if (appState.selectedFiles.matrix) params.push(`base_file=${encodeURIComponent(appState.selectedFiles.matrix)}`);
+        if (appState.selectedFiles.matrix) params.push(`target_file=${encodeURIComponent(appState.selectedFiles.matrix)}`);
+        if (baseSheet)   params.push(`base_sheet=${encodeURIComponent(baseSheet)}`);
+        if (targetSheet) params.push(`target_sheet=${encodeURIComponent(targetSheet)}`);
+        if (params.length > 0) url += '?' + params.join('&');
+
+        const tbody = document.getElementById('matrix-tbody');
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4">比對 Build Matrix 中...</td></tr>`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+            appState.matrixCompare = data;
+            renderMatrixCompareCards(data.summary);
+            renderMatrixCompareTable();
+        } else {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">載入失敗: ${escapeHtml(data.error || '未知錯誤')}</td></tr>`;
+        }
+    } catch (err) {
+        console.error('Failed to fetch Build Matrix Compare:', err);
+    }
+}
+function renderMatrixGroupPills(items) {
+    const container = document.getElementById('matrix-group-pills');
+    if (!container || !items) return;
+
+    // Collect unique group_item names and count items and diff items per group
+    const groupMap = {}; // { groupName: { total, diffs } }
+    items.forEach(item => {
+        const g = item.group_item || '(無群組)';
+        if (!groupMap[g]) groupMap[g] = { total: 0, diffs: 0 };
+        groupMap[g].total++;
+        // For single mode: is_diff; for compare mode: is_diff
+        if (item.is_diff) groupMap[g].diffs++;
+    });
+
+    const totalItems = items.length;
+    const totalDiffs = items.filter(i => i.is_diff).length;
+
+    let html = `
+        <button class="cat-pill ${appState.matrixSelectedGroup === 'ALL' ? 'active' : ''}" data-group="ALL">
+            全部 (All) <span class="pill-badge">${totalItems}</span>
+            ${totalDiffs > 0 ? `<span class="pill-badge badge-common">${totalDiffs} 差異</span>` : ''}
+        </button>
+    `;
+
+    Object.entries(groupMap).forEach(([groupName, counts]) => {
+        const isActive = appState.matrixSelectedGroup === groupName;
+        html += `
+            <button class="cat-pill ${isActive ? 'active' : ''}" data-group="${escapeHtml(groupName)}">
+                ${escapeHtml(groupName)}
+                <span class="pill-badge">${counts.total}</span>
+                ${counts.diffs > 0 ? `<span class="pill-badge badge-common">${counts.diffs} 差異</span>` : ''}
+            </button>
+        `;
+    });
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('.cat-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            appState.matrixSelectedGroup = pill.getAttribute('data-group');
+            // Re-render active pill state
+            container.querySelectorAll('.cat-pill').forEach(p =>
+                p.classList.toggle('active', p.getAttribute('data-group') === appState.matrixSelectedGroup)
+            );
+            if (appState.matrixMode === 'compare') renderMatrixCompareTable();
+            else renderMatrixTable();
+        });
+    });
+}
+
 
 function renderMatrixConfigCards(summary) {
     const container = document.getElementById('matrix-config-cards');
@@ -1582,30 +1716,34 @@ function renderMatrixConfigCards(summary) {
 function renderMatrixTable() {
     if (!appState.matrix) return;
 
+    // Clean up any leftover compare subheader row
+    const existingSubHeader = document.getElementById('matrix-subheader');
+    if (existingSubHeader) existingSubHeader.remove();
+
+    // Render group pills
+    renderMatrixGroupPills(appState.matrix.items);
+
     const tbody = document.getElementById('matrix-tbody');
     const theadRow = document.getElementById('matrix-thead-row');
     const searchVal = getInputValue('matrix-search-input');
     const onlyDiff = getCheckboxChecked('matrix-only-diff-toggle');
+    const selectedGroup = appState.matrixSelectedGroup;
 
     const configs = appState.matrix.summary.configs;
 
-    let headerHtml = `<th style="width: 24.5%;">Assembly / Group Item</th><th style="width: 13%;">Attribute</th>`;
-    const cfgWidth = ((100 - 37.5) / Math.max(1, configs.length)).toFixed(2);
+    let headerHtml = `<th style="min-width: 240px;">Assembly / Group Item</th><th style="min-width: 130px;">Attribute</th>`;
     configs.forEach(cfg => {
-        headerHtml += `<th style="width: ${cfgWidth}%;">${escapeHtml(cfg)}</th>`;
+        headerHtml += `<th style="min-width: 220px;">${escapeHtml(cfg)}</th>`;
     });
     theadRow.innerHTML = headerHtml;
 
-
-
     const filtered = appState.matrix.items.filter(item => {
         if (onlyDiff && !item.is_diff) return false;
-
+        if (selectedGroup !== 'ALL' && item.group_item !== selectedGroup) return false;
         const matchSearch = !searchVal ||
             item.group_item.toLowerCase().includes(searchVal) ||
             item.attribute.toLowerCase().includes(searchVal) ||
             Object.values(item.values).some(v => v.toLowerCase().includes(searchVal));
-
         return matchSearch;
     });
 
@@ -1620,11 +1758,130 @@ function renderMatrixTable() {
         html += `<tr class="${rowClass}">`;
         html += `<td class="cell-group">${escapeHtml(item.group_item)}</td>`;
         html += `<td class="cell-sub">${escapeHtml(item.attribute)}</td>`;
-
         configs.forEach(cfg => {
             const val = item.values[cfg] || '-';
             const cellClass = item.is_diff ? 'matrix-val-cell cell-diff' : 'matrix-val-cell';
             html += `<td class="${cellClass}">${escapeHtml(val)}</td>`;
+        });
+        html += `</tr>`;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function renderMatrixCompareCards(summary) {
+    const container = document.getElementById('matrix-config-cards');
+    if (!container) return;
+
+    const bCfgs = summary.base_configs || [];
+    const tCfgs = summary.target_configs || [];
+
+    let html = `
+        <div class="matrix-overview-card">
+            <div class="overview-title"><i class="fa-solid fa-code-compare"></i> Build Matrix 跨 Sheet 比對</div>
+            <div class="overview-subtitle">差異項目共 ${summary.diff_items_count || 0} 筆（總計 ${summary.total_items || 0} 筆）</div>
+            <div class="overview-sheet-tag" style="margin-top:0.3rem;">
+                <span style="color:#f59e0b;"><i class="fa-solid fa-circle"></i> Base: ${escapeHtml(summary.base_sheet)}</span>
+                &nbsp;→&nbsp;
+                <span style="color:#22d3ee;"><i class="fa-solid fa-circle"></i> Target: ${escapeHtml(summary.target_sheet)}</span>
+            </div>
+        </div>
+    `;
+
+    html += `<div class="config-card cfg-a" style="flex:0 0 260px;min-width:240px;">`;
+    html += `<div class="config-card-header"><span class="config-card-title" style="color:#f59e0b;">Base: ${escapeHtml(summary.base_sheet)}</span></div>`;
+    html += `<div class="config-card-desc">${bCfgs.length} 個 Configs: ${escapeHtml(bCfgs.join(', '))}</div></div>`;
+
+    html += `<div class="config-card cfg-c" style="flex:0 0 260px;min-width:240px;">`;
+    html += `<div class="config-card-header"><span class="config-card-title" style="color:#22d3ee;">Target: ${escapeHtml(summary.target_sheet)}</span></div>`;
+    html += `<div class="config-card-desc">${tCfgs.length} 個 Configs: ${escapeHtml(tCfgs.join(', '))}</div></div>`;
+
+    container.innerHTML = html;
+}
+
+function renderMatrixCompareTable() {
+    if (!appState.matrixCompare) return;
+
+    // Render group pills using compare items
+    renderMatrixGroupPills(appState.matrixCompare.items);
+
+    const tbody = document.getElementById('matrix-tbody');
+    const theadRow = document.getElementById('matrix-thead-row');
+    const searchVal = getInputValue('matrix-search-input');
+    const onlyDiff = getCheckboxChecked('matrix-only-diff-toggle');
+    const selectedGroup = appState.matrixSelectedGroup;
+
+    const summary = appState.matrixCompare.summary;
+    const bCfgs = summary.base_configs || [];
+    const tCfgs = summary.target_configs || [];
+
+    // Build header
+    let headerHtml = `<th style="min-width:220px;">Assembly / Group Item</th><th style="min-width:120px;">Attribute</th>`;
+    headerHtml += `<th colspan="${bCfgs.length}" style="background:rgba(245,158,11,0.15);min-width:${bCfgs.length*180}px;text-align:center;">Base: ${escapeHtml(summary.base_sheet)}</th>`;
+    headerHtml += `<th style="min-width:60px;text-align:center;background:rgba(30,41,59,0.8);">▶</th>`;
+    headerHtml += `<th colspan="${tCfgs.length}" style="background:rgba(34,211,238,0.1);min-width:${tCfgs.length*180}px;text-align:center;">Target: ${escapeHtml(summary.target_sheet)}</th>`;
+    theadRow.innerHTML = headerHtml;
+
+    // Sub-header row
+    let subHeaderHtml = `<tr class="matrix-subheader-row"><th></th><th></th>`;
+    bCfgs.forEach(cfg => { subHeaderHtml += `<th style="background:rgba(245,158,11,0.08);min-width:180px;font-weight:600;">${escapeHtml(cfg)}</th>`; });
+    subHeaderHtml += `<th style="background:rgba(30,41,59,0.8);"></th>`;
+    tCfgs.forEach(cfg => { subHeaderHtml += `<th style="background:rgba(34,211,238,0.06);min-width:180px;font-weight:600;">${escapeHtml(cfg)}</th>`; });
+    subHeaderHtml += `</tr>`;
+
+    const existingSubHeader = document.getElementById('matrix-subheader');
+    if (existingSubHeader) existingSubHeader.remove();
+    const subHeaderEl = document.createElement('tbody');
+    subHeaderEl.id = 'matrix-subheader';
+    subHeaderEl.innerHTML = subHeaderHtml;
+    theadRow.parentElement.after(subHeaderEl);
+
+    // Filter items
+    const filtered = appState.matrixCompare.items.filter(item => {
+        if (onlyDiff && !item.is_diff) return false;
+        if (selectedGroup !== 'ALL' && item.group_item !== selectedGroup) return false;
+        const matchSearch = !searchVal ||
+            item.group_item.toLowerCase().includes(searchVal) ||
+            item.attribute.toLowerCase().includes(searchVal);
+        return matchSearch;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${bCfgs.length + tCfgs.length + 3}" class="text-center py-4 text-muted">無符合條件的比對項目</td></tr>`;
+        return;
+    }
+
+    const DIFF_TYPE_LABELS = {
+        'base_only':   { label: 'Base Only',   rowCls: 'tr-base-only'   },
+        'target_only': { label: 'Target Only', rowCls: 'tr-target-only' },
+        'changed':     { label: 'Changed',     rowCls: 'tr-diff'        },
+        'same':        { label: '',             rowCls: ''               }
+    };
+
+    let html = '';
+    filtered.forEach(item => {
+        const dt = DIFF_TYPE_LABELS[item.diff_type] || DIFF_TYPE_LABELS['same'];
+        html += `<tr class="${dt.rowCls}">`;
+        html += `<td class="cell-group">${escapeHtml(item.group_item)}</td>`;
+        html += `<td class="cell-sub">${escapeHtml(item.attribute)}`;
+        if (dt.label) html += ` <span class="badge badge-diff-${item.diff_type}">${dt.label}</span>`;
+        html += `</td>`;
+
+        bCfgs.forEach(cfg => {
+            const val = item.base_values?.[cfg] || '-';
+            html += `<td class="matrix-val-cell" style="background:rgba(245,158,11,0.04);">${escapeHtml(val)}</td>`;
+        });
+
+        html += `<td style="text-align:center;color:#64748b;background:rgba(30,41,59,0.5);">→</td>`;
+
+        tCfgs.forEach(cfg => {
+            const val = item.target_values?.[cfg] || '-';
+            const isCellDiff = item.diff_type === 'changed' &&
+                               (item.base_values && Object.values(item.base_values).some(bv => bv) &&
+                                item.target_values && Object.values(item.target_values).some(tv =>
+                                    tv && !Object.values(item.base_values).includes(tv)));
+            const cellCls = isCellDiff ? 'matrix-val-cell cell-diff' : 'matrix-val-cell';
+            html += `<td class="${cellCls}" style="background:rgba(34,211,238,0.04);">${escapeHtml(val)}</td>`;
         });
 
         html += `</tr>`;

@@ -340,24 +340,62 @@
                 <div class="config-cards-container" id="matrix-config-cards">
                 </div>
 
+                <!-- Group Item Category Pills (same pattern as BKC / FRU) -->
+                <div class="category-pills-container">
+                    <div class="category-pills-label"><i class="fa-solid fa-layer-group"></i> 組件群組 (Group Items):</div>
+                    <div class="category-pills-list" id="matrix-group-pills">
+                        <!-- Dynamic pills inserted here -->
+                    </div>
+                </div>
+
                 <div class="filter-bar flex-wrap">
+                    <!-- Mode Toggle -->
+                    <div class="mode-toggle-group">
+                        <button class="btn btn-mode active" id="matrix-mode-single">
+                            <i class="fa-solid fa-table-list"></i> Single View
+                        </button>
+                        <button class="btn btn-mode" id="matrix-mode-compare">
+                            <i class="fa-solid fa-code-compare"></i> Compare View
+                        </button>
+                    </div>
+
+                    <!-- File Selector -->
                     <div class="select-box" title="切換資料夾中的 Matrix 檔案">
                         <span class="select-label"><i class="fa-solid fa-file-excel"></i> 檔案:</span>
                         <select id="matrix-file-select"></select>
                     </div>
+
+                    <!-- Single Mode: Sheet Selector -->
+                    <div class="select-box" id="matrix-single-controls">
+                        <span class="select-label"><i class="fa-solid fa-table-columns"></i> Sheet:</span>
+                        <select id="matrix-sheet-select" title="選擇 Excel 工作表 (Worksheet)"></select>
+                    </div>
+
+                    <!-- Compare Mode: Base + Target Sheet Selectors (hidden by default) -->
+                    <div class="compare-controls-group flex-wrap" id="matrix-compare-controls" style="display: none; gap: 0.8rem; align-items: center;">
+                        <div class="select-box" title="選擇 Base 基準工作表">
+                            <span class="select-label">Base:</span>
+                            <select id="matrix-base-sheet-select" style="max-width: 200px;" title="選擇 Base Sheet"></select>
+                        </div>
+                        <div class="vs-divider">VS</div>
+                        <div class="select-box" title="選擇 Target 比對工作表">
+                            <span class="select-label">Target:</span>
+                            <select id="matrix-target-sheet-select" style="max-width: 200px;" title="選擇 Target Sheet"></select>
+                        </div>
+                    </div>
+
+                    <!-- Search -->
                     <div class="search-box">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
                         <input type="text" id="matrix-search-input" placeholder="搜尋組件 (Group/Item) 或 屬性 (Attribute)..." />
                     </div>
-                    <div class="select-box" id="matrix-sheet-box" style="display: none;">
-                        <select id="matrix-sheet-select" title="選擇 Excel 工作表 (Worksheet)">
-                        </select>
-                    </div>
+
+                    <!-- Diff Toggle -->
                     <div class="toggle-box">
                         <label class="switch-label">
                             <input type="checkbox" id="matrix-only-diff-toggle" />
                             <span class="switch-slider"></span>
-                            <span class="switch-text">僅高亮配置差異項目 (Highlight Diffs Only)</span>
+                            <span class="switch-text">僅顯示差異 (Diffs Only)</span>
                         </label>
                     </div>
                 </div>
@@ -380,6 +418,8 @@
                 </div>
             </div>
         </section>
+
+
 
     </main>
 

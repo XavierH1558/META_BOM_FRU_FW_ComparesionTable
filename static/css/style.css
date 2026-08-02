@@ -625,6 +625,67 @@ body {
     border-left: 3px solid #f59e0b !important;
 }
 
+/* Build Matrix Compare: Base-only rows (orange), Target-only rows (teal), Changed (amber) */
+.tr-base-only {
+    background: rgba(245, 158, 11, 0.08) !important;
+    border-left: 3px solid #f59e0b !important;
+}
+
+.tr-target-only {
+    background: rgba(34, 211, 238, 0.08) !important;
+    border-left: 3px solid #22d3ee !important;
+}
+
+/* Diff badge pills for compare table */
+.badge-diff-base_only {
+    display: inline-block;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.25);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}
+
+.badge-diff-target_only {
+    display: inline-block;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(34, 211, 238, 0.2);
+    color: #22d3ee;
+    border: 1px solid rgba(34, 211, 238, 0.45);
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}
+
+.badge-diff-changed {
+    display: inline-block;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(248, 113, 113, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}
+
+/* Sub-header row in compare table */
+.matrix-subheader-row th {
+    font-size: 0.75rem !important;
+    padding: 0.35rem 0.85rem !important;
+    color: var(--text-muted) !important;
+    font-weight: 600 !important;
+    text-align: left !important;
+}
+
+
 .cell-diff-box {
     display: flex;
     flex-direction: column;
@@ -685,19 +746,19 @@ body {
     margin-right: 0.3rem;
 }
 
-/* Config Description Cards (1:1 Alignment with Table Columns Below) */
+/* Config Description Cards (Support 3 to 10 Configs with Smooth Alignment) */
 .config-cards-container {
     display: flex;
-    gap: 1.2rem;
+    gap: 1rem;
     margin-bottom: 1.2rem;
     width: 100%;
-    align-items: stretch;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
 }
 
 .matrix-overview-card {
-    flex: 0 0 37.5%;
-    width: 37.5%;
-    max-width: 37.5%;
+    flex: 0 0 320px;
+    min-width: 300px;
     box-sizing: border-box;
     background: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%);
     border: 1px solid rgba(56, 189, 248, 0.35);
@@ -729,8 +790,8 @@ body {
 }
 
 .config-card {
-    flex: 1 1 0px;
-    min-width: 0;
+    flex: 0 0 280px;
+    min-width: 260px;
     box-sizing: border-box;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -740,6 +801,7 @@ body {
     display: flex;
     flex-direction: column;
 }
+
 
 
 .config-card-header {

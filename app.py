@@ -670,6 +670,88 @@ def get_fru_compare():
         'fields': fields_compare
     })
 
+# ── Shared helper: parse a build matrix sheet ──────────────────────────────
+def parse_matrix_sheet(rows):
+    """Parse a build-matrix sheet (already loaded as list-of-str-lists).
+    Returns: (configs, configs_info, descriptions, rack_qty, items_dict, items_list)
+      configs      – ordered list of config names
+      configs_info – list of (col_idx, cfg_name)
+      descriptions – {cfg_name: description str}
+      rack_qty     – {cfg_name: qty str}
+      items_dict   – {(group_item, attribute): {cfg_name: val}}
+      items_list   – [{row_id, group_item, attribute, values, is_diff}]
+    """
+    # Smart config-row search (first 6 rows)
+    config_row_idx = -1
+    for i in range(min(6, len(rows))):
+        r = rows[i]
+        if sum(1 for cell in r if 'config' in cell.lower()) >= 1:
+            config_row_idx = i
+            break
+    if config_row_idx == -1:
+        config_row_idx = 2 if len(rows) > 2 else 0
+
+    cfg_row = rows[config_row_idx] if config_row_idx < len(rows) else []
+    configs_info, configs = [], []
+    for c_idx in range(2, len(cfg_row)):
+        c_val = cfg_row[c_idx].strip()
+        if c_val and c_val.lower() != 'none' and not any(k in c_val.lower() for k in ['note', 'comment']):
+            configs_info.append((c_idx, c_val))
+            configs.append(c_val)
+
+    desc_row = rows[config_row_idx + 1] if config_row_idx + 1 < len(rows) else []
+    qty_row  = rows[config_row_idx + 2] if config_row_idx + 2 < len(rows) else []
+
+    descriptions, rack_qty = {}, {}
+    for c_idx, cfg_name in configs_info:
+        if c_idx < len(desc_row):
+            descriptions[cfg_name] = desc_row[c_idx].strip()
+        if c_idx < len(qty_row):
+            q = qty_row[c_idx].strip()
+            if q.endswith('.0'): q = q[:-2]
+            rack_qty[cfg_name] = q
+
+    items_dict   = {}   # {(group_item, attribute): {cfg_name: val}}
+    items_list   = []
+    current_group = ''
+    total_diff   = 0
+
+    for idx in range(config_row_idx + 3, len(rows)):
+        r = rows[idx]
+        if not any(c.strip() for c in r): continue
+
+        col0 = r[0].strip() if len(r) > 0 else ''
+        col1 = r[1].strip() if len(r) > 1 else ''
+
+        if col0:
+            current_group = col0
+
+        if not col1 and not any(r[c_idx].strip() for c_idx, _ in configs_info if c_idx < len(r)):
+            continue
+
+        vals, row_vals = {}, []
+        for c_idx, cfg_name in configs_info:
+            val = r[c_idx].strip() if c_idx < len(r) else ''
+            vals[cfg_name] = val
+            if val: row_vals.append(val)
+
+        is_diff = len(set(row_vals)) > 1
+        if is_diff: total_diff += 1
+
+        key = (current_group, col1)
+        items_dict[key] = vals
+
+        items_list.append({
+            'row_id': idx,
+            'group_item': current_group,
+            'attribute': col1,
+            'values': vals,
+            'is_diff': is_diff
+        })
+
+    return configs, configs_info, descriptions, rack_qty, items_dict, items_list, total_diff
+
+
 @app.route('/api/build-matrix')
 def get_build_matrix():
     req_path = request.args.get('file_path', None)
@@ -680,77 +762,118 @@ def get_build_matrix():
     if err:
         return jsonify({'success': False, 'error': err}), 400
 
-    configs = []
-    if len(rows) > 2:
-        configs = [c for c in rows[2][2:] if c]
+    configs, _, descriptions, rack_qty, _, items_list, total_diff = parse_matrix_sheet(rows)
 
-    descriptions = {}
-    if len(rows) > 3:
-        desc_row = rows[3]
-        for idx, cfg in enumerate(configs):
-            if idx + 2 < len(desc_row):
-                descriptions[cfg] = desc_row[idx + 2]
-
-    rack_qty = {}
-    if len(rows) > 4:
-        qty_row = rows[4]
-        for idx, cfg in enumerate(configs):
-            if idx + 2 < len(qty_row):
-                q = qty_row[idx + 2]
-                if q.endswith('.0'): q = q[:-2]
-                rack_qty[cfg] = q
-
-    items = []
-    total_diff_items = 0
-
-    for idx, r in enumerate(rows[5:], start=5):
-        if not any(r): continue
-
-        grp_item = r[0].strip() if len(r) > 0 else ''
-        attr = r[1].strip() if len(r) > 1 else ''
-
-        if not grp_item and not attr: continue
-
-        vals = {}
-        row_vals = []
-        for c_idx, cfg in enumerate(configs):
-            val = r[c_idx + 2].strip() if c_idx + 2 < len(r) else ''
-            vals[cfg] = val
-            if val: row_vals.append(val)
-
-        unique_vals = set(row_vals)
-        is_diff = len(unique_vals) > 1
-
-        if is_diff:
-            total_diff_items += 1
-
-        items.append({
-            'row_id': idx,
-            'group_item': grp_item,
-            'attribute': attr,
-            'values': vals,
-            'is_diff': is_diff
-        })
-
-    summary = {
-        'filename': os.path.basename(path),
-        'active_file': path,
-        'configs': configs,
-        'descriptions': descriptions,
-        'rack_qty': rack_qty,
-        'total_items': len(items),
-        'diff_items_count': total_diff_items,
-        'sheets': sheets,
-        'active_sheet': requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None),
-        'available_files': scan_files_in_dirs('matrix')
-    }
+    active_sh = requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None)
 
     return jsonify({
         'success': True,
-        'summary': summary,
-        'items': items
+        'summary': {
+            'filename': os.path.basename(path),
+            'active_file': path,
+            'configs': configs,
+            'descriptions': descriptions,
+            'rack_qty': rack_qty,
+            'total_items': len(items_list),
+            'diff_items_count': total_diff,
+            'sheets': sheets,
+            'active_sheet': active_sh,
+            'available_files': scan_files_in_dirs('matrix')
+        },
+        'items': items_list
     })
+
+
+@app.route('/api/build-matrix-compare')
+def get_build_matrix_compare():
+    """Compare two build-matrix sheets (can be different files or different sheets in same file)."""
+    base_file  = request.args.get('base_file',  None)
+    base_sheet = request.args.get('base_sheet', 'DVT - L10 Build Matrix')
+    tgt_file   = request.args.get('target_file',  None)
+    tgt_sheet  = request.args.get('target_sheet', 'PVT2- L11 Build Matrix-NSF')
+
+    default_path = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    base_path = base_file if (base_file and os.path.exists(base_file)) else default_path
+    tgt_path  = tgt_file  if (tgt_file  and os.path.exists(tgt_file))  else default_path
+
+    base_rows, base_sheets, err1 = read_file_safe(base_path, sheet_name=base_sheet)
+    if err1:
+        return jsonify({'success': False, 'error': f'Base sheet error: {err1}'}), 400
+
+    tgt_rows, tgt_sheets, err2 = read_file_safe(tgt_path, sheet_name=tgt_sheet)
+    if err2:
+        return jsonify({'success': False, 'error': f'Target sheet error: {err2}'}), 400
+
+    b_configs, _, b_descs, b_qty, b_dict, _, _ = parse_matrix_sheet(base_rows)
+    t_configs, _, t_descs, t_qty, t_dict, _, _ = parse_matrix_sheet(tgt_rows)
+
+    # Union all (group_item, attribute) keys, preserving base order then target extras
+    seen_keys   = set()
+    ordered_keys = []
+    for k in b_dict:
+        if k not in seen_keys:
+            seen_keys.add(k)
+            ordered_keys.append(k)
+    for k in t_dict:
+        if k not in seen_keys:
+            seen_keys.add(k)
+            ordered_keys.append(k)
+
+    compare_items = []
+    diff_count    = 0
+
+    for key in ordered_keys:
+        group_item, attribute = key
+        b_vals = b_dict.get(key, None)
+        t_vals = t_dict.get(key, None)
+
+        if b_vals is None:
+            diff_type = 'target_only'
+        elif t_vals is None:
+            diff_type = 'base_only'
+        else:
+            # Compare: consider changed if any non-empty value differs across union of config names
+            b_set = set(v for v in b_vals.values() if v)
+            t_set = set(v for v in t_vals.values() if v)
+            diff_type = 'changed' if b_set != t_set else 'same'
+
+        is_diff = diff_type != 'same'
+        if is_diff:
+            diff_count += 1
+
+        compare_items.append({
+            'group_item': group_item,
+            'attribute':  attribute,
+            'base_values':   b_vals or {},
+            'target_values': t_vals or {},
+            'diff_type': diff_type,
+            'is_diff':   is_diff
+        })
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'base_file':    os.path.basename(base_path),
+            'base_sheet':   base_sheet,
+            'target_file':  os.path.basename(tgt_path),
+            'target_sheet': tgt_sheet,
+            'base_configs':   b_configs,
+            'target_configs': t_configs,
+            'base_descriptions':   b_descs,
+            'target_descriptions': t_descs,
+            'base_rack_qty':   b_qty,
+            'target_rack_qty': t_qty,
+            'total_items': len(compare_items),
+            'diff_items_count': diff_count,
+            'base_sheets':   base_sheets,
+            'target_sheets': tgt_sheets,
+            'available_files': scan_files_in_dirs('matrix')
+        },
+        'items': compare_items
+    })
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8050))
     app.run(host='0.0.0.0', port=port, debug=False)
+
