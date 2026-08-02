@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>META VR200 (SanMiguel) Firmware, FRU & Build Matrix Comparison Platform</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-server"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>META VR200 (SanMiguel) Comparison Hub</h1>
+                    <p class="subtitle">Excel (.xlsx) & CSV Release Engineering System</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="status-badge" id="system-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Connected</span>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-open-upload">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> 上傳/新增檔案
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-refresh" title="Reload Data">
+                    <i class="fa-solid fa-arrows-rotate"></i> 重新載入
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="main-container">
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs-nav">
+            <button class="nav-tab active" data-tab="tab-bkc">
+                <i class="fa-solid fa-list-check"></i>
+                <span>BKC Table</span>
+                <span class="badge" id="bkc-badge-count">0</span>
+            </button>
+            <button class="nav-tab" data-tab="tab-fru">
+                <i class="fa-solid fa-code-compare"></i>
+                <span>FRU Table Comparison</span>
+                <span class="badge badge-warning" id="fru-badge-diff">0 Diffs</span>
+            </button>
+            <button class="nav-tab" data-tab="tab-matrix">
+                <i class="fa-solid fa-table-cells"></i>
+                <span>Build Matrix Comparison</span>
+                <span class="badge badge-info" id="matrix-badge-configs">3 Configs</span>
+            </button>
+        </nav>
+
+        <!-- Tab 1: BKC Table -->
+        <section class="tab-content active" id="tab-bkc">
+            <div class="control-panel">
+                <div class="summary-cards" id="bkc-summary-cards">
+                    <div class="stat-card" id="bkc-stat-card-1">
+                        <div class="stat-icon bg-blue" id="bkc-stat-icon-1"><i class="fa-solid fa-microchip"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="bkc-stat-val-1">0</span>
+                            <span class="stat-label" id="bkc-stat-lbl-1">Total Components</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="bkc-stat-card-2">
+                        <div class="stat-icon bg-purple" id="bkc-stat-icon-2"><i class="fa-solid fa-layer-group"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="bkc-stat-val-2">0</span>
+                            <span class="stat-label" id="bkc-stat-lbl-2">System Groups</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="bkc-stat-card-3">
+                        <div class="stat-icon bg-green" id="bkc-stat-icon-3"><i class="fa-solid fa-circle-check"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="bkc-stat-val-3">0</span>
+                            <span class="stat-label" id="bkc-stat-lbl-3">Active FW Versions</span>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Category Quick Navigation Pills (Macro View) -->
+                <div class="category-pills-container">
+                    <div class="category-pills-label"><i class="fa-solid fa-sitemap"></i> 大方向區塊 (System Categories):</div>
+                    <div class="category-pills-list" id="bkc-category-pills">
+                        <!-- Dynamic Category Pills inserted here -->
+                    </div>
+                </div>
+
+                <!-- Sub-Group Quick Navigation Pills (Secondary View) -->
+                <div class="subgroup-pills-container" id="bkc-subgroup-pills-container" style="display: none;">
+                    <div class="subgroup-pills-label"><i class="fa-solid fa-folder-tree"></i> 小區塊 (Sub-Groups):</div>
+                    <div class="subgroup-pills-list" id="bkc-subgroup-pills">
+                        <!-- Dynamic Sub-Group Pills inserted here -->
+                    </div>
+                </div>
+
+
+                <div class="filter-bar flex-wrap">
+                    <div class="mode-switch-group">
+                        <button class="btn btn-secondary btn-sm active" id="bkc-mode-single">
+                            <i class="fa-solid fa-table"></i> 單一 Sheet 檢視
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="bkc-mode-compare">
+                            <i class="fa-solid fa-code-compare"></i> 跨 Sheet 版本比對
+                        </button>
+                    </div>
+
+                    <div class="select-box" title="切換資料夾中的 Excel 檔案">
+                        <span class="select-label"><i class="fa-solid fa-file-excel"></i> 檔案:</span>
+                        <select id="bkc-file-select"></select>
+                    </div>
+
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="bkc-search-input" placeholder="搜尋組件、Sub-Component、Owner 或 FW Version..." />
+                        <button class="btn-clear" id="bkc-clear-search"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+
+                    <!-- Single Sheet Select Box -->
+                    <div class="select-box" id="bkc-sheet-box" style="display: none;">
+                        <select id="bkc-sheet-select" title="選擇工作表 (Worksheet)">
+                        </select>
+                    </div>
+
+                    <!-- Compare Mode Select Boxes -->
+                    <div class="compare-select-group" id="bkc-compare-select-box" style="display: none;">
+                        <div class="select-box">
+                            <span class="select-label">Base (基準):</span>
+                            <select id="bkc-base-sheet-select"></select>
+                        </div>
+                        <div class="vs-divider">VS</div>
+                        <div class="select-box">
+                            <span class="select-label">Target (比對):</span>
+                            <select id="bkc-target-sheet-select"></select>
+                        </div>
+                    </div>
+
+                    <div class="select-box">
+                        <select id="bkc-category-select">
+                            <option value="">所有大區塊 (All Categories)</option>
+                        </select>
+                    </div>
+
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="bkc-search-input" placeholder="搜尋組件 (Group/Item) 或 韌體名稱..." />
+                    </div>
+
+
+
+                    <div class="toggle-box" id="bkc-diff-toggle-box" style="display: none;">
+                        <label class="switch-label">
+                            <input type="checkbox" id="bkc-only-diff-toggle" checked />
+                            <span class="switch-slider"></span>
+                            <span class="switch-text">僅顯示差異 (Show Diffs Only)</span>
+                        </label>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn btn-secondary btn-sm" id="bkc-btn-expand-all">
+                            <i class="fa-solid fa-angles-down"></i> 展開全部
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="bkc-btn-collapse-all">
+                            <i class="fa-solid fa-angles-up"></i> 折疊全部
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-container">
+                    <table class="data-table tree-table" id="bkc-table">
+                        <thead>
+                            <tr>
+                                <th>Group / Components</th>
+                                <th>Sub-Component</th>
+                                <th>Meta Owner</th>
+                                <th>ODM Owner</th>
+                                <th>Validation Version</th>
+                                <th>CheckSum</th>
+                                <th>VRC</th>
+                                <th>Sign Off</th>
+                                <th>GDrive / File Link</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="bkc-tbody">
+                            <tr><td colspan="9" class="text-center py-4">載入資料中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 2: FRU Table Comparison -->
+        <section class="tab-content" id="tab-fru">
+            <div class="control-panel">
+                <div class="summary-cards" id="fru-summary-cards">
+                    <div class="stat-card" id="fru-stat-card-1">
+                        <div class="stat-icon bg-blue" id="fru-stat-icon-1"><i class="fa-solid fa-list-check"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="fru-stat-val-1">0</span>
+                            <span class="stat-label" id="fru-stat-lbl-1">Total Spec Fields</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="fru-stat-card-2">
+                        <div class="stat-icon bg-purple" id="fru-stat-icon-2"><i class="fa-solid fa-cubes"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="fru-stat-val-2">0</span>
+                            <span class="stat-label" id="fru-stat-lbl-2">FRU Modules</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="fru-stat-card-3">
+                        <div class="stat-icon bg-green" id="fru-stat-icon-3"><i class="fa-solid fa-sliders"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="fru-stat-val-3">0</span>
+                            <span class="stat-label" id="fru-stat-lbl-3">Configured Values</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FRU Module Quick Navigation Pills -->
+                <div class="category-pills-container">
+                    <div class="category-pills-label"><i class="fa-solid fa-cubes"></i> FRU 模組 (FRU Modules):</div>
+                    <div class="category-pills-list" id="fru-module-pills">
+                        <!-- Dynamic FRU Module Pills inserted here -->
+                    </div>
+                </div>
+
+                <!-- FRU Sub-Field Navigation Pills -->
+                <div class="subgroup-pills-container" id="fru-subfield-pills-container" style="display: none;">
+                    <div class="subgroup-pills-label"><i class="fa-solid fa-folder-tree"></i> 規格欄位 (Sub-Fields):</div>
+                    <div class="subgroup-pills-list" id="fru-subfield-pills">
+                        <!-- Dynamic Sub-Field Pills inserted here -->
+                    </div>
+                </div>
+
+                <div class="filter-bar flex-wrap">
+                    <div class="mode-switch-group">
+                        <button class="btn btn-secondary btn-sm active" id="fru-mode-single">
+                            <i class="fa-solid fa-table"></i> 單一 FRU 規格檢視
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="fru-mode-compare">
+                            <i class="fa-solid fa-code-compare"></i> 跨階段規格比對
+                        </button>
+                    </div>
+
+                    <!-- Single Mode Controls -->
+                    <div class="single-controls-group flex-wrap" id="fru-single-controls" style="display: flex; gap: 0.8rem; align-items: center;">
+                        <div class="select-box" title="選擇 FRU Excel/CSV 檔案">
+                            <span class="select-label"><i class="fa-solid fa-file-excel"></i> 檔案:</span>
+                            <select id="fru-single-file-select"></select>
+                        </div>
+                        <div class="select-box" id="fru-single-sheet-box">
+                            <select id="fru-single-sheet-select" title="選擇工作表 (Worksheet)"></select>
+                        </div>
+                    </div>
+
+                    <div class="select-box" title="選擇 FRU 大項目與小分類">
+                        <select id="fru-section-select">
+                            <option value="sec:ALL">所有 FRU 項目 (All Sections)</option>
+                        </select>
+                    </div>
+
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="fru-search-input" placeholder="搜尋 Section 或 欄位名稱 (Field Name)..." />
+                    </div>
+
+
+                    <!-- Compare Mode Controls -->
+                    <div class="compare-controls-group flex-wrap" id="fru-compare-controls" style="display: none; gap: 0.8rem; align-items: center;">
+                        <div class="select-box" title="選擇 Base 基準檔案與工作表">
+                            <span class="select-label">Base:</span>
+                            <select id="fru-dvt-file-select" style="max-width: 160px;"></select>
+                            <select id="fru-base-sheet-select" style="max-width: 110px;" title="選擇 Base 工作表"></select>
+                        </div>
+                        <div class="vs-divider">VS</div>
+                        <div class="select-box" title="選擇 Target 比對檔案與工作表">
+                            <span class="select-label">Target:</span>
+                            <select id="fru-pvt-file-select" style="max-width: 160px;"></select>
+                            <select id="fru-target-sheet-select" style="max-width: 110px;" title="選擇 Target 工作表"></select>
+                        </div>
+                        <div class="toggle-box">
+                            <label class="switch-label">
+                                <input type="checkbox" id="fru-only-diff-toggle" checked />
+                                <span class="switch-slider"></span>
+                                <span class="switch-text">僅顯示差異 (Diffs Only)</span>
+                            </label>
+                        </div>
+                    </div>
+
+
+                    <div class="action-buttons">
+                        <button class="btn btn-secondary btn-sm" id="fru-btn-expand-all">
+                            <i class="fa-solid fa-angles-down"></i> 展開全部
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="fru-btn-collapse-all">
+                            <i class="fa-solid fa-angles-up"></i> 折疊全部
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-container">
+                    <table class="data-table compare-table tree-table" id="fru-table">
+                        <thead>
+                            <tr id="fru-thead-row">
+                                <th>Section Header</th>
+                                <th>Field Name</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fru-tbody">
+                            <tr><td colspan="6" class="text-center py-4">載入規格資料中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- Tab 3: Build Matrix Comparison -->
+        <section class="tab-content" id="tab-matrix">
+            <div class="control-panel">
+                <div class="config-cards-container" id="matrix-config-cards">
+                </div>
+
+                <div class="filter-bar flex-wrap">
+                    <div class="select-box" title="切換資料夾中的 Matrix 檔案">
+                        <span class="select-label"><i class="fa-solid fa-file-excel"></i> 檔案:</span>
+                        <select id="matrix-file-select"></select>
+                    </div>
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="matrix-search-input" placeholder="搜尋組件 (Group/Item) 或 屬性 (Attribute)..." />
+                    </div>
+                    <div class="select-box" id="matrix-sheet-box" style="display: none;">
+                        <select id="matrix-sheet-select" title="選擇 Excel 工作表 (Worksheet)">
+                        </select>
+                    </div>
+                    <div class="toggle-box">
+                        <label class="switch-label">
+                            <input type="checkbox" id="matrix-only-diff-toggle" />
+                            <span class="switch-slider"></span>
+                            <span class="switch-text">僅高亮配置差異項目 (Highlight Diffs Only)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-container">
+                    <table class="data-table matrix-table" id="matrix-table">
+                        <thead>
+                            <tr id="matrix-thead-row">
+                                <th>Assembly / Group Item</th>
+                                <th>Attribute</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="matrix-tbody">
+                            <tr><td colspan="5" class="text-center py-4">載入 Build Matrix 中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Upload File Modal -->
+    <div class="modal-overlay" id="upload-modal" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-cloud-arrow-up"></i> 上傳新 Excel (.xlsx) / CSV 檔案</h3>
+                <button class="btn-close-modal" id="btn-close-upload"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">選擇欲上傳並套用的功能頁籤 (Target Tab):</label>
+                    <select id="upload-tab-type" class="form-select">
+                        <option value="bkc">BKC Table</option>
+                        <option value="fru_dvt">FRU Specification (DVT Base)</option>
+                        <option value="fru_pvt">FRU Specification (PVT Target)</option>
+                        <option value="matrix">Build Matrix</option>
+                    </select>
+                </div>
+                <div class="dropzone" id="dropzone">
+                    <div class="dropzone-icon"><i class="fa-solid fa-file-circle-plus"></i></div>
+                    <p class="dropzone-text">將 Excel (`.xlsx`) 或 CSV 檔案拖曳至此處，或點擊選擇檔案</p>
+                    <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display: none;" />
+                    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('file-input').click()">
+                        選擇電腦中的檔案
+                    </button>
+                </div>
+                <div class="upload-progress" id="upload-status-text" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <p>META VR200 SanMiguel Hardware & Firmware Release Engineering System &copy; 2026</p>
+    </footer>
+
+    <!-- Main JavaScript -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
