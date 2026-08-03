@@ -44,9 +44,7 @@ function hideLoading() {
     const overlay = document.getElementById('global-loading-overlay');
     if (overlay) {
         overlay.classList.remove('active');
-        setTimeout(() => {
-            overlay.style.display = 'none';
-        }, 250);
+        overlay.style.display = 'none';
     }
 }
 
