@@ -114,12 +114,57 @@ function initEventListeners() {
         window.open(url, '_blank');
     });
 
+function getSummaryApiUrl(targetTab) {
+    let url = `/api/release-summary?tab=${targetTab}`;
+
+    const bkcFile = document.getElementById('bkc-file-select')?.value;
+    if (bkcFile) url += `&bkc_file=${encodeURIComponent(bkcFile)}`;
+
+    const fruDvtFile = document.getElementById('fru-dvt-file-select')?.value || document.getElementById('fru-single-file-select')?.value;
+    const fruPvtFile = document.getElementById('fru-pvt-file-select')?.value || document.getElementById('fru-single-file-select')?.value;
+    const fruBaseSheet = document.getElementById('fru-base-sheet-select')?.value || document.getElementById('fru-single-sheet-select')?.value;
+    const fruTargetSheet = document.getElementById('fru-target-sheet-select')?.value || document.getElementById('fru-single-sheet-select')?.value;
+
+    if (fruDvtFile) url += `&fru_dvt_file=${encodeURIComponent(fruDvtFile)}`;
+    if (fruPvtFile) url += `&fru_pvt_file=${encodeURIComponent(fruPvtFile)}`;
+    if (fruBaseSheet) url += `&fru_base_sheet=${encodeURIComponent(fruBaseSheet)}`;
+    if (fruTargetSheet) url += `&fru_target_sheet=${encodeURIComponent(fruTargetSheet)}`;
+
+    const matBaseFile = document.getElementById('matrix-base-file-select')?.value || document.getElementById('matrix-file-select')?.value;
+    const matTargetFile = document.getElementById('matrix-target-file-select')?.value || document.getElementById('matrix-file-select')?.value;
+    const matBaseSheet = document.getElementById('matrix-base-sheet-select')?.value || document.getElementById('matrix-sheet-select')?.value;
+    const matTargetSheet = document.getElementById('matrix-target-sheet-select')?.value || document.getElementById('matrix-sheet-select')?.value;
+
+    if (matBaseFile) url += `&matrix_base_file=${encodeURIComponent(matBaseFile)}`;
+    if (matTargetFile) url += `&matrix_target_file=${encodeURIComponent(matTargetFile)}`;
+    if (matBaseSheet) url += `&matrix_base_sheet=${encodeURIComponent(matBaseSheet)}`;
+    if (matTargetSheet) url += `&matrix_target_sheet=${encodeURIComponent(matTargetSheet)}`;
+
+    return url;
+}
+
     // Release Summary Modal
     const summaryModal = document.getElementById('release-summary-modal');
     document.getElementById('btn-release-summary').addEventListener('click', async () => {
-        showLoading('正在生成 Release Summary 摘要報告...', 'Analyzing cross-file differences & building summary');
+        let defaultTab = 'all';
+        if (appState.activeTab === 'tab-bkc') defaultTab = 'bkc';
+        else if (appState.activeTab === 'tab-fru') defaultTab = 'fru';
+        else if (appState.activeTab === 'tab-matrix') defaultTab = 'matrix';
+
+        // Update modal tab active styling
+        document.querySelectorAll('.summary-tab-btn').forEach(b => {
+            b.classList.remove('btn-primary', 'active');
+            b.classList.add('btn-secondary');
+            if (b.getAttribute('data-sumtab') === defaultTab) {
+                b.classList.remove('btn-secondary');
+                b.classList.add('btn-primary', 'active');
+            }
+        });
+
+        showLoading('正在生成 Release Summary 摘要報告...', 'Analyzing selected file differences & building summary');
         try {
-            const res = await fetch('/api/release-summary');
+            const url = getSummaryApiUrl(defaultTab);
+            const res = await fetch(url);
             const data = await res.json();
             if (data.success) {
                 document.getElementById('summary-content-area').value = data.markdown;
@@ -150,6 +195,33 @@ function initEventListeners() {
         }
     });
 
+    // Summary Modal Tab Switchers
+    document.querySelectorAll('.summary-tab-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            document.querySelectorAll('.summary-tab-btn').forEach(b => {
+                b.classList.remove('btn-primary', 'active');
+                b.classList.add('btn-secondary');
+            });
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary', 'active');
+            const targetTab = btn.getAttribute('data-sumtab');
+            showLoading('載入摘要報告...', `Fetching release summary for ${targetTab}`);
+            try {
+                const url = getSummaryApiUrl(targetTab);
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('summary-content-area').value = data.markdown;
+                    appState.currentSummaryData = data;
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                hideLoading();
+            }
+        });
+    });
+
     // Watchlist Modal Handlers
     const watchlistModal = document.getElementById('watchlist-modal');
     document.getElementById('btn-open-watchlist').addEventListener('click', async () => {
@@ -169,32 +241,6 @@ function initEventListeners() {
             await updateWatchlistKeywords(currentKws);
             input.value = '';
         }
-    });
-
-    // Summary Modal Tab Switchers
-    document.querySelectorAll('.summary-tab-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            document.querySelectorAll('.summary-tab-btn').forEach(b => {
-                b.classList.remove('btn-primary', 'active');
-                b.classList.add('btn-secondary');
-            });
-            btn.classList.remove('btn-secondary');
-            btn.classList.add('btn-primary', 'active');
-            const targetTab = btn.getAttribute('data-sumtab');
-            showLoading('載入摘要報告...', `Fetching release summary for ${targetTab}`);
-            try {
-                const res = await fetch(`/api/release-summary?tab=${targetTab}`);
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('summary-content-area').value = data.markdown;
-                    appState.currentSummaryData = data;
-                }
-            } catch (e) {
-                console.error(e);
-            } finally {
-                hideLoading();
-            }
-        });
     });
 
     // Global Search

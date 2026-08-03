@@ -1179,32 +1179,46 @@ def api_history():
 
 @app.route('/api/release-summary', methods=['GET'])
 def api_release_summary():
-    """Generate structured Markdown and Text summary reports per tab or overall."""
+    """Generate structured Markdown and Text summary reports per tab or overall using current active selections."""
     tab = request.args.get('tab', 'all').lower()
     watchlist = load_watchlist()
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
     # Gather BKC stats
-    bkc_p = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+    bkc_file_req = request.args.get('bkc_file')
+    bkc_p = resolve_file_path('bkc', bkc_file_req or DEFAULT_PATHS['bkc'])
     b_rows, b_sheets, _ = read_file_safe(bkc_p)
     bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
-    # Gather FRU compare stats
-    dvt_p = resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
-    pvt_p = resolve_file_path('fru', DEFAULT_PATHS['fru_pvt'])
-    r1, s1, _ = read_file_safe(dvt_p)
-    r2, s2, _ = read_file_safe(pvt_p)
+    # Gather FRU compare stats using user selected files & sheets
+    dvt_file_req = request.args.get('fru_dvt_file')
+    pvt_file_req = request.args.get('fru_pvt_file')
+    dvt_sheet_req = request.args.get('fru_base_sheet')
+    pvt_sheet_req = request.args.get('fru_target_sheet')
+
+    dvt_p = resolve_file_path('fru', dvt_file_req or DEFAULT_PATHS['fru_dvt'])
+    pvt_p = resolve_file_path('fru', pvt_file_req or DEFAULT_PATHS['fru_pvt'])
+    
+    r1, s1, _ = read_file_safe(dvt_p, sheet_name=dvt_sheet_req)
+    r2, s2, _ = read_file_safe(pvt_p, sheet_name=pvt_sheet_req)
     fru_res = compare_two_fru_sheets(r1, r2)
     
-    # Gather Matrix compare stats
-    mat_p = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
-    mr, ms, _ = read_file_safe(mat_p)
-    valid_ms = filter_valid_data_sheets(ms)
-    mat_res = None
-    if len(valid_ms) >= 2:
-        r_b, _, _ = read_file_safe(mat_p, sheet_name=valid_ms[0])
-        r_t, _, _ = read_file_safe(mat_p, sheet_name=valid_ms[1])
-        mat_res = compare_two_matrix_sheets(r_b, r_t)
+    # Gather Matrix compare stats using user selected files & sheets
+    mat_b_file_req = request.args.get('matrix_base_file')
+    mat_t_file_req = request.args.get('matrix_target_file')
+    mat_b_sheet_req = request.args.get('matrix_base_sheet')
+    mat_t_sheet_req = request.args.get('matrix_target_sheet')
+
+    mat_b_p = resolve_file_path('matrix', mat_b_file_req or DEFAULT_PATHS['matrix'])
+    mat_t_p = resolve_file_path('matrix', mat_t_file_req or DEFAULT_PATHS['matrix'])
+
+    r_b, s_b, _ = read_file_safe(mat_b_p, sheet_name=mat_b_sheet_req)
+    r_t, s_t, _ = read_file_safe(mat_t_p, sheet_name=mat_t_sheet_req)
+    
+    b_sheet_name = mat_b_sheet_req or (s_b[0] if s_b else 'Base')
+    t_sheet_name = mat_t_sheet_req or (s_t[1] if len(s_t)>1 else (s_t[0] if s_t else 'Target'))
+    
+    mat_res = compare_two_matrix_sheets(r_b, r_t) if (r_b and r_t) else None
 
     # Build Markdown according to requested tab
     md = []
@@ -1215,30 +1229,45 @@ def api_release_summary():
         md.append(f"- **Total Components Tracked:** `{len(bkc_items)}` items")
         md.append(f"- **Total Sheets Available:** `{len(b_sheets)}` ({', '.join(b_sheets[:5]) if b_sheets else 'None'})\n")
         md.append(f"## ⚙️ Component List Sample")
-        for it in bkc_items[:10]:
+        for it in bkc_items[:15]:
             md.append(f"- **[{it.get('category')}]** `{it.get('sub_component')}`: FW `{it.get('version') or 'N/A'}`")
+
     elif tab == 'fru':
         md.append(f"# 📄 FRU Specification Release Summary")
-        md.append(f"**Generated Time:** `{now_str}` | **Files:** `{os.path.basename(dvt_p)}` 🆚 `{os.path.basename(pvt_p)}`\n")
+        md.append(f"**Generated Time:** `{now_str}`")
+        md.append(f"**Base (DVT):** `{os.path.basename(dvt_p)}` (`{dvt_sheet_req or (s1[0] if s1 else 'Default')}`)")
+        md.append(f"**Target (PVT):** `{os.path.basename(pvt_p)}` (`{pvt_sheet_req or (s2[0] if s2 else 'Default')}`)\n")
         md.append(f"## 📋 Overview")
         md.append(f"- **Total Spec Fields:** `{fru_res.get('total_items', 0)}` items")
         md.append(f"- **Identical Fields:** `{fru_res.get('same_count', 0)}` items")
         md.append(f"- **Specification Diffs:** `{fru_res.get('diff_count', 0)}` items\n")
-        md.append(f"## 🔄 Field Diffs")
+        md.append(f"## 🔄 Specification Field Diffs Detail")
+        diff_count = 0
         for fld in fru_res.get('fields', []):
             if fld.get('is_diff'):
-                md.append(f"- **[{fld.get('section')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value')}` ➔ `{fld.get('pvt_value')}`")
+                diff_count += 1
+                md.append(f"{diff_count}. **[{fld.get('section')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value') or '(empty)'}` ➔ `{fld.get('pvt_value') or '(empty)'}`")
+        if diff_count == 0:
+            md.append("- *No parameter differences detected between selected files and sheets.*")
+
     elif tab == 'matrix':
         md.append(f"# 🧱 Build Matrix Release Summary")
-        md.append(f"**Generated Time:** `{now_str}` | **File:** `{os.path.basename(mat_p)}`\n")
+        md.append(f"**Generated Time:** `{now_str}`")
+        md.append(f"**Base File:** `{os.path.basename(mat_b_p)}` (`{b_sheet_name}`)")
+        md.append(f"**Target File:** `{os.path.basename(mat_t_p)}` (`{t_sheet_name}`)\n")
         if mat_res:
-            md.append(f"## 📋 Cross-Sheet Summary ({valid_ms[0]} 🆚 {valid_ms[1]})")
+            md.append(f"## 📋 Cross-Sheet Summary")
             md.append(f"- **Total Config Items:** `{mat_res.get('total_items', 0)}` items")
             md.append(f"- **Configuration Diffs:** `{mat_res.get('diff_items_count', 0)}` items\n")
-            md.append(f"## 🔄 Diffs Breakdown")
+            md.append(f"## 🔄 Configuration Diffs Detail")
+            diff_count = 0
             for it in mat_res.get('items', []):
                 if it.get('is_diff'):
-                    md.append(f"- **[{it.get('group_item')}]** `{it.get('description')}` (Modified across configs)")
+                    diff_count += 1
+                    md.append(f"{diff_count}. **[{it.get('group_item')}]** `{it.get('description')}` (Values differ across rack configs)")
+            if diff_count == 0:
+                md.append("- *No build matrix differences detected between selected sheets.*")
+
     else: # ALL
         md.append(f"# 🚀 META VR200 (SanMiguel) All-in-One Release Summary Report")
         md.append(f"**Generated Time:** `{now_str}`")
@@ -1246,9 +1275,9 @@ def api_release_summary():
 
         md.append(f"## 📋 1. Executive Summary")
         md.append(f"- **BKC Firmware Table:** `{len(bkc_items)}` components loaded from `{os.path.basename(bkc_p)}`")
-        md.append(f"- **FRU Specification:** `{fru_res.get('diff_count', 0)}` differences found between `{os.path.basename(dvt_p)}` & `{os.path.basename(pvt_p)}`")
+        md.append(f"- **FRU Specification:** `{fru_res.get('diff_count', 0)}` diffs (`{os.path.basename(dvt_p)}` 🆚 `{os.path.basename(pvt_p)}`)")
         if mat_res:
-            md.append(f"- **Build Matrix:** `{mat_res.get('diff_items_count', 0)}` diffs between `{valid_ms[0]}` & `{valid_ms[1]}`\n")
+            md.append(f"- **Build Matrix:** `{mat_res.get('diff_items_count', 0)}` diffs (`{b_sheet_name}` 🆚 `{t_sheet_name}`)\n")
 
         md.append(f"## ⚠️ 2. Critical Watchlist Impact")
         impacted_watchlist = []
