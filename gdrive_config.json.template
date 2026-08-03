@@ -1,10 +1,11 @@
 {
   "enabled": true,
   "credentials_file": "service_account.json",
-  "sync_interval_minutes": 30,
+  "schedule_mode": "twice_daily",
+  "sync_hours": "9,18",
   "folders": {
-    "bkc": "",
-    "fru": "",
-    "matrix": ""
+    "bkc": "YOUR_BKC_FOLDER_ID",
+    "fru": "YOUR_FRU_FOLDER_ID",
+    "matrix": "YOUR_BUILD_MATRIX_FOLDER_ID"
   }
 }

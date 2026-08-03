@@ -24,11 +24,20 @@ try:
     gcfg = load_config()
     if gcfg and gcfg.get('enabled', False):
         from apscheduler.schedulers.background import BackgroundScheduler
-        interval_min = int(gcfg.get('sync_interval_minutes', 30))
         scheduler = BackgroundScheduler(daemon=True)
-        scheduler.add_job(func=sync_all_gdrive_folders, trigger="interval", minutes=interval_min, id='gdrive_sync_job', replace_existing=True)
+        
+        # Default to twice a day (9:00 AM and 6:00 PM)
+        sync_hours = str(gcfg.get('sync_hours', '9,18'))
+        scheduler.add_job(
+            func=sync_all_gdrive_folders,
+            trigger="cron",
+            hour=sync_hours,
+            minute=0,
+            id='gdrive_sync_job',
+            replace_existing=True
+        )
         scheduler.start()
-        print(f"[GDrive Sync] Background scheduler started. Syncing every {interval_min} minutes.")
+        print(f"[GDrive Sync] Background scheduler started. Syncing twice daily at hours ({sync_hours}:00).")
 except Exception as g_err:
     print(f"[GDrive Sync] Background scheduler initialization skipped: {g_err}")
 
