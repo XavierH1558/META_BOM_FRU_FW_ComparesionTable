@@ -141,6 +141,30 @@ function getSummaryApiUrl(targetTab) {
     return url;
 }
 
+function getLoadingTitle(targetTab) {
+    if (targetTab === 'bkc') {
+        return {
+            title: '正在生成 BKC 韌體對照摘要報告...',
+            subtitle: 'Parsing BKC Firmware Control Table & compiling version summary'
+        };
+    } else if (targetTab === 'fru') {
+        return {
+            title: '正在生成 FRU 規格變更摘要報告...',
+            subtitle: 'Comparing Base & Target FRU Specification Fields'
+        };
+    } else if (targetTab === 'matrix') {
+        return {
+            title: '正在生成 Build Matrix 架構變更摘要報告...',
+            subtitle: 'Analyzing Build Matrix Configuration Diffs across Racks'
+        };
+    } else {
+        return {
+            title: '正在生成 全平台綜合發版摘要報告...',
+            subtitle: 'Analyzing BKC, FRU Spec, and Build Matrix differences'
+        };
+    }
+}
+
     // Release Summary Modal
     const summaryModal = document.getElementById('release-summary-modal');
     document.getElementById('btn-release-summary').addEventListener('click', async () => {
@@ -159,7 +183,8 @@ function getSummaryApiUrl(targetTab) {
             }
         });
 
-        showLoading('正在生成 Release Summary 摘要報告...', 'Analyzing selected file differences & building summary');
+        const loadingInfo = getLoadingTitle(defaultTab);
+        showLoading(loadingInfo.title, loadingInfo.subtitle);
         try {
             const url = getSummaryApiUrl(defaultTab);
             const res = await fetch(url);
@@ -203,7 +228,9 @@ function getSummaryApiUrl(targetTab) {
             btn.classList.remove('btn-secondary');
             btn.classList.add('btn-primary', 'active');
             const targetTab = btn.getAttribute('data-sumtab');
-            showLoading('載入摘要報告...', `Fetching release summary for ${targetTab}`);
+
+            const loadingInfo = getLoadingTitle(targetTab);
+            showLoading(loadingInfo.title, loadingInfo.subtitle);
             try {
                 const url = getSummaryApiUrl(targetTab);
                 const res = await fetch(url);
