@@ -1,0 +1,39 @@
+{
+  "matrix_files": [
+    {
+      "display_name": "[LIVE] VR200 PVT Build Matrix IGS.xlsx",
+      "path": "C:\\Users\\XavierHuang(黃任德)\\Python_Project\\META_BOM_FRU_FW_ComparesionTable\\data\\matrix\\[LIVE] VR200 PVT Build Matrix IGS.xlsx"
+    },
+    {
+      "display_name": "[LIVE] VR200 DVT Build Matrix IGS.xlsx",
+      "path": "C:\\Users\\XavierHuang(黃任德)\\Python_Project\\META_BOM_FRU_FW_ComparesionTable\\data\\matrix\\[LIVE] VR200 DVT Build Matrix IGS.xlsx"
+    },
+    {
+      "display_name": "SanMiguel(Ingrasys) Build Matrix_DVT_Draft_260325.xlsx",
+      "path": "C:\\Users\\XavierHuang(黃任德)\\Python_Project\\META_BOM_FRU_FW_ComparesionTable\\data\\matrix\\SanMiguel(Ingrasys) Build Matrix_DVT_Draft_260325.xlsx"
+    }
+  ],
+  "api_response": {
+    "query": "15-106079",
+    "results": {
+      "bkc": [],
+      "fru": [],
+      "matrix": [
+        {
+          "configs": {
+            "Config 1": "15-106078",
+            "Config 2": "15-106079",
+            "Config 3": "15-106080",
+            "Config 3_mini set": "",
+            "Config 4": "15-106618"
+          },
+          "description": "FBPN",
+          "file": "[LIVE] VR200 DVT Build Matrix IGS.xlsx",
+          "group_item": "TLA",
+          "sheet": "DVT"
+        }
+      ]
+    },
+    "success": true
+  }
+}

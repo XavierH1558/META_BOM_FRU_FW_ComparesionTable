@@ -1481,6 +1481,50 @@ def api_export_excel():
     )
 
 
+@app.route('/api/debug-search')
+def api_debug_search():
+    """Diagnostic endpoint to inspect file scanning and matrix search matches."""
+    q_raw = request.args.get('q', '15-106079')
+    clean_q = re.sub(r'[^a-zA-Z0-9]', '', q_raw.lower())
+
+    debug_info = {
+        'query_raw': q_raw,
+        'clean_query': clean_q,
+        'scanned_files': [],
+        'matches': []
+    }
+
+    for f in scan_files_in_dirs('matrix'):
+        try:
+            r_first, sheets, err = read_file_safe(f['path'])
+            debug_info['scanned_files'].append({
+                'filename': f['filename'],
+                'path': f['path'],
+                'sheets': sheets,
+                'error': err
+            })
+            for s in (sheets or [None]):
+                rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                if not rows: continue
+                parsed = parse_matrix_sheet(rows)
+                items_list = parsed[5] if len(parsed) >= 6 else []
+                for item in items_list:
+                    cfg_vals = " ".join([str(v) for v in item.get('values', {}).values()])
+                    searchable = f"{item.get('group_item','')} {item.get('attribute','')} {cfg_vals}"
+                    if clean_q in re.sub(r'[^a-zA-Z0-9]', '', searchable.lower()):
+                        debug_info['matches'].append({
+                            'file': f['filename'],
+                            'sheet': s,
+                            'group_item': item.get('group_item'),
+                            'attribute': item.get('attribute'),
+                            'values': item.get('values')
+                        })
+        except Exception as e:
+            debug_info['scanned_files'].append({'filename': f['filename'], 'error': str(e)})
+
+    return jsonify(debug_info)
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8050))
     app.run(host='0.0.0.0', port=port, debug=True)
