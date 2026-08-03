@@ -1317,3 +1317,170 @@ a.link-gdrive:hover {
     gap: 0.5rem;
 }
 
+/* Mode Toggle Button Group (High Contrast & Vibrant Active States) */
+.mode-toggle-group {
+    display: inline-flex;
+    align-items: center;
+    background: #090d16;
+    border: 1px solid var(--border-color);
+    padding: 3px;
+    border-radius: 8px;
+    gap: 4px;
+}
+
+.btn-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.95rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-mode:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* Active State for Single View: Vibrant Blue */
+.btn-mode.active#bkc-mode-single,
+.btn-mode.active#fru-mode-single,
+.btn-mode.active#matrix-mode-single {
+    background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+    color: #ffffff !important;
+    border-color: #60a5fa;
+    box-shadow: 0 0 14px rgba(59, 130, 246, 0.5);
+    font-weight: 700;
+}
+
+/* Active State for Compare View: Vibrant Purple/Violet */
+.btn-mode.active#bkc-mode-compare,
+.btn-mode.active#fru-mode-compare,
+.btn-mode.active#matrix-mode-compare {
+    background: linear-gradient(135deg, #6d28d9 0%, #8b5cf6 100%);
+    color: #ffffff !important;
+    border-color: #a78bfa;
+    box-shadow: 0 0 14px rgba(139, 92, 246, 0.5);
+    font-weight: 700;
+}
+
+/* Global Glassmorphic Loading Overlay Animation */
+.global-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.25s ease-in-out;
+    pointer-events: auto;
+}
+
+.global-loading-overlay.active {
+    opacity: 1;
+}
+
+.loading-card {
+    background: #1e293b;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-radius: 16px;
+    padding: 2.5rem 3rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(59, 130, 246, 0.25);
+    transform: scale(0.92);
+    transition: transform 0.25s ease-out;
+}
+
+.global-loading-overlay.active .loading-card {
+    transform: scale(1);
+}
+
+.loading-spinner-wrapper {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.loading-spinner-ring {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 4px solid rgba(59, 130, 246, 0.15);
+    border-top: 4px solid #3b82f6;
+    border-right: 4px solid #06b6d4;
+    border-radius: 50%;
+    animation: spinRing 0.9s linear infinite;
+}
+
+.loading-spinner-icon {
+    font-size: 1.8rem;
+    color: #3b82f6;
+    animation: pulseIcon 1.5s ease-in-out infinite alternate;
+}
+
+.loading-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: 0.01em;
+}
+
+.loading-subtitle {
+    font-size: 0.82rem;
+    color: #94a3b8;
+}
+
+.loading-progress-bar {
+    width: 220px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+.loading-progress-line {
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #06b6d4, #8b5cf6);
+    border-radius: 4px;
+    animation: progressIndeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes spinRing {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes pulseIcon {
+    0% { transform: scale(0.9); opacity: 0.8; }
+    100% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes progressIndeterminate {
+    0% { transform: translateX(-100%); width: 30%; }
+    50% { width: 70%; }
+    100% { transform: translateX(300%); width: 30%; }
+}
+

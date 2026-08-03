@@ -27,6 +27,29 @@ const appState = {
     }
 };
 
+// Global Loading Animation Controls
+function showLoading(title = '正在讀取並解析 Excel 表單...', subtitle = 'Parsing workbook data & generating comparison table') {
+    const overlay = document.getElementById('global-loading-overlay');
+    const titleEl = document.getElementById('loading-title');
+    const subEl = document.getElementById('loading-subtitle');
+    if (titleEl) titleEl.textContent = title;
+    if (subEl) subEl.textContent = subtitle;
+    if (overlay) {
+        overlay.style.display = 'flex';
+        setTimeout(() => overlay.classList.add('active'), 10);
+    }
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('global-loading-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+        setTimeout(() => {
+            overlay.style.display = 'none';
+        }, 250);
+    }
+}
+
 
 
 
@@ -277,9 +300,10 @@ function initEventListeners() {
 
     btnMatrixSingle.addEventListener('click', () => {
         appState.matrixMode = 'single';
-        appState.matrixSelectedGroup = 'ALL';
         btnMatrixSingle.classList.add('active');
         btnMatrixCompare.classList.remove('active');
+        const singleFileBox = document.getElementById('matrix-single-file-box');
+        if (singleFileBox) singleFileBox.style.display = 'flex';
         document.getElementById('matrix-single-controls').style.display = 'flex';
         document.getElementById('matrix-compare-controls').style.display = 'none';
         document.getElementById('matrix-only-diff-toggle').checked = false;
@@ -288,9 +312,10 @@ function initEventListeners() {
 
     btnMatrixCompare.addEventListener('click', () => {
         appState.matrixMode = 'compare';
-        appState.matrixSelectedGroup = 'ALL';
         btnMatrixCompare.classList.add('active');
         btnMatrixSingle.classList.remove('active');
+        const singleFileBox = document.getElementById('matrix-single-file-box');
+        if (singleFileBox) singleFileBox.style.display = 'none';
         document.getElementById('matrix-single-controls').style.display = 'none';
         document.getElementById('matrix-compare-controls').style.display = 'flex';
         document.getElementById('matrix-only-diff-toggle').checked = true;
@@ -307,17 +332,54 @@ function initEventListeners() {
         else renderMatrixTable();
     });
     document.getElementById('matrix-sheet-select').addEventListener('change', (e) => {
-        appState.matrixSelectedGroup = 'ALL';
         fetchMatrixData(e.target.value);
     });
-    document.getElementById('matrix-base-sheet-select').addEventListener('change', () => {
-        appState.matrixSelectedGroup = 'ALL';
-        fetchMatrixCompareData();
-    });
-    document.getElementById('matrix-target-sheet-select').addEventListener('change', () => {
-        appState.matrixSelectedGroup = 'ALL';
-        fetchMatrixCompareData();
-    });
+
+    const matrixBaseFileSelect = document.getElementById('matrix-base-file-select');
+    const matrixTargetFileSelect = document.getElementById('matrix-target-file-select');
+    const matrixBaseSheetSelect = document.getElementById('matrix-base-sheet-select');
+    const matrixTargetSheetSelect = document.getElementById('matrix-target-sheet-select');
+
+    if (matrixBaseFileSelect) {
+        matrixBaseFileSelect.addEventListener('change', () => {
+            fetchMatrixCompareData();
+        });
+    }
+    if (matrixTargetFileSelect) {
+        matrixTargetFileSelect.addEventListener('change', () => {
+            fetchMatrixCompareData();
+        });
+    }
+    if (matrixBaseSheetSelect) {
+        matrixBaseSheetSelect.addEventListener('change', () => {
+            fetchMatrixCompareData();
+        });
+    }
+    if (matrixTargetSheetSelect) {
+        matrixTargetSheetSelect.addEventListener('change', () => {
+            fetchMatrixCompareData();
+        });
+    }
+
+    const matrixPillsToggle = document.getElementById('matrix-pills-toggle');
+    if (matrixPillsToggle) {
+        matrixPillsToggle.addEventListener('click', () => {
+            const list = document.getElementById('matrix-group-pills');
+            const chevron = document.getElementById('matrix-pills-chevron');
+            const toggleText = document.getElementById('matrix-pills-toggle-text');
+            if (list) {
+                if (list.style.display === 'none') {
+                    list.style.display = 'flex';
+                    if (chevron) chevron.style.transform = 'rotate(180deg)';
+                    if (toggleText) toggleText.textContent = '點擊折疊標籤 (Click to Collapse)';
+                } else {
+                    list.style.display = 'none';
+                    if (chevron) chevron.style.transform = 'rotate(0deg)';
+                    if (toggleText) toggleText.textContent = '點擊展開標籤 (Click to Expand)';
+                }
+            }
+        });
+    }
 }
 
 // Upload Modal & Drag-and-Drop Setup
@@ -461,6 +523,7 @@ function populateSheetSelect(boxId, selectId, sheets, activeSheet) {
 
 // ==================== TAB 1: BKC TABLE ====================
 async function fetchBkcData(sheet = null) {
+    showLoading('正在讀取並解析 BKC Table...', 'Parsing BKC Firmware Control Table');
     try {
         let url = '/api/bkc';
         const params = [];
@@ -482,10 +545,13 @@ async function fetchBkcData(sheet = null) {
         }
     } catch (err) {
         console.error('Failed to fetch BKC table:', err);
+    } finally {
+        hideLoading();
     }
 }
 
 async function fetchBkcCompareData(baseSheet = null, targetSheet = null) {
+    showLoading('正在比對 BKC Table...', 'Comparing BKC Base vs Target Worksheets');
     try {
         let url = '/api/bkc-compare';
         const params = [];
@@ -507,6 +573,8 @@ async function fetchBkcCompareData(baseSheet = null, targetSheet = null) {
         }
     } catch (err) {
         console.error('Failed to fetch BKC compare data:', err);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -1050,6 +1118,7 @@ function attachCategoryHeaderListeners(tbody) {
 
 // ==================== TAB 2: FRU TABLE COMPARISON ====================
 async function fetchFruSingleData(sheet = null) {
+    showLoading('正在讀取並解析 FRU Spec...', 'Parsing FRU specification workbook');
     try {
         let url = '/api/fru';
         const params = [];
@@ -1071,10 +1140,13 @@ async function fetchFruSingleData(sheet = null) {
         }
     } catch (err) {
         console.error('Failed to fetch single FRU table:', err);
+    } finally {
+        hideLoading();
     }
 }
 
 async function fetchFruCompareData(bSheet = null, tSheet = null) {
+    showLoading('正在比對 FRU Specifications...', 'Comparing FRU Base vs Target workbooks');
     try {
         let url = '/api/fru-compare';
         const params = [];
@@ -1106,6 +1178,8 @@ async function fetchFruCompareData(bSheet = null, tSheet = null) {
         }
     } catch (err) {
         console.error('Failed to fetch FRU comparison:', err);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -1562,6 +1636,7 @@ function attachFruSectionHeaderListeners(tbody) {
 
 // ==================== TAB 3: BUILD MATRIX ====================
 async function fetchMatrixData(sheet = null) {
+    showLoading('正在讀取並解析 Build Matrix...', 'Parsing Excel workbook & rendering matrix table');
     try {
         let url = '/api/build-matrix';
         const params = [];
@@ -1573,34 +1648,45 @@ async function fetchMatrixData(sheet = null) {
         const data = await res.json();
         if (data.success) {
             appState.matrix = data;
-            populateFileSelect('matrix-file-select', data.summary.available_files, appState.selectedFiles.matrix);
-            // Populate single-mode sheet select (shows the box)
+            appState.selectedFiles.matrix = data.summary.active_file;
+
+            populateFileSelect('matrix-file-select', data.summary.available_files, data.summary.active_file);
             populateSheetSelect('matrix-single-controls', 'matrix-sheet-select', data.summary.sheets, data.summary.active_sheet, true);
-            // Populate base/target sheet selects WITHOUT showing compare-controls (forceShow=false)
-            // Skip 'Revision History' sheet as default
-            const dataSheets = (data.summary.sheets || []).filter(s => !s.toLowerCase().includes('revision') && !s.toLowerCase().includes('history'));
-            const defaultBase = dataSheets[0] || data.summary.sheets?.[0];
-            const defaultTarget = dataSheets[dataSheets.length - 1] || defaultBase;
-            populateSheetSelect('matrix-compare-controls', 'matrix-base-sheet-select', data.summary.sheets, defaultBase, false);
-            populateSheetSelect('matrix-compare-controls', 'matrix-target-sheet-select', data.summary.sheets, defaultTarget, false);
+
+            // Populate Compare Mode file and sheet selects
+            const baseFileSelect = document.getElementById('matrix-base-file-select');
+            const targetFileSelect = document.getElementById('matrix-target-file-select');
+            if (baseFileSelect && (!baseFileSelect.options || baseFileSelect.options.length === 0)) {
+                populateFileSelect('matrix-base-file-select', data.summary.available_files, data.summary.active_file);
+            }
+            if (targetFileSelect && (!targetFileSelect.options || targetFileSelect.options.length === 0)) {
+                const targetDefault = data.summary.available_files.length > 1 ? data.summary.available_files[1].path : data.summary.active_file;
+                populateFileSelect('matrix-target-file-select', data.summary.available_files, targetDefault);
+            }
+
             renderMatrixConfigCards(data.summary);
             renderMatrixTable();
         }
 
     } catch (err) {
         console.error('Failed to fetch Build Matrix:', err);
+    } finally {
+        hideLoading();
     }
 }
 
 async function fetchMatrixCompareData() {
+    showLoading('正在進行 Build Matrix 兩檔對比...', 'Cross-referencing base and target matrix workbooks');
     try {
+        const baseFile    = document.getElementById('matrix-base-file-select')?.value || appState.selectedFiles.matrix;
+        const targetFile  = document.getElementById('matrix-target-file-select')?.value || appState.selectedFiles.matrix;
         const baseSheet   = document.getElementById('matrix-base-sheet-select')?.value;
         const targetSheet = document.getElementById('matrix-target-sheet-select')?.value;
 
         let url = '/api/build-matrix-compare';
         const params = [];
-        if (appState.selectedFiles.matrix) params.push(`base_file=${encodeURIComponent(appState.selectedFiles.matrix)}`);
-        if (appState.selectedFiles.matrix) params.push(`target_file=${encodeURIComponent(appState.selectedFiles.matrix)}`);
+        if (baseFile) params.push(`base_file=${encodeURIComponent(baseFile)}`);
+        if (targetFile) params.push(`target_file=${encodeURIComponent(targetFile)}`);
         if (baseSheet)   params.push(`base_sheet=${encodeURIComponent(baseSheet)}`);
         if (targetSheet) params.push(`target_sheet=${encodeURIComponent(targetSheet)}`);
         if (params.length > 0) url += '?' + params.join('&');
@@ -1612,6 +1698,13 @@ async function fetchMatrixCompareData() {
         const data = await res.json();
         if (data.success) {
             appState.matrixCompare = data;
+
+            populateFileSelect('matrix-base-file-select', data.summary.available_files, data.summary.base_path || baseFile);
+            populateFileSelect('matrix-target-file-select', data.summary.available_files, data.summary.target_path || targetFile);
+
+            populateSheetSelect(null, 'matrix-base-sheet-select', data.summary.base_sheets, data.summary.base_sheet);
+            populateSheetSelect(null, 'matrix-target-sheet-select', data.summary.target_sheets, data.summary.target_sheet);
+
             renderMatrixCompareCards(data.summary);
             renderMatrixCompareTable();
         } else {
@@ -1619,6 +1712,8 @@ async function fetchMatrixCompareData() {
         }
     } catch (err) {
         console.error('Failed to fetch Build Matrix Compare:', err);
+    } finally {
+        hideLoading();
     }
 }
 function renderMatrixGroupPills(items) {
@@ -1628,7 +1723,7 @@ function renderMatrixGroupPills(items) {
     // Collect unique group_item names and count items and diff items per group
     const groupMap = {}; // { groupName: { total, diffs } }
     items.forEach(item => {
-        const g = item.group_item || '(無群組)';
+        const g = item.group_item || 'General / Header';
         if (!groupMap[g]) groupMap[g] = { total: 0, diffs: 0 };
         groupMap[g].total++;
         // For single mode: is_diff; for compare mode: is_diff
@@ -1658,10 +1753,26 @@ function renderMatrixGroupPills(items) {
 
     container.innerHTML = html;
 
+    const countBadge = document.getElementById('matrix-pills-count-badge');
+    if (countBadge) countBadge.textContent = `${Object.keys(groupMap).length} 個群組`;
+
+    const updateSelectedLabel = () => {
+        const selectedLabel = document.getElementById('matrix-pills-selected-label');
+        if (selectedLabel) {
+            if (appState.matrixSelectedGroup && appState.matrixSelectedGroup !== 'ALL') {
+                selectedLabel.textContent = `| 目前選擇: ${appState.matrixSelectedGroup}`;
+                selectedLabel.style.display = 'inline';
+            } else {
+                selectedLabel.style.display = 'none';
+            }
+        }
+    };
+    updateSelectedLabel();
+
     container.querySelectorAll('.cat-pill').forEach(pill => {
         pill.addEventListener('click', () => {
             appState.matrixSelectedGroup = pill.getAttribute('data-group');
-            // Re-render active pill state
+            updateSelectedLabel();
             container.querySelectorAll('.cat-pill').forEach(p =>
                 p.classList.toggle('active', p.getAttribute('data-group') === appState.matrixSelectedGroup)
             );

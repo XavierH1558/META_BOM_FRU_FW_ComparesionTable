@@ -340,10 +340,20 @@
                 <div class="config-cards-container" id="matrix-config-cards">
                 </div>
 
-                <!-- Group Item Category Pills (same pattern as BKC / FRU) -->
-                <div class="category-pills-container">
-                    <div class="category-pills-label"><i class="fa-solid fa-layer-group"></i> 組件群組 (Group Items):</div>
-                    <div class="category-pills-list" id="matrix-group-pills">
+                <!-- Group Item Category Pills (Collapsible & Collapsed by Default) -->
+                <div class="category-pills-container" id="matrix-pills-container">
+                    <div class="category-pills-header" id="matrix-pills-toggle" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 0.5rem 0.8rem; user-select: none; border-radius: 6px; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-color);">
+                        <div class="category-pills-label" style="display: flex; align-items: center; gap: 0.6rem; font-weight: 600; font-size: 0.9rem;">
+                            <i class="fa-solid fa-layer-group" style="color: var(--accent-cyan);"></i> 組件群組過濾 (Group Items Filter)
+                            <span class="badge badge-info" id="matrix-pills-count-badge">0 個群組</span>
+                            <span id="matrix-pills-selected-label" style="font-size: 0.85rem; color: var(--warning-amber); font-weight: 500; display: none;"></span>
+                        </div>
+                        <div class="pills-toggle-action" style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+                            <span id="matrix-pills-toggle-text">點擊展開標籤 (Click to Expand)</span>
+                            <i class="fa-solid fa-chevron-down" id="matrix-pills-chevron" style="transition: transform 0.2s;"></i>
+                        </div>
+                    </div>
+                    <div class="category-pills-list" id="matrix-group-pills" style="display: none; padding-top: 0.8rem; margin-top: 0.4rem; border-top: 1px dashed var(--border-color);">
                         <!-- Dynamic pills inserted here -->
                     </div>
                 </div>
@@ -359,28 +369,29 @@
                         </button>
                     </div>
 
-                    <!-- File Selector -->
-                    <div class="select-box" title="切換資料夾中的 Matrix 檔案">
+                    <!-- Single Mode: File & Sheet Selector -->
+                    <div class="select-box" id="matrix-single-file-box" title="切換資料夾中的 Matrix 檔案">
                         <span class="select-label"><i class="fa-solid fa-file-excel"></i> 檔案:</span>
                         <select id="matrix-file-select"></select>
                     </div>
 
-                    <!-- Single Mode: Sheet Selector -->
                     <div class="select-box" id="matrix-single-controls">
                         <span class="select-label"><i class="fa-solid fa-table-columns"></i> Sheet:</span>
                         <select id="matrix-sheet-select" title="選擇 Excel 工作表 (Worksheet)"></select>
                     </div>
 
-                    <!-- Compare Mode: Base + Target Sheet Selectors (hidden by default) -->
+                    <!-- Compare Mode: Base (File + Sheet) VS Target (File + Sheet) Selectors -->
                     <div class="compare-controls-group flex-wrap" id="matrix-compare-controls" style="display: none; gap: 0.8rem; align-items: center;">
-                        <div class="select-box" title="選擇 Base 基準工作表">
+                        <div class="select-box" title="選擇 Base 基準檔案與工作表">
                             <span class="select-label">Base:</span>
-                            <select id="matrix-base-sheet-select" style="max-width: 200px;" title="選擇 Base Sheet"></select>
+                            <select id="matrix-base-file-select" style="max-width: 220px;" title="選擇 Base 檔案"></select>
+                            <select id="matrix-base-sheet-select" style="max-width: 130px;" title="選擇 Base Sheet"></select>
                         </div>
                         <div class="vs-divider">VS</div>
-                        <div class="select-box" title="選擇 Target 比對工作表">
+                        <div class="select-box" title="選擇 Target 比對檔案與工作表">
                             <span class="select-label">Target:</span>
-                            <select id="matrix-target-sheet-select" style="max-width: 200px;" title="選擇 Target Sheet"></select>
+                            <select id="matrix-target-file-select" style="max-width: 220px;" title="選擇 Target 檔案"></select>
+                            <select id="matrix-target-sheet-select" style="max-width: 130px;" title="選擇 Target Sheet"></select>
                         </div>
                     </div>
 
@@ -449,6 +460,23 @@
                     </button>
                 </div>
                 <div class="upload-progress" id="upload-status-text" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global High-Tech Loading Modal Overlay -->
+    <div class="global-loading-overlay" id="global-loading-overlay" style="display: none;">
+        <div class="loading-card">
+            <div class="loading-spinner-wrapper">
+                <div class="loading-spinner-ring"></div>
+                <div class="loading-spinner-icon">
+                    <i class="fa-solid fa-file-excel"></i>
+                </div>
+            </div>
+            <div class="loading-title" id="loading-title">正在讀取並解析 Excel 表單...</div>
+            <div class="loading-subtitle" id="loading-subtitle">Parsing workbook data & rendering comparison table</div>
+            <div class="loading-progress-bar">
+                <div class="loading-progress-line"></div>
             </div>
         </div>
     </div>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+service_account.json
+credentials.json
+token.json
+gdrive_config.json
+*.tmp
+.DS_Store

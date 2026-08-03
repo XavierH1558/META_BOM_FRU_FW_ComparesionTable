@@ -18,6 +18,20 @@ os.makedirs(os.path.join(DATA_DIR, 'matrix'), exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Initialize Google Drive Background Sync Scheduler if enabled in gdrive_config.json
+try:
+    from gdrive_sync import sync_all_gdrive_folders, load_config
+    gcfg = load_config()
+    if gcfg and gcfg.get('enabled', False):
+        from apscheduler.schedulers.background import BackgroundScheduler
+        interval_min = int(gcfg.get('sync_interval_minutes', 30))
+        scheduler = BackgroundScheduler(daemon=True)
+        scheduler.add_job(func=sync_all_gdrive_folders, trigger="interval", minutes=interval_min, id='gdrive_sync_job', replace_existing=True)
+        scheduler.start()
+        print(f"[GDrive Sync] Background scheduler started. Syncing every {interval_min} minutes.")
+except Exception as g_err:
+    print(f"[GDrive Sync] Background scheduler initialization skipped: {g_err}")
+
 # Base directory roots (supports local Mac paths + repo data folder + uploads)
 DIR_ROOTS = {
     'bkc': [
@@ -63,7 +77,7 @@ def scan_files_in_dirs(tab_key):
     for d in dirs:
         if not os.path.exists(d): continue
         for root, _, files in os.walk(d):
-            for f in sorted(files):
+            for f in files:
                 if f.endswith(('.xlsx', '.csv')) and not f.startswith(('._', '~$')):
                     full_p = os.path.join(root, f)
                     if full_p in seen: continue
@@ -72,13 +86,22 @@ def scan_files_in_dirs(tab_key):
                     is_upload = (d == UPLOAD_FOLDER)
                     display_name = f"[Uploaded] {f}" if is_upload else os.path.basename(f)
                     
+                    mtime = os.path.getmtime(full_p) if os.path.exists(full_p) else 0
                     found.append({
                         'filename': f,
                         'display_name': display_name,
                         'path': full_p,
-                        'is_excel': f.endswith(('.xlsx', '.xls'))
+                        'is_excel': f.endswith(('.xlsx', '.xls')),
+                        'mtime': mtime
                     })
+    # Sort files by modification time descending (latest files first)
+    found.sort(key=lambda x: x['mtime'], reverse=True)
     return found
+
+def filter_valid_data_sheets(sheets):
+    ignored_keywords = {'readme', 'change log', 'changelog', 'history', 'revision history', 'single source vendor', 'instructions', 'notes'}
+    valid = [s for s in sheets if not any(k in s.lower() for k in ignored_keywords)]
+    return valid if valid else sheets
 
 def read_file_safe(path, sheet_name=None):
     if not path or not os.path.exists(path):
@@ -91,14 +114,18 @@ def read_file_safe(path, sheet_name=None):
         try:
             wb = openpyxl.load_workbook(path, data_only=True)
             sheet_names = wb.sheetnames
-            target_sheet = sheet_name if (sheet_name and sheet_name in sheet_names) else sheet_names[0]
+            valid_sheets = filter_valid_data_sheets(sheet_names)
+            if sheet_name and sheet_name in sheet_names:
+                target_sheet = sheet_name
+            else:
+                target_sheet = valid_sheets[0]
             ws = wb[target_sheet]
             
             rows = []
             for r in ws.iter_rows(values_only=True):
                 row_str = [str(cell).strip() if cell is not None else '' for cell in r]
                 rows.append(row_str)
-            return rows, sheet_names, None
+            return rows, valid_sheets, None
         except Exception as e:
             return None, [], str(e)
     else:
@@ -713,7 +740,7 @@ def parse_matrix_sheet(rows):
 
     items_dict   = {}   # {(group_item, attribute): {cfg_name: val}}
     items_list   = []
-    current_group = ''
+    current_group = 'General / Header'
     total_diff   = 0
 
     for idx in range(config_row_idx + 3, len(rows)):
@@ -735,6 +762,10 @@ def parse_matrix_sheet(rows):
             vals[cfg_name] = val
             if val: row_vals.append(val)
 
+        # Skip rows where all values are empty and attribute is purely metadata label
+        if not row_vals and col1.lower() in ['igs', 'meta', 'note', 'comment', 'notes', '']:
+            continue
+
         is_diff = len(set(row_vals)) > 1
         if is_diff: total_diff += 1
 
@@ -752,62 +783,10 @@ def parse_matrix_sheet(rows):
     return configs, configs_info, descriptions, rack_qty, items_dict, items_list, total_diff
 
 
-@app.route('/api/build-matrix')
-def get_build_matrix():
-    req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
-    requested_sheet = request.args.get('sheet', 'DVT - L10 Build Matrix')
-
-    rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
-    if err:
-        return jsonify({'success': False, 'error': err}), 400
-
-    configs, _, descriptions, rack_qty, _, items_list, total_diff = parse_matrix_sheet(rows)
-
-    active_sh = requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None)
-
-    return jsonify({
-        'success': True,
-        'summary': {
-            'filename': os.path.basename(path),
-            'active_file': path,
-            'configs': configs,
-            'descriptions': descriptions,
-            'rack_qty': rack_qty,
-            'total_items': len(items_list),
-            'diff_items_count': total_diff,
-            'sheets': sheets,
-            'active_sheet': active_sh,
-            'available_files': scan_files_in_dirs('matrix')
-        },
-        'items': items_list
-    })
-
-
-@app.route('/api/build-matrix-compare')
-def get_build_matrix_compare():
-    """Compare two build-matrix sheets (can be different files or different sheets in same file)."""
-    base_file  = request.args.get('base_file',  None)
-    base_sheet = request.args.get('base_sheet', 'DVT - L10 Build Matrix')
-    tgt_file   = request.args.get('target_file',  None)
-    tgt_sheet  = request.args.get('target_sheet', 'PVT2- L11 Build Matrix-NSF')
-
-    default_path = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
-    base_path = base_file if (base_file and os.path.exists(base_file)) else default_path
-    tgt_path  = tgt_file  if (tgt_file  and os.path.exists(tgt_file))  else default_path
-
-    base_rows, base_sheets, err1 = read_file_safe(base_path, sheet_name=base_sheet)
-    if err1:
-        return jsonify({'success': False, 'error': f'Base sheet error: {err1}'}), 400
-
-    tgt_rows, tgt_sheets, err2 = read_file_safe(tgt_path, sheet_name=tgt_sheet)
-    if err2:
-        return jsonify({'success': False, 'error': f'Target sheet error: {err2}'}), 400
-
+def compare_two_matrix_sheets(base_rows, tgt_rows):
     b_configs, _, b_descs, b_qty, b_dict, _, _ = parse_matrix_sheet(base_rows)
     t_configs, _, t_descs, t_qty, t_dict, _, _ = parse_matrix_sheet(tgt_rows)
 
-    # Union all (group_item, attribute) keys, preserving base order then target extras
     seen_keys   = set()
     ordered_keys = []
     for k in b_dict:
@@ -832,7 +811,6 @@ def get_build_matrix_compare():
         elif t_vals is None:
             diff_type = 'base_only'
         else:
-            # Compare: consider changed if any non-empty value differs across union of config names
             b_set = set(v for v in b_vals.values() if v)
             t_set = set(v for v in t_vals.values() if v)
             diff_type = 'changed' if b_set != t_set else 'same'
@@ -850,27 +828,133 @@ def get_build_matrix_compare():
             'is_diff':   is_diff
         })
 
+    return {
+        'base_configs': b_configs,
+        'target_configs': t_configs,
+        'base_descriptions': b_descs,
+        'target_descriptions': t_descs,
+        'base_rack_qty': b_qty,
+        'target_rack_qty': t_qty,
+        'diff_items_count': diff_count,
+        'total_items': len(compare_items),
+        'items': compare_items
+    }
+
+
+@app.route('/api/build-matrix')
+def get_build_matrix():
+    req_path = request.args.get('file_path', None)
+    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    requested_sheet = request.args.get('sheet', None)
+
+    rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
+    if err:
+        return jsonify({'success': False, 'error': err}), 400
+
+    configs, _, descriptions, rack_qty, _, items_list, total_diff = parse_matrix_sheet(rows)
+    active_sh = requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None)
+
+    auto_compare = None
+    if len(sheets) >= 2:
+        base_sh = sheets[0]
+        tgt_sh = sheets[1]
+        r_base, _, _ = read_file_safe(path, sheet_name=base_sh)
+        r_tgt, _, _ = read_file_safe(path, sheet_name=tgt_sh)
+        if r_base and r_tgt:
+            res = compare_two_matrix_sheets(r_base, r_tgt)
+            auto_compare = {
+                'is_multi_sheet': True,
+                'base_sheet': base_sh,
+                'target_sheet': tgt_sh,
+                'diff_count': res['diff_items_count'],
+                'total_items': res['total_items'],
+                'base_configs': res['base_configs'],
+                'target_configs': res['target_configs'],
+                'items': res['items']
+            }
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'filename': os.path.basename(path),
+            'active_file': path,
+            'configs': configs,
+            'descriptions': descriptions,
+            'rack_qty': rack_qty,
+            'total_items': len(items_list),
+            'diff_items_count': total_diff,
+            'sheets': sheets,
+            'active_sheet': active_sh,
+            'available_files': scan_files_in_dirs('matrix')
+        },
+        'items': items_list,
+        'auto_compare': auto_compare
+    })
+
+
+@app.route('/api/build-matrix-compare')
+def get_build_matrix_compare():
+    """Compare two build-matrix sheets (can be different files or different sheets in same file)."""
+    base_file  = request.args.get('base_file',  None)
+    base_sheet = request.args.get('base_sheet', None)
+    tgt_file   = request.args.get('target_file',  None)
+    tgt_sheet  = request.args.get('target_sheet', None)
+
+    default_path = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    base_path = base_file if (base_file and os.path.exists(base_file)) else default_path
+    tgt_path  = tgt_file  if (tgt_file  and os.path.exists(tgt_file))  else default_path
+
+    base_rows, base_sheets, err1 = read_file_safe(base_path, sheet_name=base_sheet)
+    if err1:
+        return jsonify({'success': False, 'error': f'Base sheet error: {err1}'}), 400
+
+    tgt_rows, tgt_sheets, err2 = read_file_safe(tgt_path, sheet_name=tgt_sheet)
+    if err2:
+        return jsonify({'success': False, 'error': f'Target sheet error: {err2}'}), 400
+
+    b_sheet = base_sheet if (base_sheet and base_sheet in base_sheets) else base_sheets[0]
+    t_sheet = tgt_sheet if (tgt_sheet and tgt_sheet in tgt_sheets) else (tgt_sheets[1] if len(tgt_sheets) > 1 else tgt_sheets[0])
+
+    res = compare_two_matrix_sheets(base_rows, tgt_rows)
+
     return jsonify({
         'success': True,
         'summary': {
             'base_file':    os.path.basename(base_path),
-            'base_sheet':   base_sheet,
+            'base_sheet':   b_sheet,
             'target_file':  os.path.basename(tgt_path),
-            'target_sheet': tgt_sheet,
-            'base_configs':   b_configs,
-            'target_configs': t_configs,
-            'base_descriptions':   b_descs,
-            'target_descriptions': t_descs,
-            'base_rack_qty':   b_qty,
-            'target_rack_qty': t_qty,
-            'total_items': len(compare_items),
-            'diff_items_count': diff_count,
+            'target_sheet': t_sheet,
+            'base_configs':   res['base_configs'],
+            'target_configs': res['target_configs'],
+            'base_descriptions':   res['base_descriptions'],
+            'target_descriptions': res['target_descriptions'],
+            'base_rack_qty':   res['base_rack_qty'],
+            'target_rack_qty': res['target_rack_qty'],
+            'total_items': res['total_items'],
+            'diff_items_count': res['diff_items_count'],
             'base_sheets':   base_sheets,
             'target_sheets': tgt_sheets,
             'available_files': scan_files_in_dirs('matrix')
         },
-        'items': compare_items
+        'items': res['items']
     })
+
+
+@app.route('/api/sync-gdrive', methods=['POST', 'GET'])
+def api_sync_gdrive():
+    """Manual trigger endpoint for Google Drive sync."""
+    try:
+        from gdrive_sync import sync_all_gdrive_folders
+        res = sync_all_gdrive_folders()
+        return jsonify({
+            'success': True,
+            'result': res
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':
