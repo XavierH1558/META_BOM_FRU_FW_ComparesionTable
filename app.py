@@ -148,6 +148,22 @@ def read_file_safe(path, sheet_name=None):
         except Exception as e:
             return None, [], str(e)
 
+FILE_ROWS_CACHE = {}
+
+def read_file_safe_cached(path, sheet_name=None):
+    if not path or not os.path.exists(path):
+        return None, [], f"File not found: {path}"
+    try:
+        mtime = os.path.getmtime(path)
+        cache_key = (path, sheet_name, mtime)
+        if cache_key in FILE_ROWS_CACHE:
+            return FILE_ROWS_CACHE[cache_key]
+        res = read_file_safe(path, sheet_name=sheet_name)
+        FILE_ROWS_CACHE[cache_key] = res
+        return res
+    except Exception:
+        return read_file_safe(path, sheet_name=sheet_name)
+
 def parse_version_tuple(ver_str):
     if not ver_str or ver_str in ['-', 'NA', 'TBD']:
         return ()
@@ -1109,7 +1125,7 @@ def compare_two_fru_sheets(rows_dvt, rows_pvt):
 
 @app.route('/api/global-search', methods=['GET'])
 def api_global_search():
-    """Search across ALL files and ALL sheets of BKC, FRU, and Build Matrix with fuzzy-clean matching."""
+    """Fast search across active and latest BKC, FRU, and Build Matrix tables with fuzzy-clean matching."""
     q_raw = request.args.get('q', '')
     # Strip any leading/trailing tabs (\t), newlines, spaces, non-breaking spaces (\xa0, \u00a0, \u200b)
     q_raw = re.sub(r'^[\s\xa0\u00a0\u200b\t\r\n]+|[\s\xa0\u00a0\u200b\t\r\n]+$', '', q_raw).strip()
@@ -1131,13 +1147,14 @@ def api_global_search():
                 return True
         return False
 
-    # Search BKC across all files and sheets
-    for f in scan_files_in_dirs('bkc'):
+    # 1. Search BKC (Active latest files only, max 2)
+    bkc_files = scan_files_in_dirs('bkc')[:2]
+    for f in bkc_files:
         try:
-            r_first, sheets, _ = read_file_safe(f['path'])
-            for s in (sheets or [None]):
+            r_first, sheets, _ = read_file_safe_cached(f['path'])
+            for s in (sheets[:2] if sheets else [None]):
                 try:
-                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe_cached(f['path'], sheet_name=s)[0]
                     if not rows: continue
                     bkc_items = parse_bkc_items(rows)
                     for item in bkc_items:
@@ -1153,17 +1170,18 @@ def api_global_search():
                                 'pvt_version': item.get('version')
                             })
                 except Exception as ex:
-                    print(f"Error scanning BKC file {f.get('filename')} sheet {s}: {ex}")
+                    pass
         except Exception as ex:
-            print(f"Error scanning BKC file {f.get('filename')}: {ex}")
+            pass
 
-    # Search FRU across all files and sheets
-    for f in scan_files_in_dirs('fru'):
+    # 2. Search FRU (Active latest files only, max 3)
+    fru_files = scan_files_in_dirs('fru')[:3]
+    for f in fru_files:
         try:
-            r_first, sheets, _ = read_file_safe(f['path'])
-            for s in (sheets or [None]):
+            r_first, sheets, _ = read_file_safe_cached(f['path'])
+            for s in (sheets[:2] if sheets else [None]):
                 try:
-                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe_cached(f['path'], sheet_name=s)[0]
                     if not rows: continue
                     mods, keys, data_dict = parse_fru_sheet_smart(rows)
                     for (sec, f_name) in keys:
@@ -1180,17 +1198,18 @@ def api_global_search():
                                 'pvt_value': vals
                             })
                 except Exception as ex:
-                    print(f"Error scanning FRU file {f.get('filename')} sheet {s}: {ex}")
+                    pass
         except Exception as ex:
-            print(f"Error scanning FRU file {f.get('filename')}: {ex}")
+            pass
 
-    # Search Matrix across all files and sheets
-    for f in scan_files_in_dirs('matrix'):
+    # 3. Search Matrix (Active latest files only, max 3)
+    matrix_files = scan_files_in_dirs('matrix')[:3]
+    for f in matrix_files:
         try:
-            r_first, sheets, _ = read_file_safe(f['path'])
-            for s in (sheets or [None]):
+            r_first, sheets, _ = read_file_safe_cached(f['path'])
+            for s in (sheets[:3] if sheets else [None]):
                 try:
-                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe_cached(f['path'], sheet_name=s)[0]
                     if not rows: continue
                     parsed = parse_matrix_sheet(rows)
                     items_list = parsed[5] if len(parsed) >= 6 else []
@@ -1206,9 +1225,9 @@ def api_global_search():
                                 'configs': item.get('values')
                             })
                 except Exception as ex:
-                    print(f"Error scanning Matrix file {f.get('filename')} sheet {s}: {ex}")
+                    pass
         except Exception as ex:
-            print(f"Error scanning Matrix file {f.get('filename')}: {ex}")
+            pass
 
     return jsonify({'success': True, 'query': q_raw, 'results': results})
 
@@ -1526,6 +1545,6 @@ def api_debug_search():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8050))
+    port = int(os.environ.get('PORT', 8055))
     app.run(host='0.0.0.0', port=port, debug=True)
 
