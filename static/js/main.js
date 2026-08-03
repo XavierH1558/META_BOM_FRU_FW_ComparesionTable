@@ -1097,16 +1097,17 @@ function renderBkcSingleTable() {
     const tbody = document.getElementById('bkc-tbody');
     const tableHeader = document.querySelector('#bkc-table thead tr');
     tableHeader.innerHTML = `
-        <th style="width: 220px;">Group / Components</th>
-        <th>Sub-Component</th>
-        <th style="width: 120px;">Meta Owner</th>
-        <th style="width: 120px;">ODM Owner</th>
-        <th style="width: 160px;">Validation Version</th>
-        <th style="width: 120px;">CheckSum</th>
-        <th style="width: 100px;">VRC</th>
-        <th style="width: 110px;">Sign Off</th>
-        <th style="width: 180px;">GDrive / File Link</th>
+        <th style="width: 170px;">Group / Components</th>
+        <th style="width: 250px;">Sub-Component</th>
+        <th style="width: 110px;">Meta Owner</th>
+        <th style="width: 110px;">ODM Owner</th>
+        <th style="width: 150px;">Validation Version</th>
+        <th style="width: 110px;">CheckSum</th>
+        <th style="width: 80px;">VRC</th>
+        <th style="width: 95px;">Sign Off</th>
+        <th>GDrive / File Link</th>
     `;
+
 
     const searchVal = getInputValue('bkc-search-input');
     const catVal = appState.bkcSelectedCategory;
@@ -1217,14 +1218,15 @@ function renderBkcCompareTable() {
     const targetName = appState.bkcCompare.summary.target_sheet;
 
     tableHeader.innerHTML = `
-        <th>Group / Components</th>
-        <th>Sub-Component</th>
-        <th>Owner</th>
-        <th>Base Version (${escapeHtml(baseName)})</th>
-        <th>Target Version (${escapeHtml(targetName)})</th>
-        <th>Sign Off (Base ➔ Target)</th>
-        <th>Status</th>
+        <th style="width: 170px;">Group / Components</th>
+        <th style="width: 250px;">Sub-Component</th>
+        <th style="width: 110px;">Owner</th>
+        <th style="min-width: 180px;">Base Version (${escapeHtml(baseName)})</th>
+        <th style="min-width: 180px;">Target Version (${escapeHtml(targetName)})</th>
+        <th style="width: 160px;">Sign Off (Base ➔ Target)</th>
+        <th style="width: 95px;">Status</th>
     `;
+
 
 
     const searchVal = getInputValue('bkc-search-input');

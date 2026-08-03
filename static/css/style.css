@@ -539,15 +539,19 @@ body {
     font-weight: 600;
 }
 
-.data-table .cell-group {
+.data-table .cell-group,
+.data-table .cell-merged-group {
     font-weight: 600;
     color: #38bdf8;
+    max-width: 180px;
 }
 
 .data-table .cell-sub {
     font-weight: 500;
     color: var(--text-main);
+    max-width: 260px;
 }
+
 
 .badge-signoff {
     display: inline-block;
