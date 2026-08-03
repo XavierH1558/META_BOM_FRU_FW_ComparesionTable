@@ -2,7 +2,10 @@ import os
 import csv
 import openpyxl
 import re
-from flask import Flask, render_template, jsonify, request
+import io
+import json
+import datetime
+from flask import Flask, render_template, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -964,6 +967,423 @@ def api_sync_gdrive():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ==================== V2 FEATURE ENDPOINTS ====================
+
+SIGNOFF_FILE = os.path.join(DATA_DIR, 'signoffs.json')
+WATCHLIST_FILE = os.path.join(BASE_DIR, 'watchlist.json')
+
+def load_signoffs():
+    if os.path.exists(SIGNOFF_FILE):
+        try:
+            with open(SIGNOFF_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_signoffs(data):
+    try:
+        with open(SIGNOFF_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Failed to save signoffs: {e}")
+
+def load_watchlist():
+    if os.path.exists(WATCHLIST_FILE):
+        try:
+            with open(WATCHLIST_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('keywords', [])
+        except Exception:
+            pass
+    return ["CPLD", "BIOS", "BMC", "MB PN", "Compute Tray", "VR", "PMIC"]
+
+
+@app.route('/api/watchlist', methods=['GET', 'POST'])
+def api_watchlist():
+    """Get or update critical component watchlist keywords."""
+    if request.method == 'POST':
+        body = request.get_json() or {}
+        keywords = body.get('keywords', [])
+        try:
+            with open(WATCHLIST_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'keywords': keywords}, f, ensure_ascii=False, indent=2)
+            return jsonify({'success': True, 'keywords': keywords})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    return jsonify({'success': True, 'keywords': load_watchlist()})
+
+
+@app.route('/api/signoff', methods=['GET', 'POST'])
+def api_signoff():
+    """Get or save engineer sign-off status and notes."""
+    signoffs = load_signoffs()
+    if request.method == 'POST':
+        body = request.get_json() or {}
+        key = body.get('key')
+        status = body.get('status', 'PENDING')
+        note = body.get('note', '')
+        user = body.get('user', 'Engineer')
+        if not key:
+            return jsonify({'success': False, 'error': 'Missing item key'}), 400
+        
+        signoffs[key] = {
+            'status': status,
+            'note': note,
+            'user': user,
+            'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        save_signoffs(signoffs)
+        return jsonify({'success': True, 'signoff': signoffs[key]})
+    
+    return jsonify({'success': True, 'signoffs': signoffs})
+
+
+def parse_bkc_items(rows):
+    items = []
+    current_category = 'General'
+    current_group = ''
+    for idx, r in enumerate(rows[3:], start=3):
+        if not any(r): continue
+        c0 = r[0].strip() if len(r) > 0 else ''
+        c1 = r[1].strip() if len(r) > 1 else ''
+        c5 = r[5].strip() if len(r) > 5 else ''
+        if c0 and not c1 and not c5 and not any(c.strip() for c in r[2:]):
+            current_category = c0
+            continue
+        if c0: current_group = c0
+        items.append({
+            'category': current_category,
+            'group': current_group,
+            'sub_component': c1,
+            'version': c5
+        })
+    return items
+
+def compare_two_fru_sheets(rows_dvt, rows_pvt):
+    if not rows_dvt or not rows_pvt:
+        return {'total_items': 0, 'diff_count': 0, 'same_count': 0, 'fields': []}
+    mods_b, keys_b, dict_b = parse_fru_sheet_smart(rows_dvt)
+    mods_t, keys_t, dict_t = parse_fru_sheet_smart(rows_pvt)
+    all_modules = list(dict.fromkeys(mods_b + mods_t))
+    all_keys = list(dict.fromkeys(keys_b + keys_t))
+    fields_compare = []
+    diff_rows_count = 0
+    same_rows_count = 0
+    for idx, (sec, f_name) in enumerate(all_keys):
+        key = (sec, f_name)
+        b_vals = dict_b.get(key, {})
+        t_vals = dict_t.get(key, {})
+        is_row_diff = False
+        val_b_str = ""
+        val_t_str = ""
+        for mod in all_modules:
+            has_in_b = mod in mods_b
+            has_in_t = mod in mods_t
+            val_b = b_vals.get(mod, '-' if has_in_b else 'N/A')
+            val_t = t_vals.get(mod, '-' if has_in_t else 'N/A')
+            if not val_b_str and val_b != 'N/A': val_b_str = val_b
+            if not val_t_str and val_t != 'N/A': val_t_str = val_t
+            if has_in_b and has_in_t and val_b != val_t:
+                is_row_diff = True
+        if is_row_diff: diff_rows_count += 1
+        else: same_rows_count += 1
+        fields_compare.append({
+            'module': all_modules[0] if all_modules else 'General',
+            'section': sec,
+            'field_name': f_name,
+            'dvt_value': val_b_str,
+            'pvt_value': val_t_str,
+            'is_diff': is_row_diff
+        })
+    return {
+        'total_items': len(fields_compare),
+        'diff_count': diff_rows_count,
+        'same_count': same_rows_count,
+        'fields': fields_compare
+    }
+
+
+@app.route('/api/global-search', methods=['GET'])
+def api_global_search():
+    """Search across latest BKC, FRU, and Build Matrix tables for a query string."""
+    q = request.args.get('q', '').strip().lower()
+    if not q:
+        return jsonify({'success': True, 'query': '', 'results': {'bkc': [], 'fru': [], 'matrix': []}})
+    
+    results = {'bkc': [], 'fru': [], 'matrix': []}
+
+    # Search BKC
+    bkc_file = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+    bkc_rows, bkc_sheets, _ = read_file_safe(bkc_file)
+    if bkc_rows:
+        bkc_items = parse_bkc_items(bkc_rows)
+        for item in bkc_items:
+            searchable = f"{item.get('category','')} {item.get('group','')} {item.get('sub_component','')} {item.get('version','')}".lower()
+            if q in searchable:
+                results['bkc'].append({
+                    'category': item.get('category'),
+                    'group': item.get('group'),
+                    'sub_component': item.get('sub_component'),
+                    'dvt_version': item.get('version'),
+                    'pvt_version': item.get('version')
+                })
+
+    # Search FRU
+    fru_file = resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
+    fru_rows, fru_sheets, _ = read_file_safe(fru_file)
+    if fru_rows:
+        mods, keys, data_dict = parse_fru_sheet_smart(fru_rows)
+        for (sec, f_name) in keys:
+            vals = " ".join(data_dict.get((sec, f_name), {}).values())
+            searchable = f"{sec} {f_name} {vals}".lower()
+            if q in searchable:
+                results['fru'].append({
+                    'module': mods[0] if mods else 'General',
+                    'section': sec,
+                    'field_name': f_name,
+                    'dvt_value': vals,
+                    'pvt_value': vals
+                })
+
+    # Search Matrix
+    matrix_file = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    matrix_rows, matrix_sheets, _ = read_file_safe(matrix_file)
+    if matrix_rows:
+        _, _, _, _, _, items_list, _ = parse_matrix_sheet(matrix_rows)
+        for item in items_list:
+            cfg_vals = " ".join([str(v) for v in item.get('values', {}).values()])
+            searchable = f"{item.get('group_item','')} {item.get('attribute','')} {cfg_vals}".lower()
+            if q in searchable:
+                results['matrix'].append({
+                    'group_item': item.get('group_item'),
+                    'description': item.get('attribute'),
+                    'configs': item.get('values')
+                })
+
+    return jsonify({'success': True, 'query': q, 'results': results})
+
+
+@app.route('/api/history', methods=['GET'])
+def api_history():
+    """List available historical files and snapshot metadata across all tabs."""
+    history = {}
+    for tab_key in ['bkc', 'fru', 'matrix']:
+        files = scan_files_in_dirs(tab_key)
+        history[tab_key] = files
+    return jsonify({'success': True, 'history': history})
+
+
+@app.route('/api/release-summary', methods=['GET'])
+def api_release_summary():
+    """Generate structured Markdown and Text summary report for release engineering."""
+    watchlist = load_watchlist()
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    
+    # Gather FRU compare stats
+    dvt_p = resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
+    pvt_p = resolve_file_path('fru', DEFAULT_PATHS['fru_pvt'])
+    r1, s1, _ = read_file_safe(dvt_p)
+    r2, s2, _ = read_file_safe(pvt_p)
+    fru_res = compare_two_fru_sheets(r1, r2)
+    
+    # Gather Matrix compare stats
+    mat_p = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    mr, ms, _ = read_file_safe(mat_p)
+    valid_ms = filter_valid_data_sheets(ms)
+    mat_res = None
+    if len(valid_ms) >= 2:
+        r_b, _, _ = read_file_safe(mat_p, sheet_name=valid_ms[0])
+        r_t, _, _ = read_file_safe(mat_p, sheet_name=valid_ms[1])
+        mat_res = compare_two_matrix_sheets(r_b, r_t)
+
+    # Build Markdown Summary
+    md = []
+    md.append(f"# 🚀 META VR200 (SanMiguel) Release Summary Report")
+    md.append(f"**Generated Time:** `{now_str}`")
+    md.append(f"**Environment:** Hardware & Firmware Verification Platform\n")
+
+    md.append(f"## 📋 1. Executive Summary")
+    md.append(f"- **FRU Specification File Comparison:** `{os.path.basename(dvt_p)}` 🆚 `{os.path.basename(pvt_p)}`")
+    md.append(f"  - **Total Parameters:** `{fru_res.get('total_items', 0)}` items")
+    md.append(f"  - **Identical Parameters:** `{fru_res.get('same_count', 0)}` items")
+    md.append(f"  - **Differences Found:** `{fru_res.get('diff_count', 0)}` items\n")
+
+    if mat_res:
+        md.append(f"- **Build Matrix Cross-Sheet Comparison:** `{os.path.basename(mat_p)}` (`{valid_ms[0]}` 🆚 `{valid_ms[1]}`)")
+        md.append(f"  - **Total Config Items:** `{mat_res.get('total_items', 0)}` items")
+        md.append(f"  - **Configuration Diffs:** `{mat_res.get('diff_items_count', 0)}` items\n")
+
+    md.append(f"## ⚠️ 2. Critical Component Impact (Watchlist Check)")
+    impacted_watchlist = []
+    for fld in fru_res.get('fields', []):
+        if fld.get('is_diff'):
+            name = f"{fld.get('section','')} {fld.get('field_name','')}"
+            if any(w.lower() in name.lower() for w in watchlist):
+                impacted_watchlist.append(f"- **[{fld.get('section')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value')}` ➔ `{fld.get('pvt_value')}`")
+    
+    if impacted_watchlist:
+        md.extend(impacted_watchlist)
+    else:
+        md.append("- *No critical watchlist components modified.*")
+
+    md.append(f"\n## 🔄 3. Detailed Parameter Differences")
+    diff_count = 0
+    for fld in fru_res.get('fields', []):
+        if fld.get('is_diff') and diff_count < 15:
+            diff_count += 1
+            md.append(f"{diff_count}. **[{fld.get('module')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value') or '(empty)'}` ➔ `{fld.get('pvt_value') or '(empty)'}`")
+
+    if fru_res.get('diff_count', 0) > 15:
+        md.append(f"\n*...and {fru_res.get('diff_count') - 15} more differences.*")
+
+    md_text = "\n".join(md)
+    plain_text = re.sub(r'[\*`#]', '', md_text)
+
+    return jsonify({
+        'success': True,
+        'markdown': md_text,
+        'text': plain_text,
+        'stats': {
+            'fru_total': fru_res.get('total_items', 0),
+            'fru_diffs': fru_res.get('diff_count', 0),
+            'matrix_diffs': mat_res.get('diff_items_count', 0) if mat_res else 0,
+            'watchlist_impacts': len(impacted_watchlist)
+        }
+    })
+
+
+@app.route('/api/export-excel', methods=['GET'])
+def api_export_excel():
+    """Export color-highlighted comparison Excel file."""
+    tab_type = request.args.get('type', 'fru')
+    diff_only = request.args.get('diff_only', 'false').lower() == 'true'
+    
+    from openpyxl.styles import PatternFill, Font, Alignment
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.views.sheetView[0].showGridLines = True
+
+    fill_header = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    
+    fill_diff = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+    font_diff = Font(name="Calibri", size=10, bold=True, color="92400E")
+
+    if tab_type == 'bkc':
+        ws.title = "BKC Comparison"
+        headers = ["Category", "Group", "Sub Component", "Meta Owner", "DVT FW Version", "PVT FW Version", "Diff Status"]
+        ws.append(headers)
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.fill = fill_header
+            cell.font = font_header
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        bkc_file = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+        bkc_rows, bkc_sheets, _ = read_file_safe(bkc_file)
+        if bkc_rows:
+            bkc_data = parse_bkc_sheet(bkc_rows)
+            row_idx = 2
+            for cat in bkc_data.get('categories', []):
+                for grp in cat.get('groups', []):
+                    for item in grp.get('items', []):
+                        if diff_only and not item.get('is_diff'):
+                            continue
+                        ws.append([
+                            cat.get('name'),
+                            grp.get('name'),
+                            item.get('sub_component'),
+                            item.get('meta_owner'),
+                            item.get('dvt_version'),
+                            item.get('pvt_version'),
+                            "DIFFERENT" if item.get('is_diff') else "SAME"
+                        ])
+                        if item.get('is_diff'):
+                            for col in range(1, 8):
+                                c = ws.cell(row=row_idx, column=col)
+                                c.fill = fill_diff
+                                c.font = font_diff
+                        row_idx += 1
+
+    elif tab_type == 'matrix':
+        ws.title = "Build Matrix Comparison"
+        base_p = request.args.get('base_file') or resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+        tgt_p  = request.args.get('target_file') or resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+        b_rows, b_sheets, _ = read_file_safe(base_p, sheet_name=request.args.get('base_sheet'))
+        t_rows, t_sheets, _ = read_file_safe(tgt_p, sheet_name=request.args.get('target_sheet'))
+        res = compare_two_matrix_sheets(b_rows, t_rows)
+
+        headers = ["Group Item", "Description"] + res.get('base_configs', [])
+        ws.append(headers)
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.fill = fill_header
+            cell.font = font_header
+
+        row_idx = 2
+        for item in res.get('items', []):
+            if diff_only and not item.get('is_diff'):
+                continue
+            row_data = [item.get('group_item'), item.get('description')]
+            for cfg in res.get('base_configs', []):
+                row_data.append(item.get('config_values', {}).get(cfg, ''))
+            ws.append(row_data)
+            if item.get('is_diff'):
+                for col in range(1, len(row_data) + 1):
+                    c = ws.cell(row=row_idx, column=col)
+                    c.fill = fill_diff
+                    c.font = font_diff
+            row_idx += 1
+
+    else: # Default FRU
+        ws.title = "FRU Comparison"
+        dvt_p = request.args.get('dvt_file') or resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
+        pvt_p = request.args.get('pvt_file') or resolve_file_path('fru', DEFAULT_PATHS['fru_pvt'])
+        r1, _, _ = read_file_safe(dvt_p, sheet_name=request.args.get('base_sheet'))
+        r2, _, _ = read_file_safe(pvt_p, sheet_name=request.args.get('target_sheet'))
+        res = compare_two_fru_sheets(r1, r2)
+
+        headers = ["Module", "Section", "Field Name", "Base (DVT) Value", "Target (PVT) Value", "Status"]
+        ws.append(headers)
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.fill = fill_header
+            cell.font = font_header
+
+        row_idx = 2
+        for fld in res.get('fields', []):
+            if diff_only and not fld.get('is_diff'):
+                continue
+            ws.append([
+                fld.get('module'),
+                fld.get('section'),
+                fld.get('field_name'),
+                fld.get('dvt_value'),
+                fld.get('pvt_value'),
+                "DIFFERENT" if fld.get('is_diff') else "SAME"
+            ])
+            if fld.get('is_diff'):
+                for col in range(1, 7):
+                    c = ws.cell(row=row_idx, column=col)
+                    c.fill = fill_diff
+                    c.font = font_diff
+            row_idx += 1
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"VR200_{tab_type.upper()}_Comparison_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(
+        output,
+        download_name=filename,
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 
 if __name__ == '__main__':

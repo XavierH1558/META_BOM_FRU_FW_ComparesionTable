@@ -94,6 +94,90 @@ function initEventListeners() {
         }
     });
 
+    // Export Excel Button
+    document.getElementById('btn-export-excel').addEventListener('click', () => {
+        let tabType = 'fru';
+        if (appState.activeTab === 'tab-bkc') tabType = 'bkc';
+        else if (appState.activeTab === 'tab-matrix') tabType = 'matrix';
+
+        let url = `/api/export-excel?type=${tabType}`;
+        if (tabType === 'matrix' && appState.matrixMode === 'compare') {
+            const bFile = document.getElementById('matrix-base-file-select')?.value;
+            const tFile = document.getElementById('matrix-target-file-select')?.value;
+            const bSheet = document.getElementById('matrix-base-sheet-select')?.value;
+            const tSheet = document.getElementById('matrix-target-sheet-select')?.value;
+            if (bFile) url += `&base_file=${encodeURIComponent(bFile)}`;
+            if (tFile) url += `&target_file=${encodeURIComponent(tFile)}`;
+            if (bSheet) url += `&base_sheet=${encodeURIComponent(bSheet)}`;
+            if (tSheet) url += `&target_sheet=${encodeURIComponent(tSheet)}`;
+        }
+        window.open(url, '_blank');
+    });
+
+    // Release Summary Modal
+    const summaryModal = document.getElementById('release-summary-modal');
+    document.getElementById('btn-release-summary').addEventListener('click', async () => {
+        showLoading('正在生成 Release Summary 摘要報告...', 'Analyzing cross-file differences & building summary');
+        try {
+            const res = await fetch('/api/release-summary');
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('summary-content-area').value = data.markdown;
+                summaryModal.style.display = 'flex';
+                appState.currentSummaryData = data;
+            }
+        } catch (err) {
+            console.error('Failed to load Release Summary:', err);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    document.getElementById('btn-close-summary').addEventListener('click', () => {
+        summaryModal.style.display = 'none';
+    });
+
+    document.getElementById('btn-copy-summary-markdown').addEventListener('click', () => {
+        const area = document.getElementById('summary-content-area');
+        navigator.clipboard.writeText(area.value);
+        alert('Markdown 摘要已成功複製至剪貼簿！');
+    });
+
+    document.getElementById('btn-copy-summary-text').addEventListener('click', () => {
+        if (appState.currentSummaryData?.text) {
+            navigator.clipboard.writeText(appState.currentSummaryData.text);
+            alert('純文字 摘要已成功複製至剪貼簿！');
+        }
+    });
+
+    // Global Search
+    const searchModal = document.getElementById('global-search-modal');
+    const globalInput = document.getElementById('global-search-input');
+
+    document.getElementById('btn-close-search').addEventListener('click', () => {
+        searchModal.style.display = 'none';
+    });
+
+    globalInput.addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const q = globalInput.value.trim();
+            if (!q) return;
+            showLoading(`全域搜尋中: "${q}"...`, 'Scanning BKC, FRU Spec, and Build Matrix datasets');
+            try {
+                const res = await fetch(`/api/global-search?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                if (data.success) {
+                    renderGlobalSearchResults(data.results, q);
+                    searchModal.style.display = 'flex';
+                }
+            } catch (err) {
+                console.error('Global search failed:', err);
+            } finally {
+                hideLoading();
+            }
+        }
+    });
+
     // BKC Mode Switching (Single vs Compare)
     const btnSingleMode = document.getElementById('bkc-mode-single');
     const btnCompareMode = document.getElementById('bkc-mode-compare');
@@ -2018,4 +2102,52 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function renderGlobalSearchResults(results, q) {
+    const container = document.getElementById('global-search-results-container');
+    if (!container) return;
+
+    let html = `<div style="margin-bottom: 1rem; color: var(--text-muted);">搜尋關鍵字: <strong style="color: var(--accent-cyan);">${escapeHtml(q)}</strong></div>`;
+
+    let totalMatches = (results.bkc?.length || 0) + (results.fru?.length || 0) + (results.matrix?.length || 0);
+
+    if (totalMatches === 0) {
+        container.innerHTML = html + `<div class="text-center py-4 text-muted">未找到符合 "${escapeHtml(q)}" 的關聯項目</div>`;
+        return;
+    }
+
+    if (results.bkc?.length > 0) {
+        html += `<h4 style="color: var(--primary-blue); margin-top: 1rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-list-check"></i> BKC Firmware Table Matches (${results.bkc.length})</h4><ul style="list-style: none; padding-left: 0;">`;
+        results.bkc.forEach(m => {
+            html += `<li style="padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.4rem; border-radius: 8px;">
+                <strong>${escapeHtml(m.category)}</strong> ➔ <span>${escapeHtml(m.group)}</span> / <span style="color: var(--accent-cyan); font-weight: 600;">${escapeHtml(m.sub_component)}</span>
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">DVT FW: ${escapeHtml(m.dvt_version)} | PVT FW: ${escapeHtml(m.pvt_version)}</div>
+            </li>`;
+        });
+        html += `</ul>`;
+    }
+
+    if (results.fru?.length > 0) {
+        html += `<h4 style="color: var(--warning-amber); margin-top: 1.5rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-code-compare"></i> FRU Spec Matches (${results.fru.length})</h4><ul style="list-style: none; padding-left: 0;">`;
+        results.fru.forEach(m => {
+            html += `<li style="padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.4rem; border-radius: 8px;">
+                <strong>[${escapeHtml(m.module)}]</strong> <span>${escapeHtml(m.section)}</span> ➔ <span style="color: var(--warning-amber); font-weight: 600;">${escapeHtml(m.field_name)}</span>
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">DVT: ${escapeHtml(m.dvt_value)} ➔ PVT: ${escapeHtml(m.pvt_value)}</div>
+            </li>`;
+        });
+        html += `</ul>`;
+    }
+
+    if (results.matrix?.length > 0) {
+        html += `<h4 style="color: var(--info-purple); margin-top: 1.5rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-table-cells"></i> Build Matrix Matches (${results.matrix.length})</h4><ul style="list-style: none; padding-left: 0;">`;
+        results.matrix.forEach(m => {
+            html += `<li style="padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.4rem; border-radius: 8px;">
+                <strong style="color: var(--info-purple);">${escapeHtml(m.group_item)}</strong>: ${escapeHtml(m.description)}
+            </li>`;
+        });
+        html += `</ul>`;
+    }
+
+    container.innerHTML = html;
 }
