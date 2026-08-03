@@ -20,8 +20,8 @@ class TestV2EnhancementSuite(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertTrue(data['success'])
-        self.assertIn('# 🚀 META VR200 (SanMiguel) Release Summary Report', data['markdown'])
-        self.assertIn('stats', data)
+        self.assertIn('# 🚀 META VR200 (SanMiguel) All-in-One Release Summary Report', data['markdown'])
+        self.assertIn('markdown', data)
 
     def test_global_search(self):
         """Test /api/global-search returns matched results across datasets."""

@@ -1179,9 +1179,15 @@ def api_history():
 
 @app.route('/api/release-summary', methods=['GET'])
 def api_release_summary():
-    """Generate structured Markdown and Text summary report for release engineering."""
+    """Generate structured Markdown and Text summary reports per tab or overall."""
+    tab = request.args.get('tab', 'all').lower()
     watchlist = load_watchlist()
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    # Gather BKC stats
+    bkc_p = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+    b_rows, b_sheets, _ = read_file_safe(bkc_p)
+    bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
     # Gather FRU compare stats
     dvt_p = resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
@@ -1200,59 +1206,73 @@ def api_release_summary():
         r_t, _, _ = read_file_safe(mat_p, sheet_name=valid_ms[1])
         mat_res = compare_two_matrix_sheets(r_b, r_t)
 
-    # Build Markdown Summary
+    # Build Markdown according to requested tab
     md = []
-    md.append(f"# 🚀 META VR200 (SanMiguel) Release Summary Report")
-    md.append(f"**Generated Time:** `{now_str}`")
-    md.append(f"**Environment:** Hardware & Firmware Verification Platform\n")
+    if tab == 'bkc':
+        md.append(f"# 💻 BKC Table Release Summary")
+        md.append(f"**Generated Time:** `{now_str}` | **Active File:** `{os.path.basename(bkc_p)}`\n")
+        md.append(f"## 📋 Overview")
+        md.append(f"- **Total Components Tracked:** `{len(bkc_items)}` items")
+        md.append(f"- **Total Sheets Available:** `{len(b_sheets)}` ({', '.join(b_sheets[:5]) if b_sheets else 'None'})\n")
+        md.append(f"## ⚙️ Component List Sample")
+        for it in bkc_items[:10]:
+            md.append(f"- **[{it.get('category')}]** `{it.get('sub_component')}`: FW `{it.get('version') or 'N/A'}`")
+    elif tab == 'fru':
+        md.append(f"# 📄 FRU Specification Release Summary")
+        md.append(f"**Generated Time:** `{now_str}` | **Files:** `{os.path.basename(dvt_p)}` 🆚 `{os.path.basename(pvt_p)}`\n")
+        md.append(f"## 📋 Overview")
+        md.append(f"- **Total Spec Fields:** `{fru_res.get('total_items', 0)}` items")
+        md.append(f"- **Identical Fields:** `{fru_res.get('same_count', 0)}` items")
+        md.append(f"- **Specification Diffs:** `{fru_res.get('diff_count', 0)}` items\n")
+        md.append(f"## 🔄 Field Diffs")
+        for fld in fru_res.get('fields', []):
+            if fld.get('is_diff'):
+                md.append(f"- **[{fld.get('section')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value')}` ➔ `{fld.get('pvt_value')}`")
+    elif tab == 'matrix':
+        md.append(f"# 🧱 Build Matrix Release Summary")
+        md.append(f"**Generated Time:** `{now_str}` | **File:** `{os.path.basename(mat_p)}`\n")
+        if mat_res:
+            md.append(f"## 📋 Cross-Sheet Summary ({valid_ms[0]} 🆚 {valid_ms[1]})")
+            md.append(f"- **Total Config Items:** `{mat_res.get('total_items', 0)}` items")
+            md.append(f"- **Configuration Diffs:** `{mat_res.get('diff_items_count', 0)}` items\n")
+            md.append(f"## 🔄 Diffs Breakdown")
+            for it in mat_res.get('items', []):
+                if it.get('is_diff'):
+                    md.append(f"- **[{it.get('group_item')}]** `{it.get('description')}` (Modified across configs)")
+    else: # ALL
+        md.append(f"# 🚀 META VR200 (SanMiguel) All-in-One Release Summary Report")
+        md.append(f"**Generated Time:** `{now_str}`")
+        md.append(f"**Environment:** Hardware & Firmware Verification Platform\n")
 
-    md.append(f"## 📋 1. Executive Summary")
-    md.append(f"- **FRU Specification File Comparison:** `{os.path.basename(dvt_p)}` 🆚 `{os.path.basename(pvt_p)}`")
-    md.append(f"  - **Total Parameters:** `{fru_res.get('total_items', 0)}` items")
-    md.append(f"  - **Identical Parameters:** `{fru_res.get('same_count', 0)}` items")
-    md.append(f"  - **Differences Found:** `{fru_res.get('diff_count', 0)}` items\n")
+        md.append(f"## 📋 1. Executive Summary")
+        md.append(f"- **BKC Firmware Table:** `{len(bkc_items)}` components loaded from `{os.path.basename(bkc_p)}`")
+        md.append(f"- **FRU Specification:** `{fru_res.get('diff_count', 0)}` differences found between `{os.path.basename(dvt_p)}` & `{os.path.basename(pvt_p)}`")
+        if mat_res:
+            md.append(f"- **Build Matrix:** `{mat_res.get('diff_items_count', 0)}` diffs between `{valid_ms[0]}` & `{valid_ms[1]}`\n")
 
-    if mat_res:
-        md.append(f"- **Build Matrix Cross-Sheet Comparison:** `{os.path.basename(mat_p)}` (`{valid_ms[0]}` 🆚 `{valid_ms[1]}`)")
-        md.append(f"  - **Total Config Items:** `{mat_res.get('total_items', 0)}` items")
-        md.append(f"  - **Configuration Diffs:** `{mat_res.get('diff_items_count', 0)}` items\n")
-
-    md.append(f"## ⚠️ 2. Critical Component Impact (Watchlist Check)")
-    impacted_watchlist = []
-    for fld in fru_res.get('fields', []):
-        if fld.get('is_diff'):
-            name = f"{fld.get('section','')} {fld.get('field_name','')}"
-            if any(w.lower() in name.lower() for w in watchlist):
-                impacted_watchlist.append(f"- **[{fld.get('section')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value')}` ➔ `{fld.get('pvt_value')}`")
-    
-    if impacted_watchlist:
-        md.extend(impacted_watchlist)
-    else:
-        md.append("- *No critical watchlist components modified.*")
-
-    md.append(f"\n## 🔄 3. Detailed Parameter Differences")
-    diff_count = 0
-    for fld in fru_res.get('fields', []):
-        if fld.get('is_diff') and diff_count < 15:
-            diff_count += 1
-            md.append(f"{diff_count}. **[{fld.get('module')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value') or '(empty)'}` ➔ `{fld.get('pvt_value') or '(empty)'}`")
-
-    if fru_res.get('diff_count', 0) > 15:
-        md.append(f"\n*...and {fru_res.get('diff_count') - 15} more differences.*")
+        md.append(f"## ⚠️ 2. Critical Watchlist Impact")
+        impacted_watchlist = []
+        for fld in fru_res.get('fields', []):
+            if fld.get('is_diff'):
+                name = f"{fld.get('section','')} {fld.get('field_name','')}"
+                if any(w.lower() in name.lower() for w in watchlist):
+                    impacted_watchlist.append(f"- **[FRU - {fld.get('section')}]** `{fld.get('field_name')}`: `{fld.get('dvt_value')}` ➔ `{fld.get('pvt_value')}`")
+        if impacted_watchlist:
+            md.extend(impacted_watchlist)
+        else:
+            md.append("- *No critical watchlist components modified.*")
 
     md_text = "\n".join(md)
     plain_text = re.sub(r'[\*`#]', '', md_text)
 
+    impact_count = len([fld for fld in fru_res.get('fields', []) if fld.get('is_diff') and any(w.lower() in f"{fld.get('section','')} {fld.get('field_name','')}".lower() for w in watchlist)])
+
     return jsonify({
         'success': True,
+        'tab': tab,
         'markdown': md_text,
         'text': plain_text,
-        'stats': {
-            'fru_total': fru_res.get('total_items', 0),
-            'fru_diffs': fru_res.get('diff_count', 0),
-            'matrix_diffs': mat_res.get('diff_items_count', 0) if mat_res else 0,
-            'watchlist_impacts': len(impacted_watchlist)
-        }
+        'watchlist_impacts_count': impact_count
     })
 
 

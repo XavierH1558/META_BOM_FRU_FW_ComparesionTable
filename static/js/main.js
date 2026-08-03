@@ -150,6 +150,53 @@ function initEventListeners() {
         }
     });
 
+    // Watchlist Modal Handlers
+    const watchlistModal = document.getElementById('watchlist-modal');
+    document.getElementById('btn-open-watchlist').addEventListener('click', async () => {
+        await loadAndRenderWatchlist();
+        watchlistModal.style.display = 'flex';
+    });
+    document.getElementById('btn-close-watchlist').addEventListener('click', () => {
+        watchlistModal.style.display = 'none';
+    });
+    document.getElementById('btn-add-watchlist-keyword').addEventListener('click', async () => {
+        const input = document.getElementById('watchlist-new-keyword');
+        const kw = input.value.trim();
+        if (!kw) return;
+        const currentKws = appState.watchlistKeywords || [];
+        if (!currentKws.includes(kw)) {
+            currentKws.push(kw);
+            await updateWatchlistKeywords(currentKws);
+            input.value = '';
+        }
+    });
+
+    // Summary Modal Tab Switchers
+    document.querySelectorAll('.summary-tab-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            document.querySelectorAll('.summary-tab-btn').forEach(b => {
+                b.classList.remove('btn-primary', 'active');
+                b.classList.add('btn-secondary');
+            });
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary', 'active');
+            const targetTab = btn.getAttribute('data-sumtab');
+            showLoading('載入摘要報告...', `Fetching release summary for ${targetTab}`);
+            try {
+                const res = await fetch(`/api/release-summary?tab=${targetTab}`);
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('summary-content-area').value = data.markdown;
+                    appState.currentSummaryData = data;
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                hideLoading();
+            }
+        });
+    });
+
     // Global Search
     const searchModal = document.getElementById('global-search-modal');
     const globalInput = document.getElementById('global-search-input');
@@ -561,7 +608,9 @@ async function fetchAllData() {
         await Promise.all([
             bkcPromise,
             fruPromise,
-            fetchMatrixData()
+            fetchMatrixData(),
+            fetchAndPopulateTimelines(),
+            checkCriticalWatchlistAlerts()
         ]);
         if (statusText) statusText.textContent = 'Connected';
     } catch (err) {
@@ -2151,3 +2200,106 @@ function renderGlobalSearchResults(results, q) {
 
     container.innerHTML = html;
 }
+
+async function loadAndRenderWatchlist() {
+    try {
+        const res = await fetch('/api/watchlist');
+        const data = await res.json();
+        if (data.success) {
+            appState.watchlistKeywords = data.keywords || [];
+            renderWatchlistTags(data.keywords || []);
+        }
+    } catch (err) {
+        console.error('Failed to load watchlist:', err);
+    }
+}
+
+function renderWatchlistTags(keywords) {
+    const container = document.getElementById('watchlist-tags-container');
+    if (!container) return;
+    if (keywords.length === 0) {
+        container.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">尚未設定關鍵字</span>';
+        return;
+    }
+    let html = '';
+    keywords.forEach(kw => {
+        html += `<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 0.4rem 0.7rem; font-size: 0.85rem; border-radius: 20px; display: inline-flex; align-items: center; gap: 0.4rem;">
+            ${escapeHtml(kw)}
+            <i class="fa-solid fa-xmark" style="cursor: pointer;" onclick="removeWatchlistKeyword('${escapeHtml(kw)}')"></i>
+        </span>`;
+    });
+    container.innerHTML = html;
+}
+
+async function removeWatchlistKeyword(kw) {
+    const updated = (appState.watchlistKeywords || []).filter(k => k !== kw);
+    await updateWatchlistKeywords(updated);
+}
+
+async function updateWatchlistKeywords(keywords) {
+    try {
+        const res = await fetch('/api/watchlist', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keywords})
+        });
+        const data = await res.json();
+        if (data.success) {
+            appState.watchlistKeywords = data.keywords;
+            renderWatchlistTags(data.keywords);
+            checkCriticalWatchlistAlerts();
+        }
+    } catch (err) {
+        console.error('Failed to save watchlist:', err);
+    }
+}
+
+async function checkCriticalWatchlistAlerts() {
+    try {
+        const res = await fetch('/api/release-summary');
+        const data = await res.json();
+        const banner = document.getElementById('critical-alert-banner');
+        const text = document.getElementById('critical-alert-text');
+        if (data.success && data.watchlist_impacts_count > 0) {
+            if (banner && text) {
+                text.textContent = `偵測到 ${data.watchlist_impacts_count} 項關鍵組件/韌體異動！請點擊 [摘要報告] 檢視詳細清單。`;
+                banner.style.display = 'flex';
+            }
+        } else if (banner) {
+            banner.style.display = 'none';
+        }
+    } catch (e) {
+        console.warn(e);
+    }
+}
+
+async function fetchAndPopulateTimelines() {
+    try {
+        const res = await fetch('/api/history');
+        const data = await res.json();
+        if (data.success) {
+            populateTimelineDropdown('bkc-timeline-select', data.history.bkc || []);
+            populateTimelineDropdown('fru-timeline-select', data.history.fru || []);
+            populateTimelineDropdown('matrix-timeline-select', data.history.matrix || []);
+        }
+    } catch (err) {
+        console.error('Failed to populate timelines:', err);
+    }
+}
+
+function populateTimelineDropdown(elemId, fileList) {
+    const select = document.getElementById(elemId);
+    if (!select) return;
+    select.innerHTML = '';
+    if (!fileList || fileList.length === 0) {
+        select.innerHTML = '<option value="">無歷史快照</option>';
+        return;
+    }
+    fileList.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.path;
+        opt.textContent = f.display_name || f.filename;
+        select.appendChild(opt);
+    });
+}
+
