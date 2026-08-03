@@ -553,7 +553,7 @@ function initUploadModal() {
 // Fetch Data from Backend APIs
 async function fetchAllData() {
     const statusText = document.querySelector('.status-text');
-    statusText.textContent = 'Loading data...';
+    if (statusText) statusText.textContent = 'Loading data...';
 
     try {
         const bkcPromise = appState.bkcMode === 'compare' ? fetchBkcCompareData() : fetchBkcData();
@@ -563,10 +563,10 @@ async function fetchAllData() {
             fruPromise,
             fetchMatrixData()
         ]);
-        statusText.textContent = 'Connected';
+        if (statusText) statusText.textContent = 'Connected';
     } catch (err) {
         console.error('Error fetching application data:', err);
-        statusText.textContent = 'Data Error';
+        if (statusText) statusText.textContent = 'Data Error';
     }
 }
 

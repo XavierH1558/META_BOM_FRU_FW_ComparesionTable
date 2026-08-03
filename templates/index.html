@@ -28,9 +28,13 @@
                 </div>
             </div>
             <div class="header-actions" style="display: flex; align-items: center; gap: 0.75rem;">
+                <div class="status-badge" id="system-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Connected</span>
+                </div>
                 <div class="header-search-box" style="position: relative;">
                     <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem;"></i>
-                    <input type="text" id="global-search-input" placeholder="全域搜尋 PN / 韌體 / 料號..." style="padding: 0.4rem 0.8rem 0.4rem 2.2rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 20px; color: #fff; font-size: 0.82rem; outline: none; width: 210px; transition: width 0.2s;" />
+                    <input type="text" id="global-search-input" placeholder="全域搜尋 PN / 韌體 / 料號..." style="padding: 0.4rem 0.8rem 0.4rem 2.2rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 20px; color: #fff; font-size: 0.82rem; outline: none; width: 190px; transition: width 0.2s;" />
                 </div>
                 <button class="btn btn-warning btn-sm" id="btn-release-summary" style="background: linear-gradient(135deg, #d97706, #f59e0b); color: #fff; border: none; font-weight: 600;">
                     <i class="fa-solid fa-file-contract"></i> 摘要報告
