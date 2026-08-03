@@ -94,9 +94,19 @@ def parse_iso_time(iso_str):
     except Exception:
         return 0
 
-def download_file(service, file_id, target_path):
-    """Download Google Drive file safely using atomic write (.tmp -> final path)."""
-    request = service.files().get_media(fileId=file_id)
+def download_file(service, file_id, target_path, is_google_sheet=False):
+    """
+    Download Google Drive file safely using atomic write (.tmp -> final path).
+    If is_google_sheet is True, exports Google Spreadsheet to .xlsx format.
+    """
+    if is_google_sheet:
+        request = service.files().export_media(
+            fileId=file_id,
+            mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    else:
+        request = service.files().get_media(fileId=file_id)
+
     tmp_path = target_path + '.tmp'
     with open(tmp_path, 'wb') as fh:
         downloader = MediaIoBaseDownload(fh, request)
@@ -138,7 +148,7 @@ def fetch_all_files_recursive(service, parent_folder_id):
 def sync_folder(service, folder_id, local_dir):
     """
     Sync files from a Google Shared Folder ID (and its subfolders) to local_dir.
-    Only downloads new or updated .xlsx, .xls, .csv files.
+    Only downloads new or updated .xlsx, .xls, .csv files or Google Sheets.
     """
     if not folder_id or folder_id.startswith('YOUR_'):
         return {'status': 'skipped', 'reason': 'Folder ID not configured', 'downloaded': []}
@@ -150,13 +160,20 @@ def sync_folder(service, folder_id, local_dir):
 
     for f in files:
         file_name = f['name']
-        # Filter for Excel / CSV files
-        if not file_name.lower().endswith(('.xlsx', '.xls', '.csv')) or file_name.startswith(('._', '~$')):
-            continue
+        mime_type = f.get('mimeType', '')
+        is_g_sheet = (mime_type == 'application/vnd.google-apps.spreadsheet')
+
+        # Filter for Excel / CSV files or Google Sheets
+        if not is_g_sheet:
+            if not file_name.lower().endswith(('.xlsx', '.xls', '.csv')) or file_name.startswith(('._', '~$')):
+                continue
+
+        # If it's a Google Sheet without .xlsx extension, append .xlsx locally
+        target_name = file_name if file_name.lower().endswith(('.xlsx', '.xls', '.csv')) else f"{file_name}.xlsx"
 
         file_id = f['id']
         remote_mtime = parse_iso_time(f.get('modifiedTime', ''))
-        local_file_path = os.path.join(local_dir, file_name)
+        local_file_path = os.path.join(local_dir, target_name)
 
         # Check if local file needs update
         need_download = False
@@ -170,14 +187,14 @@ def sync_folder(service, folder_id, local_dir):
 
         if need_download:
             try:
-                download_file(service, file_id, local_file_path)
+                download_file(service, file_id, local_file_path, is_google_sheet=is_g_sheet)
                 # Preserve mtime locally
                 if remote_mtime > 0:
                     os.utime(local_file_path, (remote_mtime, remote_mtime))
-                downloaded.append(file_name)
-                print(f"[GDrive Sync] Downloaded updated file: {file_name} -> {local_dir}")
+                downloaded.append(target_name)
+                print(f"[GDrive Sync] Downloaded updated file: {target_name} -> {local_dir}")
             except Exception as download_err:
-                print(f"[GDrive Sync Error] Failed downloading {file_name}: {download_err}")
+                print(f"[GDrive Sync Error] Failed downloading {target_name}: {download_err}")
 
     return {'status': 'success', 'downloaded': downloaded, 'total_scanned': len(files)}
 
