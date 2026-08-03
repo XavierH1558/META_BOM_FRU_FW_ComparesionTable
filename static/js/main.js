@@ -82,8 +82,16 @@ function initTabs() {
 
 // Event Listeners for Filters & Controls
 function initEventListeners() {
-    document.getElementById('btn-refresh').addEventListener('click', () => {
-        fetchAllData();
+    document.getElementById('btn-refresh').addEventListener('click', async () => {
+        showLoading('正在連線 Google Drive 同步最新檔案...', 'Connecting to Google Drive & downloading updated files');
+        try {
+            await fetch('/api/sync-gdrive');
+        } catch (err) {
+            console.warn('GDrive sync trigger warning:', err);
+        } finally {
+            await fetchAllData();
+            hideLoading();
+        }
     });
 
     // BKC Mode Switching (Single vs Compare)
