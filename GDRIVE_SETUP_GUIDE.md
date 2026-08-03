@@ -8,37 +8,45 @@
 
 ---
 
-## 步驟一：在 Google Cloud Console 建立服務帳戶 (Service Account)
+## ❓ 常見疑慮與最佳實踐說明
 
-1. 前往 [Google Cloud Console](https://console.cloud.google.com/)。
-2. 建立新專案（例如 `BOM-Sync-Service`）。
-3. 在左側選單選擇 **「API 和服務」 $\rightarrow$「程式庫」**，搜尋 **`Google Drive API`** 並點擊 **「啟用」**。
-4. 在左側選單選擇 **「API 和服務」 $\rightarrow$「憑證」**。
-5. 點擊頂部的 **「+ 建立憑證」 $\rightarrow$「服務帳戶」 (Service Account)**：
-   - 服務帳戶名稱：例如 `gdrive-sync-bot`
-   - 建立後，頁面會顯示該服務帳戶的 Email（格式如：`gdrive-sync-bot@your-project.iam.gserviceaccount.com`）。**請複製此 Email！**
-6. 點擊剛剛建立的服務帳戶 $\rightarrow$ 切換到 **「金鑰」 (Keys)** 頁籤 $\rightarrow$ 點擊 **「新增金鑰」 $\rightarrow$「建立金鑰」** $\rightarrow$ 選擇 **JSON**。
-7. 系統會自動下載一個 JSON 檔案。將該檔案重新命名為 **`service_account.json`**，並放到本專案的根目錄中：
-   `c:\Users\XavierHuang(黃任德)\Python_Project\META_BOM_FRU_FW_ComparesionTable\service_account.json`
+### 1. 客人看得見 shared 帳號嗎？如果不想讓客人看到該怎麼做？
+- **如果使用服務帳戶 (Service Account)**：客戶點開資料夾「共用人員名單」時，**會看到** 該服務帳戶 Email (`gdrive-sync-bot@...`)。
+- **💡 隱形解法 (最推薦)**：改用 **OAuth 2.0 人員權限認證**！
+  - 您使用您原本就已經有客戶資料夾權限的 **個人/公司 Google 帳號** 進行授權。
+  - 這樣程式會直接以**您的帳號身份**去拉取檔案，**客戶端完全看不見任何額外的機器人或外部帳號**！
 
 ---
 
-## 步驟二：將客戶的 Google Shared Folder 共享給服務帳戶
-
-1. 開啟網頁版 [Google Drive](https://drive.google.com/)。
-2. 進入客戶共享給您的共用資料夾（或包含 BKC / FRU / Matrix 的資料夾）。
-3. 點擊資料夾頂部的 **「共用」 (Share)**。
-4. 貼上步驟一複製的服務帳戶 Email (`gdrive-sync-bot@...`)。
-5. 角色請選擇 **「檢視者」 (Viewer)**。
-6. 取消勾選「傳送通知」，點擊 **「共用」**。
+### 2. BKC / FRU / Build Matrix 在不同資料夾，不想共享最大根目錄該怎麼辦？
+- **無需共享最大根目錄**！
+- 專案支援 **獨立子資料夾指定 (Subfolder ID Filtering)**。
+- 您只需要分別進入各個專屬的子資料夾（如 `BKC資料夾`、`FRU Spec資料夾`、`Build Matrix資料夾`），複製各自的資料夾 ID 填入 `gdrive_config.json` 即可。
+- 程式只會精準去這三個特定子資料夾抓取 Excel，完全不會被父目錄其他無關的雜亂檔案干擾！
 
 ---
 
-## 步驟三：取得資料夾 ID 並設定 `gdrive_config.json`
+## 步驟一：選擇認證方式 (Service Account 或 OAuth 2.0 隱形認證)
 
-1. 在網頁版 Google Drive 點進要同步的資料夾，觀察網址列 URL：
+### 方案 A：使用 Service Account (適用於團隊共用服務)
+1. 前往 [Google Cloud Console](https://console.cloud.google.com/) 建立專案並啟用 `Google Drive API`。
+2. 在「憑證」中建立 **服務帳戶 (Service Account)**，複製其 Email (`gdrive-sync-bot@your-project.iam.gserviceaccount.com`)。
+3. 下載金鑰 JSON 檔案，重新命名為 `service_account.json` 並放置於本專案根目錄。
+4. 在客戶的特定子資料夾中將該 Email 加入為「檢視者 (Viewer)」。
+
+### 方案 B：使用 OAuth 2.0 隱形認證 (客戶端 100% 看不到機器人帳號)
+1. 前往 Google Cloud Console 建立 **OAuth 2.0 用戶端 ID (桌面應用程式)**。
+2. 下載 JSON 憑證重新命名為 `credentials.json` 並放置於本專案根目錄。
+3. 執行 `python gdrive_sync.py` 時會跳出瀏覽器，用您自己的 Google 帳號完成一次性登入，系統會產生 `token.json`。
+4. 此後程式將完全以您的個人權限自動背景抓取，客戶端無任何額外帳號顯示！
+
+---
+
+## 步驟二：取得各子資料夾 ID 並設定 `gdrive_config.json`
+
+1. 在網頁版 Google Drive 點進要同步的各個**專屬子資料夾**，觀察網址列 URL：
    例如：`https://drive.google.com/drive/folders/1A2b3C4d5E6f7G8h9I0j`
-   網址最後一串字元 `1A2b3C4d5E6f7G8h9I0j` 即為 **資料夾 ID (Folder ID)**。
+   網址最後一串字元 `1A2b3C4d5E6f7G8h9I0j` 即為該資料夾的 **ID**。
 
 2. 在本專案根目錄建立（或複製 `gdrive_config.json.template`）名為 **`gdrive_config.json`** 的檔案：
 
@@ -48,25 +56,25 @@
   "credentials_file": "service_account.json",
   "sync_interval_minutes": 30,
   "folders": {
-    "bkc": "您的_BKC_資料夾_ID",
-    "fru": "您的_FRU_資料夾_ID",
-    "matrix": "您的_Matrix_資料夾_ID"
+    "bkc": "BKC專屬子資料夾ID",
+    "fru": "FRU_Spec專屬子資料夾ID",
+    "matrix": "Build_Matrix專屬子資料夾ID"
   }
 }
 ```
 
-> **提示**：如果有某個類別暫時不需要同步，資料夾 ID 留空 `""` 即可。
+> **提示**：若某個類別不需要自動同步，將 ID 留空 `""` 即可。
 
 ---
 
-## 步驟四：啟動與測試
+## 步驟三：啟動與測試
 
 ### 1. 手動測試同步
 在終端機中執行：
 ```bash
 python gdrive_sync.py
 ```
-若設定正確，終端機會顯示掃描與下載檔案的紀錄，最新檔案會自動出現在 `data/bkc/`, `data/fru/`, `data/matrix/` 資料夾中。
+若設定正確，終端機會顯示各子資料夾掃描與下載檔案的紀錄，最新檔案會自動出現在 `data/bkc/`, `data/fru/`, `data/matrix/` 目錄中。
 
 ### 2. 隨 Flask 服務自動定時同步
 當您啟動 Flask (`python app.py` 或 `gunicorn app:app`) 時：
