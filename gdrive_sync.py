@@ -107,9 +107,37 @@ def download_file(service, file_id, target_path):
         os.remove(target_path)
     os.rename(tmp_path, target_path)
 
+def fetch_all_files_recursive(service, parent_folder_id):
+    """
+    Recursively list all files in parent_folder_id and any subfolders (e.g. PVT, DVT, EVT).
+    """
+    all_files = []
+    folders_to_scan = [parent_folder_id]
+
+    while folders_to_scan:
+        current_id = folders_to_scan.pop(0)
+        query = f"'{current_id}' in parents and trashed = false"
+        try:
+            results = service.files().list(
+                q=query,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                fields="files(id, name, modifiedTime, size, mimeType)"
+            ).execute()
+            items = results.get('files', [])
+            for item in items:
+                if item.get('mimeType') == 'application/vnd.google-apps.folder':
+                    folders_to_scan.append(item['id'])
+                else:
+                    all_files.append(item)
+        except Exception as e:
+            print(f"[GDrive Sync Warning] Failed scanning folder {current_id}: {e}")
+
+    return all_files
+
 def sync_folder(service, folder_id, local_dir):
     """
-    Sync files from a Google Shared Folder ID to local_dir.
+    Sync files from a Google Shared Folder ID (and its subfolders) to local_dir.
     Only downloads new or updated .xlsx, .xls, .csv files.
     """
     if not folder_id or folder_id.startswith('YOUR_'):
@@ -117,19 +145,7 @@ def sync_folder(service, folder_id, local_dir):
 
     os.makedirs(local_dir, exist_ok=True)
     
-    # Query files inside shared folder
-    query = f"'{folder_id}' in parents and trashed = false"
-    try:
-        results = service.files().list(
-            q=query,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-            fields="files(id, name, modifiedTime, size, mimeType)"
-        ).execute()
-    except Exception as e:
-        return {'status': 'error', 'reason': f"Failed to list folder {folder_id}: {str(e)}", 'downloaded': []}
-
-    files = results.get('files', [])
+    files = fetch_all_files_recursive(service, folder_id)
     downloaded = []
 
     for f in files:
