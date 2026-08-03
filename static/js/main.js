@@ -173,13 +173,35 @@ function getLoadingTitle(targetTab) {
         else if (appState.activeTab === 'tab-fru') defaultTab = 'fru';
         else if (appState.activeTab === 'tab-matrix') defaultTab = 'matrix';
 
-        // Update modal tab active styling
+        // Update modal tab active & greyed-out disabled styling
         document.querySelectorAll('.summary-tab-btn').forEach(b => {
+            const tabName = b.getAttribute('data-sumtab');
             b.classList.remove('btn-primary', 'active');
             b.classList.add('btn-secondary');
-            if (b.getAttribute('data-sumtab') === defaultTab) {
+
+            if (tabName === defaultTab) {
                 b.classList.remove('btn-secondary');
                 b.classList.add('btn-primary', 'active');
+                b.disabled = false;
+                b.style.opacity = '1';
+                b.style.pointerEvents = 'auto';
+                b.style.cursor = 'pointer';
+                b.style.filter = 'none';
+                b.title = '當前檢視頁面摘要';
+            } else if (tabName === 'all') {
+                b.disabled = false;
+                b.style.opacity = '0.9';
+                b.style.pointerEvents = 'auto';
+                b.style.cursor = 'pointer';
+                b.style.filter = 'none';
+                b.title = '全平台綜合摘要';
+            } else {
+                b.disabled = true;
+                b.style.opacity = '0.35';
+                b.style.pointerEvents = 'none';
+                b.style.cursor = 'not-allowed';
+                b.style.filter = 'grayscale(1)';
+                b.title = '非當前頁面 (已反灰停用)';
             }
         });
 
