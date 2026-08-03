@@ -2085,11 +2085,22 @@ function renderMatrixTable() {
     const filtered = appState.matrix.items.filter(item => {
         if (onlyDiff && !item.is_diff) return false;
         if (selectedGroup !== 'ALL' && item.group_item !== selectedGroup) return false;
-        const matchSearch = !searchVal ||
-            item.group_item.toLowerCase().includes(searchVal) ||
-            item.attribute.toLowerCase().includes(searchVal) ||
-            Object.values(item.values).some(v => v.toLowerCase().includes(searchVal));
-        return matchSearch;
+        if (!searchVal) return true;
+
+        const cleanSearchVal = searchVal.replace(/[^a-z0-9]/g, '');
+        const matchText = (val) => {
+            if (!val) return false;
+            const str = String(val).toLowerCase();
+            if (str.includes(searchVal)) return true;
+            if (cleanSearchVal.length >= 3 && str.replace(/[^a-z0-9]/g, '').includes(cleanSearchVal)) return true;
+            return false;
+        };
+
+        const matchGroup = matchText(item.group_item);
+        const matchAttr = matchText(item.attribute);
+        const matchVals = item.values && Object.values(item.values).some(v => matchText(v));
+
+        return matchGroup || matchAttr || matchVals;
     });
 
     if (filtered.length === 0) {
@@ -2185,10 +2196,23 @@ function renderMatrixCompareTable() {
     const filtered = appState.matrixCompare.items.filter(item => {
         if (onlyDiff && !item.is_diff) return false;
         if (selectedGroup !== 'ALL' && item.group_item !== selectedGroup) return false;
-        const matchSearch = !searchVal ||
-            item.group_item.toLowerCase().includes(searchVal) ||
-            item.attribute.toLowerCase().includes(searchVal);
-        return matchSearch;
+        if (!searchVal) return true;
+        
+        const cleanSearchVal = searchVal.replace(/[^a-z0-9]/g, '');
+        const matchText = (val) => {
+            if (!val) return false;
+            const str = String(val).toLowerCase();
+            if (str.includes(searchVal)) return true;
+            if (cleanSearchVal.length >= 3 && str.replace(/[^a-z0-9]/g, '').includes(cleanSearchVal)) return true;
+            return false;
+        };
+
+        const matchGroup = matchText(item.group_item);
+        const matchAttr = matchText(item.attribute);
+        const matchBase = item.base_values && Object.values(item.base_values).some(v => matchText(v));
+        const matchTgt = item.target_values && Object.values(item.target_values).some(v => matchText(v));
+
+        return matchGroup || matchAttr || matchBase || matchTgt;
     });
 
     if (filtered.length === 0) {
