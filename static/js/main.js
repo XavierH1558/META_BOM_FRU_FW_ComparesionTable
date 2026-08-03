@@ -2282,10 +2282,13 @@ function renderGlobalSearchResults(results, q) {
     }
 
     if (results.matrix?.length > 0) {
-        html += `<h4 style="color: var(--info-purple); margin-top: 1.5rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-table-cells"></i> Build Matrix Matches (${results.matrix.length})</h4><ul style="list-style: none; padding-left: 0;">`;
+        html += `<h4 style="color: #a78bfa; margin-top: 1.5rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-table-cells"></i> Build Matrix Matches (${results.matrix.length})</h4><ul style="list-style: none; padding-left: 0;">`;
         results.matrix.forEach(m => {
-            html += `<li style="padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.4rem; border-radius: 8px;">
-                <strong style="color: var(--info-purple);">${escapeHtml(m.group_item)}</strong>: ${escapeHtml(m.description)}
+            const fileBadge = m.file ? `<span class="badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd; font-size:0.75rem; margin-right:0.4rem;"><i class="fa-regular fa-file-excel"></i> ${escapeHtml(m.file)} (${escapeHtml(m.sheet || 'Default')})</span>` : '';
+            const cfgSummary = m.configs ? Object.entries(m.configs).map(([k, v]) => `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join(' | ') : '';
+            html += `<li style="padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.5rem; border-radius: 8px;">
+                <div style="margin-bottom: 0.3rem;">${fileBadge} <strong style="color: #a78bfa; font-size: 0.95rem;">${escapeHtml(m.group_item)}</strong> ➔ <span style="font-weight:600; color:#f8fafc;">${escapeHtml(m.description)}</span></div>
+                <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.4; background: rgba(15,23,42,0.4); padding: 0.4rem 0.6rem; border-radius: 6px; word-break: break-all;">${cfgSummary}</div>
             </li>`;
         });
         html += `</ul>`;

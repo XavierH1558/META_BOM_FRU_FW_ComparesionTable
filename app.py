@@ -1109,62 +1109,87 @@ def compare_two_fru_sheets(rows_dvt, rows_pvt):
 
 @app.route('/api/global-search', methods=['GET'])
 def api_global_search():
-    """Search across latest BKC, FRU, and Build Matrix tables for a query string."""
-    q = request.args.get('q', '').strip().lower()
-    if not q:
-        return jsonify({'success': True, 'query': '', 'results': {'bkc': [], 'fru': [], 'matrix': []}})
+    """Search across ALL files and ALL sheets of BKC, FRU, and Build Matrix with fuzzy-clean matching."""
+    q_raw = request.args.get('q', '').strip()
+    q = q_raw.lower()
+    clean_q = re.sub(r'[^a-zA-Z0-9]', '', q)
+    if not q or len(q) < 2:
+        return jsonify({'success': True, 'query': q_raw, 'results': {'bkc': [], 'fru': [], 'matrix': []}})
     
     results = {'bkc': [], 'fru': [], 'matrix': []}
 
-    # Search BKC
-    bkc_file = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
-    bkc_rows, bkc_sheets, _ = read_file_safe(bkc_file)
-    if bkc_rows:
-        bkc_items = parse_bkc_items(bkc_rows)
-        for item in bkc_items:
-            searchable = f"{item.get('category','')} {item.get('group','')} {item.get('sub_component','')} {item.get('version','')}".lower()
-            if q in searchable:
-                results['bkc'].append({
-                    'category': item.get('category'),
-                    'group': item.get('group'),
-                    'sub_component': item.get('sub_component'),
-                    'dvt_version': item.get('version'),
-                    'pvt_version': item.get('version')
-                })
+    def is_match(searchable_str):
+        s_low = searchable_str.lower()
+        if q in s_low:
+            return True
+        if clean_q and len(clean_q) >= 3:
+            s_clean = re.sub(r'[^a-zA-Z0-9]', '', s_low)
+            if clean_q in s_clean:
+                return True
+        return False
 
-    # Search FRU
-    fru_file = resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
-    fru_rows, fru_sheets, _ = read_file_safe(fru_file)
-    if fru_rows:
-        mods, keys, data_dict = parse_fru_sheet_smart(fru_rows)
-        for (sec, f_name) in keys:
-            vals = " ".join(data_dict.get((sec, f_name), {}).values())
-            searchable = f"{sec} {f_name} {vals}".lower()
-            if q in searchable:
-                results['fru'].append({
-                    'module': mods[0] if mods else 'General',
-                    'section': sec,
-                    'field_name': f_name,
-                    'dvt_value': vals,
-                    'pvt_value': vals
-                })
+    # Search BKC across all files and sheets
+    for f in scan_files_in_dirs('bkc'):
+        r_first, sheets, _ = read_file_safe(f['path'])
+        for s in (sheets or [None]):
+            rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+            if not rows: continue
+            bkc_items = parse_bkc_items(rows)
+            for item in bkc_items:
+                searchable = f"{item.get('category','')} {item.get('group','')} {item.get('sub_component','')} {item.get('version','')}"
+                if is_match(searchable):
+                    results['bkc'].append({
+                        'file': f['filename'],
+                        'sheet': s or 'Default',
+                        'category': item.get('category'),
+                        'group': item.get('group'),
+                        'sub_component': item.get('sub_component'),
+                        'dvt_version': item.get('version'),
+                        'pvt_version': item.get('version')
+                    })
 
-    # Search Matrix
-    matrix_file = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
-    matrix_rows, matrix_sheets, _ = read_file_safe(matrix_file)
-    if matrix_rows:
-        _, _, _, _, _, items_list, _ = parse_matrix_sheet(matrix_rows)
-        for item in items_list:
-            cfg_vals = " ".join([str(v) for v in item.get('values', {}).values()])
-            searchable = f"{item.get('group_item','')} {item.get('attribute','')} {cfg_vals}".lower()
-            if q in searchable:
-                results['matrix'].append({
-                    'group_item': item.get('group_item'),
-                    'description': item.get('attribute'),
-                    'configs': item.get('values')
-                })
+    # Search FRU across all files and sheets
+    for f in scan_files_in_dirs('fru'):
+        r_first, sheets, _ = read_file_safe(f['path'])
+        for s in (sheets or [None]):
+            rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+            if not rows: continue
+            mods, keys, data_dict = parse_fru_sheet_smart(rows)
+            for (sec, f_name) in keys:
+                vals = " ".join(data_dict.get((sec, f_name), {}).values())
+                searchable = f"{sec} {f_name} {vals}"
+                if is_match(searchable):
+                    results['fru'].append({
+                        'file': f['filename'],
+                        'sheet': s or 'Default',
+                        'module': mods[0] if mods else 'General',
+                        'section': sec,
+                        'field_name': f_name,
+                        'dvt_value': vals,
+                        'pvt_value': vals
+                    })
 
-    return jsonify({'success': True, 'query': q, 'results': results})
+    # Search Matrix across all files and sheets
+    for f in scan_files_in_dirs('matrix'):
+        r_first, sheets, _ = read_file_safe(f['path'])
+        for s in (sheets or [None]):
+            rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+            if not rows: continue
+            parsed = parse_matrix_sheet(rows)
+            items_list = parsed[5] if len(parsed) >= 6 else []
+            for item in items_list:
+                cfg_vals = " ".join([str(v) for v in item.get('values', {}).values()])
+                searchable = f"{item.get('group_item','')} {item.get('attribute','')} {cfg_vals}"
+                if is_match(searchable):
+                    results['matrix'].append({
+                        'file': f['filename'],
+                        'sheet': s or 'Default',
+                        'group_item': item.get('group_item'),
+                        'description': item.get('attribute'),
+                        'configs': item.get('values')
+                    })
+
+    return jsonify({'success': True, 'query': q_raw, 'results': results})
 
 
 @app.route('/api/history', methods=['GET'])
