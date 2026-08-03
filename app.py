@@ -1110,7 +1110,9 @@ def compare_two_fru_sheets(rows_dvt, rows_pvt):
 @app.route('/api/global-search', methods=['GET'])
 def api_global_search():
     """Search across ALL files and ALL sheets of BKC, FRU, and Build Matrix with fuzzy-clean matching."""
-    q_raw = request.args.get('q', '').strip()
+    q_raw = request.args.get('q', '')
+    # Strip any leading/trailing tabs (\t), newlines, spaces, non-breaking spaces (\xa0, \u00a0, \u200b)
+    q_raw = re.sub(r'^[\s\xa0\u00a0\u200b\t\r\n]+|[\s\xa0\u00a0\u200b\t\r\n]+$', '', q_raw).strip()
     q = q_raw.lower()
     clean_q = re.sub(r'[^a-zA-Z0-9]', '', q)
     if not q or len(q) < 2:
@@ -1119,7 +1121,8 @@ def api_global_search():
     results = {'bkc': [], 'fru': [], 'matrix': []}
 
     def is_match(searchable_str):
-        s_low = searchable_str.lower()
+        if not searchable_str: return False
+        s_low = str(searchable_str).lower()
         if q in s_low:
             return True
         if clean_q and len(clean_q) >= 3:
@@ -1130,64 +1133,82 @@ def api_global_search():
 
     # Search BKC across all files and sheets
     for f in scan_files_in_dirs('bkc'):
-        r_first, sheets, _ = read_file_safe(f['path'])
-        for s in (sheets or [None]):
-            rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
-            if not rows: continue
-            bkc_items = parse_bkc_items(rows)
-            for item in bkc_items:
-                searchable = f"{item.get('category','')} {item.get('group','')} {item.get('sub_component','')} {item.get('version','')}"
-                if is_match(searchable):
-                    results['bkc'].append({
-                        'file': f['filename'],
-                        'sheet': s or 'Default',
-                        'category': item.get('category'),
-                        'group': item.get('group'),
-                        'sub_component': item.get('sub_component'),
-                        'dvt_version': item.get('version'),
-                        'pvt_version': item.get('version')
-                    })
+        try:
+            r_first, sheets, _ = read_file_safe(f['path'])
+            for s in (sheets or [None]):
+                try:
+                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                    if not rows: continue
+                    bkc_items = parse_bkc_items(rows)
+                    for item in bkc_items:
+                        searchable = f"{item.get('category','')} {item.get('group','')} {item.get('sub_component','')} {item.get('version','')}"
+                        if is_match(searchable):
+                            results['bkc'].append({
+                                'file': f['filename'],
+                                'sheet': s or 'Default',
+                                'category': item.get('category'),
+                                'group': item.get('group'),
+                                'sub_component': item.get('sub_component'),
+                                'dvt_version': item.get('version'),
+                                'pvt_version': item.get('version')
+                            })
+                except Exception as ex:
+                    print(f"Error scanning BKC file {f.get('filename')} sheet {s}: {ex}")
+        except Exception as ex:
+            print(f"Error scanning BKC file {f.get('filename')}: {ex}")
 
     # Search FRU across all files and sheets
     for f in scan_files_in_dirs('fru'):
-        r_first, sheets, _ = read_file_safe(f['path'])
-        for s in (sheets or [None]):
-            rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
-            if not rows: continue
-            mods, keys, data_dict = parse_fru_sheet_smart(rows)
-            for (sec, f_name) in keys:
-                vals = " ".join(data_dict.get((sec, f_name), {}).values())
-                searchable = f"{sec} {f_name} {vals}"
-                if is_match(searchable):
-                    results['fru'].append({
-                        'file': f['filename'],
-                        'sheet': s or 'Default',
-                        'module': mods[0] if mods else 'General',
-                        'section': sec,
-                        'field_name': f_name,
-                        'dvt_value': vals,
-                        'pvt_value': vals
-                    })
+        try:
+            r_first, sheets, _ = read_file_safe(f['path'])
+            for s in (sheets or [None]):
+                try:
+                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                    if not rows: continue
+                    mods, keys, data_dict = parse_fru_sheet_smart(rows)
+                    for (sec, f_name) in keys:
+                        vals = " ".join(str(v) for v in data_dict.get((sec, f_name), {}).values())
+                        searchable = f"{sec} {f_name} {vals}"
+                        if is_match(searchable):
+                            results['fru'].append({
+                                'file': f['filename'],
+                                'sheet': s or 'Default',
+                                'module': mods[0] if mods else 'General',
+                                'section': sec,
+                                'field_name': f_name,
+                                'dvt_value': vals,
+                                'pvt_value': vals
+                            })
+                except Exception as ex:
+                    print(f"Error scanning FRU file {f.get('filename')} sheet {s}: {ex}")
+        except Exception as ex:
+            print(f"Error scanning FRU file {f.get('filename')}: {ex}")
 
     # Search Matrix across all files and sheets
     for f in scan_files_in_dirs('matrix'):
-        r_first, sheets, _ = read_file_safe(f['path'])
-        for s in (sheets or [None]):
-            rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
-            if not rows: continue
-            parsed = parse_matrix_sheet(rows)
-            items_list = parsed[5] if len(parsed) >= 6 else []
-            for item in items_list:
-                cfg_vals = " ".join([str(v) for v in item.get('values', {}).values()])
-                searchable = f"{item.get('group_item','')} {item.get('attribute','')} {cfg_vals}"
-                if is_match(searchable):
-                    results['matrix'].append({
-                        'file': f['filename'],
-                        'sheet': s or 'Default',
-                        'group_item': item.get('group_item'),
-                        'description': item.get('attribute'),
-                        'configs': item.get('values')
-                    })
+        try:
+            r_first, sheets, _ = read_file_safe(f['path'])
+            for s in (sheets or [None]):
+                try:
+                    rows = r_first if (sheets and s == sheets[0]) else read_file_safe(f['path'], sheet_name=s)[0]
+                    if not rows: continue
+                    parsed = parse_matrix_sheet(rows)
+                    items_list = parsed[5] if len(parsed) >= 6 else []
+                    for item in items_list:
+                        cfg_vals = " ".join([str(v) for v in item.get('values', {}).values()])
+                        searchable = f"{item.get('group_item','')} {item.get('attribute','')} {cfg_vals}"
+                        if is_match(searchable):
+                            results['matrix'].append({
+                                'file': f['filename'],
+                                'sheet': s or 'Default',
+                                'group_item': item.get('group_item'),
+                                'description': item.get('attribute'),
+                                'configs': item.get('values')
+                            })
+                except Exception as ex:
+                    print(f"Error scanning Matrix file {f.get('filename')} sheet {s}: {ex}")
+        except Exception as ex:
+            print(f"Error scanning Matrix file {f.get('filename')}: {ex}")
 
     return jsonify({'success': True, 'query': q_raw, 'results': results})
 

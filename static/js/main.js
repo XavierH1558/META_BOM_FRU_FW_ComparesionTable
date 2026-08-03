@@ -300,7 +300,8 @@ function getLoadingTitle(targetTab) {
 
     globalInput.addEventListener('keypress', async (e) => {
         if (e.key === 'Enter') {
-            const q = globalInput.value.trim();
+            const rawVal = globalInput.value || '';
+            const q = rawVal.replace(/^[\s\xa0\u00a0\u200b\t\r\n]+|[\s\xa0\u00a0\u200b\t\r\n]+$/g, '').trim();
             if (!q) return;
             showLoading(`全域搜尋中: "${q}"...`, 'Scanning BKC, FRU Spec, and Build Matrix datasets');
             try {
