@@ -478,6 +478,15 @@
         <!-- Tab 4: Test Suite (YAML) Comparison -->
         <section class="tab-content" id="tab-yaml">
             <div class="control-panel">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <!-- View Mode Toggle Buttons -->
+                    <div class="pill-group" id="yaml-view-toggle">
+                        <button class="pill-btn active" id="btn-yaml-view-bkc"><i class="fa-solid fa-list-check"></i> 1. 工站對照 BKC</button>
+                        <button class="pill-btn" id="btn-yaml-view-matrix"><i class="fa-solid fa-border-all"></i> 2. 跨工站測試覆蓋熱力圖</button>
+                        <button class="pill-btn" id="btn-yaml-view-diff"><i class="fa-solid fa-code-compare"></i> 3. 腳本跨版本演進比對</button>
+                    </div>
+                </div>
+
                 <div class="summary-cards" id="yaml-summary-cards">
                     <div class="stat-card" id="yaml-stat-card-1">
                         <div class="stat-icon bg-blue"><i class="fa-solid fa-file-code"></i></div>
@@ -509,7 +518,8 @@
                     </div>
                 </div>
 
-                <div class="filter-bar flex-wrap" style="gap: 0.8rem;">
+                <!-- Controls for View 1: BKC Comparison -->
+                <div class="filter-bar flex-wrap" id="yaml-bkc-controls" style="gap: 0.8rem;">
                     <!-- YAML Files Selection (1 to 3 files) -->
                     <div class="select-box" title="選擇 Station 1 測試腳本 YAML 檔案">
                         <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 1:</span>
@@ -557,29 +567,86 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- Controls for View 3: Version Diff (Initially Hidden) -->
+                <div class="filter-bar flex-wrap" id="yaml-diff-controls" style="display: none; gap: 0.8rem;">
+                    <div class="select-box" title="選擇舊版 Base 測試腳本 YAML 檔案">
+                        <span class="select-label" style="color: #a855f7; font-weight: 600;"><i class="fa-solid fa-clock-rotate-left"></i> Base (舊版/基準):</span>
+                        <select id="yaml-diff-base-select" style="max-width: 220px;"></select>
+                    </div>
+                    <div class="vs-divider">VS</div>
+                    <div class="select-box" title="選擇新版 Target 測試腳本 YAML 檔案">
+                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-code-merge"></i> Target (新版/對照):</span>
+                        <select id="yaml-diff-target-select" style="max-width: 220px;"></select>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="btn-run-yaml-diff"><i class="fa-solid fa-play"></i> 執行版本演進比對</button>
+                </div>
             </div>
 
-            <div class="table-card">
+            <!-- View 1 Table Card -->
+            <div class="table-card" id="yaml-view-bkc-container">
                 <div class="table-container">
                     <table class="data-table" id="yaml-table">
                         <thead>
                             <tr>
-                                <th style="width: 140px;">測試工站 / 來源檔案</th>
-                                <th style="width: 190px;">測試腳本 / 位置步驟 (Traceability)</th>
-                                <th style="width: 160px;">組件與項目 (Component)</th>
-                                <th style="width: 120px;">YAML 預期版本</th>
-                                <th style="width: 120px;">BKC 標準版本</th>
-                                <th style="width: 140px;">合規比對狀態</th>
-                                <th>對照討論說明 / 行動建議 (Discussion Notes)</th>
+                                <th style="width: 120px;">測試工站 / 來源</th>
+                                <th style="width: 160px;">測試腳本 / 位置步驟</th>
+                                <th style="width: 150px;">組件與項目 (Component)</th>
+                                <th style="width: 110px;">YAML 預期</th>
+                                <th style="width: 110px;">BKC 標準</th>
+                                <th style="width: 130px;">合規狀態</th>
+                                <th style="width: 180px;">客戶處置與責任欄 (Disposition)</th>
+                                <th>對照討論說明 / 修復 Patch</th>
                             </tr>
                         </thead>
                         <tbody id="yaml-tbody">
-                            <tr><td colspan="7" class="text-center py-4">載入 Test Suite (YAML) 比對資料中...</td></tr>
+                            <tr><td colspan="8" class="text-center py-4">載入 Test Suite (YAML) 比對資料中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- View 2 Container: Cross-Station Coverage Matrix (Initially Hidden) -->
+            <div class="table-card" id="yaml-view-matrix-container" style="display: none;">
+                <div class="card-header border-0 pb-0">
+                    <h4 style="font-size: 1.05rem; font-weight: 600; color: var(--text-main); margin: 0;"><i class="fa-solid fa-border-all text-cyan"></i> 跨工站測試覆蓋率與合規熱力圖 (Cross-Station Coverage Heatmap)</h4>
+                </div>
+                <div class="table-container p-3">
+                    <table class="data-table" id="yaml-coverage-matrix-table">
+                        <thead id="yaml-coverage-thead">
+                            <!-- Populated via JS -->
+                        </thead>
+                        <tbody id="yaml-coverage-tbody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- View 3 Container: Suite Version Diff (Initially Hidden) -->
+            <div class="table-card" id="yaml-view-diff-container" style="display: none;">
+                <div class="card-header border-0 pb-0">
+                    <h4 style="font-size: 1.05rem; font-weight: 600; color: var(--text-main); margin: 0;"><i class="fa-solid fa-code-compare text-purple"></i> 測試腳本版本演進異動表 (Version-to-Version Suite Evolution)</h4>
+                </div>
+                <div class="table-container p-3">
+                    <table class="data-table" id="yaml-version-diff-table">
+                        <thead>
+                            <tr>
+                                <th>測試腳本步驟 (Step Location)</th>
+                                <th>組件項目 (Component)</th>
+                                <th>Base 基準版本 (舊版)</th>
+                                <th>Target 對照版本 (新版)</th>
+                                <th>演進異動狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody id="yaml-version-diff-tbody">
+                            <tr><td colspan="5" class="text-center py-4 text-muted">請選擇 Base 與 Target YAML 腳本後點擊「執行版本演進比對」</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </section>
+
 
     </main>
 
@@ -695,8 +762,36 @@
         </div>
     </div>
 
+    <!-- YAML Auto Fix Patch Modal -->
+    <div class="modal-overlay" id="yaml-patch-modal" style="display: none;">
+        <div class="modal-card" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-wand-magic-sparkles text-cyan"></i> 一鍵生成 YAML 腳本修復 Patch (Auto Patch Snippet)</h3>
+                <button class="btn-close-modal" id="btn-close-yaml-patch"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.8rem;">
+                    依據指定 BKC 標準版本自動比對生成之修復片段，您可以直接點擊按鈕複製程式碼貼回 YAML 測試腳本：
+                </p>
+                <div class="form-group mb-3">
+                    <label class="form-label" style="font-weight: 600; color: var(--accent-cyan);">Unified Diff Patch Format:</label>
+                    <textarea id="yaml-patch-text-area" readonly style="width: 100%; height: 140px; background: #0f172a; border: 1px solid var(--border-color); color: #38bdf8; font-family: var(--font-mono); padding: 0.8rem; border-radius: 6px; font-size: 0.82rem; outline: none; resize: vertical;"></textarea>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label" style="font-weight: 600; color: var(--warning-amber);">YAML Code Snippet (Ready to Paste):</label>
+                    <textarea id="yaml-snippet-area" readonly style="width: 100%; height: 130px; background: #0f172a; border: 1px solid var(--border-color); color: #fbbf24; font-family: var(--font-mono); padding: 0.8rem; border-radius: 6px; font-size: 0.82rem; outline: none; resize: vertical;"></textarea>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button class="btn btn-warning btn-sm" id="btn-copy-yaml-patch"><i class="fa-solid fa-copy"></i> 複製 Git Patch</button>
+                    <button class="btn btn-primary btn-sm" id="btn-copy-yaml-snippet"><i class="fa-solid fa-code"></i> 複製 YAML Snippet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="app-footer">
+
         <p>META VR200 SanMiguel Hardware & Firmware Release Engineering System &copy; 2026</p>
     </footer>
 

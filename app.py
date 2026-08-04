@@ -1415,6 +1415,35 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 'command': ''
             })
 
+    YAML_DISPOSITIONS_FILE = os.path.join(DATA_DIR, 'yaml_dispositions.json')
+
+    def load_yaml_dispositions():
+        if os.path.exists(YAML_DISPOSITIONS_FILE):
+            try:
+                with open(YAML_DISPOSITIONS_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def save_yaml_dispositions(data):
+        try:
+            with open(YAML_DISPOSITIONS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[Error saving yaml dispositions]: {e}")
+
+    dispositions = load_yaml_dispositions()
+
+    # Attach disposition tracking to each comparison result
+    for r in comparison_results:
+        item_key = f"{r['station']}|{r['step_location']}|{r['sub_component']}"
+        disp = dispositions.get(item_key, {})
+        r['item_key'] = item_key
+        r['disposition_status'] = disp.get('disposition_status', 'Pending')
+        r['disposition_owner'] = disp.get('owner', '')
+        r['disposition_note'] = disp.get('note', '')
+
     matched_count = sum(1 for r in comparison_results if r['status'] == 'MATCH')
     mismatch_count = sum(1 for r in comparison_results if r['status'] == 'MISMATCH')
     missing_bkc_count = sum(1 for r in comparison_results if r['status'] == 'MISSING_IN_BKC')
@@ -1424,6 +1453,33 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
     compliance_rate = round((matched_count / total_checks * 100), 1) if total_checks > 0 else 0.0
 
     active_sheet = bkc_sheet_name if (bkc_sheet_name and bkc_sheet_name in b_sheets) else (b_sheets[0] if b_sheets else 'Default')
+
+    # Construct Cross-Station Coverage Matrix
+    stations_list = [s['station'] for s in station_summaries]
+    matrix_grid = {}
+    for r in comparison_results:
+        comp_key = r.get('sub_component') or r.get('component')
+        st = r.get('station')
+        if comp_key not in matrix_grid:
+            matrix_grid[comp_key] = {
+                'component': comp_key,
+                'category': r.get('bkc_category', 'General'),
+                'group': r.get('bkc_group', 'General'),
+                'bkc_version': r.get('bkc_version', 'N/A'),
+                'stations': {}
+            }
+        if st and st != 'None':
+            matrix_grid[comp_key]['stations'][st] = {
+                'status': r.get('status'),
+                'status_label': r.get('status_label'),
+                'yaml_version': r.get('yaml_version'),
+                'step_location': r.get('step_location')
+            }
+            
+    coverage_matrix = {
+        'stations': stations_list,
+        'grid': list(matrix_grid.values())
+    }
 
     return {
         'summary': {
@@ -1439,8 +1495,10 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
             'bkc_sheet': active_sheet,
             'bkc_sheets': b_sheets
         },
+        'coverage_matrix': coverage_matrix,
         'items': comparison_results
     }
+
 
 
 @app.route('/api/global-search', methods=['GET'])
@@ -1598,6 +1656,7 @@ def get_yaml_compare():
     return jsonify({
         'success': True,
         'summary': res['summary'],
+        'coverage_matrix': res.get('coverage_matrix', {}),
         'items': res['items']
     })
 
@@ -1611,24 +1670,195 @@ def upload_yaml():
     files = request.files.getlist('files') or [request.files['file']]
     uploaded_files = []
     
-    for f in files:
-        if f and f.filename.endswith(('.yaml', '.yml')):
-            filename = secure_filename(f.filename)
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
-            f.save(save_path)
+    for file in files:
+        if file and file.filename:
+            filename = secure_filename(file.filename)
+            if not filename.endswith('.yaml') and not filename.endswith('.yml'):
+                continue
+            path = os.path.join(DIR_ROOTS['yaml'], filename)
+            file.save(path)
             uploaded_files.append({
                 'filename': filename,
-                'path': save_path
+                'path': path,
+                'display_name': filename
             })
             
     if not uploaded_files:
-        return jsonify({'success': False, 'error': 'Only .yaml or .yml files are supported'}), 400
+        return jsonify({'success': False, 'error': 'No valid YAML files uploaded'}), 400
         
     return jsonify({
         'success': True,
-        'message': f"Successfully uploaded {len(uploaded_files)} YAML test suite file(s).",
+        'message': f'Successfully uploaded {len(uploaded_files)} YAML test suite file(s).',
         'files': uploaded_files
     })
+
+
+@app.route('/api/yaml-dispositions', methods=['GET', 'POST'])
+def api_yaml_dispositions():
+    """Get or save customer action dispositions & owner assignments."""
+    YAML_DISPOSITIONS_FILE = os.path.join(DATA_DIR, 'yaml_dispositions.json')
+    
+    def load_dispositions():
+        if os.path.exists(YAML_DISPOSITIONS_FILE):
+            try:
+                with open(YAML_DISPOSITIONS_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def save_dispositions(data):
+        try:
+            with open(YAML_DISPOSITIONS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[Error saving yaml dispositions]: {e}")
+
+    dispositions = load_dispositions()
+    if request.method == 'POST':
+        req = request.get_json(silent=True) or {}
+        key = req.get('key')
+        if key:
+            dispositions[key] = {
+                'disposition_status': req.get('disposition_status', 'Pending'),
+                'owner': req.get('owner', ''),
+                'note': req.get('note', ''),
+                'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+            }
+            save_dispositions(dispositions)
+            return jsonify({'success': True, 'disposition': dispositions[key]})
+        return jsonify({'success': False, 'error': 'Key is required'}), 400
+        
+    return jsonify({'success': True, 'dispositions': dispositions})
+
+
+@app.route('/api/yaml-patch', methods=['POST'])
+def api_yaml_patch():
+    """Generate Auto YAML Code Patch Snippet for mismatched test steps."""
+    req = request.get_json(silent=True) or {}
+    step_name = req.get('step_location', 'UnknownStep')
+    comp = req.get('component', 'Component')
+    file_name = req.get('file_name', 'test_suite.yaml')
+    yaml_ver = req.get('yaml_version', '')
+    bkc_ver = req.get('bkc_version', '')
+
+    patch_lines = [
+        f"# ===========================================================",
+        f"# Proposed Fix Patch for Step: {step_name}",
+        f"# Target Component: {comp}",
+        f"# Target File: {file_name}",
+        f"# ===========================================================",
+        f"--- a/{file_name}",
+        f"+++ b/{file_name}",
+        f"@@ step: {step_name} @@",
+        f"-    fw_version: '{yaml_ver}'",
+        f"+    fw_version: '{bkc_ver}'  # Fixed to match BKC standard"
+    ]
+    
+    snippet_yaml = f"""# YAML Snippet Update for step: {step_name}
+- name: {step_name}
+  args:
+    component: {comp.lower().replace(' ', '_')}
+    fw_version: '{bkc_ver}'  # Updated to match BKC Table Standard
+"""
+
+    return jsonify({
+        'success': True,
+        'patch_text': "\n".join(patch_lines),
+        'snippet_yaml': snippet_yaml
+    })
+
+
+@app.route('/api/yaml-version-diff', methods=['GET', 'POST'])
+def api_yaml_version_diff():
+    """Compare two YAML test suites (Base v3 vs Target v4) for version-to-version evolution diff."""
+    if request.method == 'POST':
+        req = request.get_json(silent=True) or {}
+        base_path = req.get('base_yaml')
+        target_path = req.get('target_yaml')
+    else:
+        base_path = request.args.get('base_yaml')
+        target_path = request.args.get('target_yaml')
+
+    available_yaml = scan_files_in_dirs('yaml')
+    
+    if not base_path and len(available_yaml) > 0:
+        base_path = available_yaml[0]['path']
+    if not target_path and len(available_yaml) > 1:
+        target_path = available_yaml[1]['path']
+    elif not target_path and len(available_yaml) > 0:
+        target_path = available_yaml[0]['path']
+
+    base_p = resolve_file_path('yaml', base_path) if base_path else None
+    target_p = resolve_file_path('yaml', target_path) if target_path else None
+
+    base_items, b_label, b_err = parse_single_yaml_file(base_p, "Base Suite") if base_p else ([], "Base Suite", None)
+    target_items, t_label, t_err = parse_single_yaml_file(target_p, "Target Suite") if target_p else ([], "Target Suite", None)
+
+    base_map = {(it['step_location'], it['sub_component']): it for it in base_items}
+    target_map = {(it['step_location'], it['sub_component']): it for it in target_items}
+
+    all_keys = list(dict.fromkeys(list(base_map.keys()) + list(target_map.keys())))
+
+    diff_results = []
+    added_count = 0
+    removed_count = 0
+    modified_count = 0
+    unchanged_count = 0
+
+    for key in all_keys:
+        in_b = key in base_map
+        in_t = key in target_map
+
+        b_item = base_map.get(key, {})
+        t_item = target_map.get(key, {})
+
+        if in_t and not in_b:
+            status = 'ADDED'
+            status_label = '🟢 新增步驟'
+            added_count += 1
+        elif in_b and not in_t:
+            status = 'REMOVED'
+            status_label = '🔴 移除步驟'
+            removed_count += 1
+        else:
+            b_ver = b_item.get('yaml_version', '')
+            t_ver = t_item.get('yaml_version', '')
+            if b_ver != t_ver:
+                status = 'MODIFIED'
+                status_label = '🟡 變更版本'
+                modified_count += 1
+            else:
+                status = 'UNCHANGED'
+                status_label = '⚪ 無變更'
+                unchanged_count += 1
+
+        diff_results.append({
+            'step_location': key[0],
+            'sub_component': key[1],
+            'component': t_item.get('component') or b_item.get('component'),
+            'base_version': b_item.get('yaml_version', 'N/A'),
+            'target_version': t_item.get('yaml_version', 'N/A'),
+            'status': status,
+            'status_label': status_label,
+            'command': t_item.get('command') or b_item.get('command') or ''
+        })
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'base_file': os.path.basename(base_p) if base_p else 'None',
+            'target_file': os.path.basename(target_p) if target_p else 'None',
+            'total_items': len(diff_results),
+            'added_count': added_count,
+            'removed_count': removed_count,
+            'modified_count': modified_count,
+            'unchanged_count': unchanged_count,
+            'available_yaml_files': available_yaml
+        },
+        'items': diff_results
+    })
+
 
 
 @app.route('/api/history', methods=['GET'])
@@ -1820,7 +2050,7 @@ def api_export_excel():
 
     if tab_type == 'yaml':
         ws.title = "Test Suite YAML Comparison"
-        headers = ["Station", "Script Step & Location", "Component", "YAML Expected Version", "BKC Standard Version", "Compliance Status", "Discussion & Action Notes", "Test Command"]
+        headers = ["Station", "Script Step & Location", "Component", "YAML Expected Version", "BKC Standard Version", "Compliance Status", "Action Disposition", "Assigned Owner", "Discussion & Action Notes", "Test Command"]
         ws.append(headers)
         for col in range(1, len(headers) + 1):
             cell = ws.cell(row=1, column=col)
@@ -1848,6 +2078,8 @@ def api_export_excel():
                 item.get('yaml_version'),
                 item.get('bkc_version'),
                 item.get('status_label'),
+                item.get('disposition_status', 'Pending'),
+                item.get('disposition_owner', ''),
                 item.get('discussion_note'),
                 item.get('command')
             ])
@@ -1856,6 +2088,7 @@ def api_export_excel():
                     c = ws.cell(row=row_idx, column=col)
                     c.fill = fill_diff
                     c.font = font_diff
+
             elif item.get('status') == 'MISSING_IN_BKC':
                 fill_warn = PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid")
                 font_warn = Font(name="Calibri", size=10, color="854D0E")
