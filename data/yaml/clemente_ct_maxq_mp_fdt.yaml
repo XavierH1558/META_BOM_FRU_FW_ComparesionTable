@@ -1,0 +1,1335 @@
+#
+# Clemente Compute Tray MaxQ MP FDT v4
+#
+# ChangeLog
+#    - v1
+#       1. base on clemente_ct_mp_fdt_v10 
+#       2. Update BKC to MAXQ_0423
+#       3. Add excluded_sensors for SensorCheck
+#       4. Change to use ModifyTempSettings.15.1.sh since service name changed in BMC 15.1
+#     -v2
+#       1. Add 10 times AC cycle for PDB MOS issue.
+#       2. Add CheckWedge400PSUVoltage to check PSU voltage
+#     -v3
+#       1. Remove CheckWedge400PSUVoltage and 10 times AC cycle
+#       2. Add IOB_Sensor_WR before SensorCheck
+#     -v4
+#       1. Add SBIOS load default after update SBIOS
+#
+
+# ----- Check if BMC online
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# ----- SEL clear
+
+- name: SELClear
+  proxy: controller
+  timeout: 1800
+#  retries: 1
+#  retry_delay: 30
+  args:
+    whitelist: {
+      'channel islands clemente - gb300': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+# ----- Update BMC
+
+- name: OOB_FW_Flash~bmc_flash
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  reboot: false
+  args:
+    allow_error: true
+    check_only: false
+    force_update: false
+    fru: bmc
+    component: ct_bmc
+    postreboot: false
+    fw_version: 'clemente-v2026.15.1'
+    fw_file: tools/platforms/clemente/firmware/MP/bmc/flash-clemente-v2026.15.1
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+    skip_postreboot_check: true
+
+# since ac cycle command not worked, so use i2c command first.
+#- name: RunOOBCmd~ac_cycle
+#  proxy: controller
+#  args:
+#    without_check: True
+#    bg_cmd: true
+#    cmd: 'i2ctransfer -f -y 2 w2@0x20 0x06 0xd7'
+
+#- name: SleepTest~20s
+#  proxy: controller
+#  args:
+#    duration: 20
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+- name: OOB_FW_Flash~bmc_flash-check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: false
+  args:
+    check_only: true
+    force_update: false
+    fru: bmc
+    component: ct_bmc
+    postreboot: false
+    fw_version: 'clemente-v2026.15.1'
+
+# ----- Increase BMC log size to 1M
+
+- name: NPIOOBFlash~Update_BMC_log_size
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/clemente/utils/server.ttyS2.conf'
+    copy_fw_util: False
+    cmd: 'cp {fw_file} /etc/obmc-console/'
+
+- name: RunOOBCmd~restart_console_server
+  proxy: controller
+  args:
+    cmd: 'systemctl restart obmc-console@ttyS2.service'
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# ----- Update Interposer CPLD
+
+- name: CPLDFlash~interposer
+  proxy: controller
+#  ignore_fail: '_all_'
+  do_not_interrupt: true
+  reboot: false
+  args:
+    check_only: false
+    clear_sel: false
+    postreboot: false
+    force_update: true
+    fru: 'interposer'
+    component: 'cpld'
+    fw_version: '00010120'
+    fw_file: tools/platforms/clemente/firmware/MP/cpld/interposer/CIC_Interposer_CPLD_V00010120_FXN.jed
+
+# ----- Update Interpose and VR
+
+- name: ClementeVRFlash
+  proxy: controller
+  do_not_interrupt: true
+  reboot: false
+  args:
+    check_only: false
+    postreboot: false
+    force_option: false
+    cycle_threshold: 14
+    vr_info:
+      Renesas:
+        fw_version:
+          'PDB_P12V_N1_VR': '80031801'
+          'PDB_P12V_N2_VR': '80031801'
+#        fw_file:
+#          'PDB_P12V_N1_VR':
+#          'PDB_P12V_N2_VR':
+
+# ----- Update SCM CPLD
+
+- name: ClementeCPLDFlash~scm
+  proxy: controller
+  do_not_interrupt: true
+  reboot: false
+  args:
+    check_only: false
+    clear_sel: false
+    postreboot: false
+    fru: 'scm'
+    component: 'cpld'
+    fw_version: 'D0010233'
+    fw_file: tools/platforms/clemente/firmware/MP/cpld/scm/scm_cpld_vd0010233_FXN.rpd
+
+# ----- Update HDD CPLD
+
+- name: CPLDFlash~hdd0
+  proxy: controller
+  do_not_interrupt: true
+  reboot: false
+  args:
+    check_only: false
+    clear_sel: false
+    postreboot: false
+    force_update: true
+    fru: 'hdd0'
+    component: 'cpld'
+    fw_version: '000B0402'
+    fw_file: tools/platforms/clemente/firmware/MP/cpld/hdd/NV_S8B_0B_04_02.jed
+
+- name: CPLDFlash~hdd1
+  proxy: controller
+  do_not_interrupt: true
+  reboot: false
+  args:
+    check_only: false
+    clear_sel: false
+    postreboot: false
+    force_update: true
+    fru: 'hdd1'
+    component: 'cpld'
+    fw_version: '000B0402'
+    fw_file: tools/platforms/clemente/firmware/MP/cpld/hdd/NV_S8B_0B_04_02.jed
+
+# ----- set DC alway off before update NV FW bundle and SBIOS
+
+- name: RunOOBCmd~set_dc_alwaysoff
+  proxy: controller
+  args:
+    cmd: 'busctl set-property xyz.openbmc_project.Settings /xyz/openbmc_project/control/host0/power_restore_policy xyz.openbmc_project.Control.Power.RestorePolicy PowerRestorePolicy s "xyz.openbmc_project.Control.Power.RestorePolicy.Policy.AlwaysOff"; sync'
+
+# ----- check if DC set to alway off
+- name: RunOOBCmd~check_dc_alwaysoff
+  proxy: controller
+  args:
+    cmd: 'busctl get-property xyz.openbmc_project.Settings /xyz/openbmc_project/control/host0/power_restore_policy xyz.openbmc_project.Control.Power.RestorePolicy PowerRestorePolicy'
+    expected_result: 'xyz.openbmc_project.Control.Power.RestorePolicy.Policy.AlwaysOff'
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+    skip_postreboot_check: true
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# ----- Check Leak Cable
+
+- name: ClementeLeakCableCheck
+  proxy: controller
+
+# wait 3 min for hmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+# ----- check if DC power off
+
+- name: RunOOBCmd~check_dc_power_off
+  proxy: controller
+  args:
+    cmd: 'mfg-tool power-state 2> /dev/null'
+    expected_result: '"runtime": "off"'
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+# ----- Force update GB300 bundle
+
+- name: ClementeHMCFlash~Force_update_GB300
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    check_only: false
+    force_update: true
+    force_option: true
+    fru: hmc
+    component: bundle
+    postreboot: false
+    fw_file: '/opt/tools/platforms/clemente/firmware/MP/nvfw/1.0.6/nvfw_GB300-P4059-0311_0044_260313.1.0_custom_nosbios_prod-signed.fwpkg'
+    fw_version: 'GB200Nvl-25.09-2'
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+    skip_postreboot_check: true
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# wait 3 min for hmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+# ----- MetaCAKLock key installation and execusion
+
+- name: MetaCAKLockCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ClementeCAKLock.sh
+
+# ----- Update sbios
+
+- name: ClementeHMCFlash~sbios
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: true
+    force_option: true
+    fru: hmc
+    component: sbios
+    postreboot: false
+    fw_file: 'tools/platforms/clemente/firmware/MP/bios/CLE403.fwpkg'
+    fw_version: 'CLE403'
+
+# ----- Disable manual AP mode
+
+- name: RunOOBCmd~disable_cpu0_manual_boot
+  proxy: controller
+  args:
+    cmd: curl -k -u root:0penBmc http://172.31.13.251/redfish/v1/Chassis/HGX_ERoT_CPU_0 -d '{"Oem":{"Nvidia":{"ManualBootModeEnabled":false}}}' -X PATCH 2>/dev/null
+    expected_result: '"The request completed successfully."'
+
+- name: RunOOBCmd~disable_cpu1_manual_boot
+  proxy: controller
+  args:
+    cmd: curl -k -u root:0penBmc http://172.31.13.251/redfish/v1/Chassis/HGX_ERoT_CPU_1 -d '{"Oem":{"Nvidia":{"ManualBootModeEnabled":false}}}' -X PATCH 2>/dev/null
+    expected_result: '"The request completed successfully."'
+
+- name: RunOOBCmd~check_cpu0_manual_boot_disabled
+  proxy: controller
+  args:
+    cmd: 'curl -s -k -u root:0penBmc http://172.31.13.251/redfish/v1/Chassis/HGX_ERoT_CPU_0 | grep ManualBootModeEnabled'
+    expected_result: '"ManualBootModeEnabled": false'
+
+- name: RunOOBCmd~check_cpu1_manual_boot_disabled
+  proxy: controller
+  args:
+    cmd: 'curl -s -k -u root:0penBmc http://172.31.13.251/redfish/v1/Chassis/HGX_ERoT_CPU_1 | grep ManualBootModeEnabled'
+    expected_result: '"ManualBootModeEnabled": false'
+
+# ----- set DC alway on
+- name: RunOOBCmd~set_dc_alwayson
+  proxy: controller
+  args:
+    cmd: 'busctl set-property xyz.openbmc_project.Settings /xyz/openbmc_project/control/host0/power_restore_policy xyz.openbmc_project.Control.Power.RestorePolicy PowerRestorePolicy s "xyz.openbmc_project.Control.Power.RestorePolicy.Policy.AlwaysOn"; sync'
+
+# ----- check if DC se to alway on
+- name: RunOOBCmd~check_dc_alwayson
+  proxy: controller
+  args:
+    cmd: 'busctl get-property xyz.openbmc_project.Settings /xyz/openbmc_project/control/host0/power_restore_policy xyz.openbmc_project.Control.Power.RestorePolicy PowerRestorePolicy'
+    expected_result: 'xyz.openbmc_project.Control.Power.RestorePolicy.Policy.AlwaysOn'
+
+# AC
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+    skip_postreboot_check: true
+
+# Add SBIOS load default for HostUpCheck fail caused by SBIOS settings issue.
+
+# HostUpCheck
+- name: HostUpCheck~Proxy
+  proxy: controller
+  ignore_fail: '_all_'
+  args:
+    runtime: 3000
+
+- name: SendFilesToBMC~bios_load_default
+  retries: 1
+  proxy: controller
+  args:
+     files_to_copy:
+        - file_location: '/tools/platforms/clemente/utils/bios_load_default.sh'
+          file_destination: '/tmp/'
+          file_permission: '777'
+
+- name: RunOOBCmd~bios_load_default
+  proxy: controller
+  args:
+    cmd: 'cd /tmp; ./bios_load_default.sh'
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# ----- BMC NTP sync
+
+- name: LFOBMCNTPSetting~add_controller_url
+
+# ----- RTCDriftTest
+
+- name: RTCDriftTest
+  args:
+    drift_check: false
+    drift_threshold: 600
+    skip_reboot: true
+
+# wait 3 min for hmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+- name: ClementeHMCFlash~PCIeSwtich_0
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    check_only: false
+    force_update: false
+    force_option: false
+    fru: hmc
+    component: HGX_PCIeSwitchConfig_0
+    postreboot: false
+    fw_file: 'tools/platforms/clemente/firmware/MP/nvfw/1.0/nvfw-01151024-P4975_0011_250910.1.0_custom_prod-signed.fwpkg'
+    fw_version: '01151024'
+
+# ----- Update GPU FW
+- name: RunOOBCmd~dump_gpu_0_fw
+  args:
+    allow_error: True
+    cmd: 'curl http://172.31.13.251/redfish/v1/UpdateService/FirmwareInventory/HGX_FW_GPU_0'
+
+- name: ClementeHMCFlash~Update_GPU0
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: true
+    force_option: true
+    fru: hmc
+    component: HGX_FW_GPU_0
+    postreboot: false
+    fw_file: '/opt/tools/platforms/clemente/firmware/MP/nvfw/1.0.6/nvfw_GB300-P4059-0311_0044_260313.1.0_custom_nosbios_prod-signed.fwpkg'
+    fw_version: '97.10.59.00.13'
+    keyword:  "successfully updated"
+
+- name: RunOOBCmd~dump_gpu_1_fw
+  args:
+    allow_error: True
+    cmd: 'curl http://172.31.13.251/redfish/v1/UpdateService/FirmwareInventory/HGX_FW_GPU_1'
+
+- name: ClementeHMCFlash~Update_GPU1
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: true
+    force_option: true
+    fru: hmc
+    component: HGX_FW_GPU_1
+    postreboot: false
+    fw_file: '/opt/tools/platforms/clemente/firmware/MP/nvfw/1.0.6/nvfw_GB300-P4059-0311_0044_260313.1.0_custom_nosbios_prod-signed.fwpkg'
+    fw_version: '97.10.59.00.13'
+    keyword:  "successfully updated"
+
+- name: RunOOBCmd~dump_gpu_2_fw
+  args:
+    allow_error: True
+    cmd: 'curl http://172.31.13.251/redfish/v1/UpdateService/FirmwareInventory/HGX_FW_GPU_2'
+
+- name: ClementeHMCFlash~Update_GPU2
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: true
+    force_option: true
+    fru: hmc
+    component: HGX_FW_GPU_2
+    postreboot: false
+    fw_file: '/opt/tools/platforms/clemente/firmware/MP/nvfw/1.0.6/nvfw_GB300-P4059-0311_0044_260313.1.0_custom_nosbios_prod-signed.fwpkg'
+    fw_version: '97.10.59.00.13'
+    keyword:  "successfully updated"
+
+- name: RunOOBCmd~dump_gpu_3_fw
+  args:
+    allow_error: True
+    cmd: 'curl http://172.31.13.251/redfish/v1/UpdateService/FirmwareInventory/HGX_FW_GPU_3'
+
+- name: ClementeHMCFlash~Update_GPU3
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: true
+    force_option: true
+    fru: hmc
+    component: HGX_FW_GPU_3
+    postreboot: false
+    fw_file: '/opt/tools/platforms/clemente/firmware/MP/nvfw/1.0.6/nvfw_GB300-P4059-0311_0044_260313.1.0_custom_nosbios_prod-signed.fwpkg'
+    fw_version: '97.10.59.00.13'
+    keyword:  "successfully updated"
+
+# AC
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# ----- Update SSD FW
+
+- name: SSDFlash~with_quantity_check
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL61T9HFJA-00AFB:
+        vendor: samsung
+        fw_file: tools/platforms/clemente/firmware/MP/ssd/samsung/LDD66F2Q.bin
+        fw_version: LDD66F2Q
+      MZOL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_file: tools/platforms/clemente/firmware/MP/ssd/samsung/LDD66F2Q.bin
+        fw_version: LDD66F2Q
+      MTFDKBT1T9TFR-1BC4DABVA:
+        vendor: micron
+        fw_file: tools/platforms/clemente/firmware/MP/ssd/micron/Micron_7450_E2FB007_release.ubi
+        fw_version: E2FB007
+      KXDZDRJJ1T92:
+        vendor: kioxia
+        fw_file: tools/platforms/clemente/firmware/MP/ssd/kioxia/1PFE7110.std
+        fw_version: 1PFE7110
+      MTFDLBU7T6THC-1BK4FABVA:
+        vendor: micron
+        fw_file: tools/platforms/clemente/firmware/MP/ssd/micron/Micron_7550_E5FB002_release.ubi.enc
+        fw_version: E5FB002
+      WUS6A7676PJP8X7:
+        vendor: wd
+        fw_file: tools/platforms/clemente/firmware/MP/ssd/wd/RG109W0A.bin
+        fw_version: RG109W0A
+
+# AC
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+    conditional_reboot: true
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+#### SSD Smart Check ####
+- name: SMARTCheck
+  args:
+    cycles: 1
+
+- name: NvmeOCPSmartlogCheck
+  args:
+    device_list: ['/dev/nvme0n1', '/dev/nvme1n1', '/dev/nvme2n1', '/dev/nvme3n1', '/dev/nvme4n1']
+    check_param: 'PCIe correctable error count'
+    expected_value: '0'
+
+#############
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+# ----- GB300 version check
+
+- name: ClementeGB300VersionCheck
+  args:
+    check_list: {
+      'HGX_FW_BMC_0': 'GB200Nvl-25.09-2',
+      'HGX_FW_CPLD_0': '0.22',
+      'HGX_FW_CPU_0': 'CLE403',
+      'HGX_FW_CPU_1': 'CLE403',
+      'HGX_FW_ERoT_BMC_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_1': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_1': '01.04.0031.0000_n04',
+      'HGX_FW_FPGA_0': '1.60',
+      'HGX_FW_FPGA_1': '1.60',
+      'HGX_FW_GPU_0': '97.10.59.00.13',
+      'HGX_FW_GPU_1': '97.10.59.00.13',
+      'HGX_FW_GPU_2': '97.10.59.00.13',
+      'HGX_FW_GPU_3': '97.10.59.00.13',
+      'HGX_PCIeSwitchConfig_0': '01151024',
+    }
+
+
+#
+# ib2eth
+#
+#- name: InstallRPM~mft
+#  runner: bash
+#  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mft-4.32.0-#120.arm64.rpm && rpm -ivh mft-4.32.0-120.arm64.rpm; }'
+
+#- name: BashRunner~Ib2Eth~Switch
+#  retries: 3
+#  retry_delay: 10
+#  args:
+#    description: "F0N Ib Mode to Eth mode Switch"
+#    shell_script: Catalina/Ib2Eth.sh
+
+#- name: WarmRebootTest
+#  reboot: true
+
+#- name: HostUpCheck
+#  proxy: controller
+#  args:
+#    runtime: 3000
+
+#- name: BashRunner~EthModeCheck
+#  args:
+#    description: "F0N Eth Mode Check"
+#    shell_script: Catalina/EthModeChk.sh
+
+# ----- NIC Flash
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mft-4.32.0-120.arm64.rpm && rpm -ivh mft-4.32.0-120.arm64.rpm; }'
+
+- name: ClementeNICFlash~FENIC
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: False
+    keyword: 'OCP3.0'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 2
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_file': 'tools/platforms/clemente/firmware/MP/nic/cx7_fe_nic/fw-ConnectX7-rel-28_47_2526-CX75343AMC-NEAC_FB_Ax-UEFI-14.40.10-FlexBoot-3.8.201.signed.bin',
+      'fw_version': '28.47.2526'
+    }
+
+- name: ClementeNICFlash~BENIC
+  timeout: 3600
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: False
+    keyword: 'Mezzanine'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 4
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_file': 'tools/platforms/clemente/firmware/MP/nic/cx8_be_nic/fw-ConnectX8-rel-40_47_1106-900-9X86E-A5CX-ST0_Ax-UEFI-14.40.10-FlexBoot-3.8.201.signed.bin',
+      'fw_version': '40.47.1106'}
+
+#
+# FRU Write
+#
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# load osfp driver first for writing osfp fru
+- name: RunOOBCmd~load_osfp_driver
+  args:
+      cmd: '[ -f /sys/bus/i2c/devices/29-0052/eeprom ] && echo "OSFP driver exists" || (echo "29-0052" > /sys/bus/i2c/drivers/at24/bind)'
+
+- name: LFFRUEeprom
+  args:
+    force_update: false
+    fru_util: tools/platforms/clemente/utils/fruid-util.py
+    fru_config: etc/fru_clemente_wrt.json
+    allow_empty_value: true
+    components_info: {
+      bsm: {eeprom: 9-0056, dev_file: BMC_Storage_Module},
+      scm: {eeprom: 9-0050, dev_file: Clement_SCM_MP},
+      fio: {eeprom: 23-0051, dev_file: Clement_FIO_MP},
+      osfp: {eeprom: 29-0052, dev_file: Clement_OSFP_MP},
+      pdb: {eeprom: 1-0050, dev_file: Clement_PDB_MP},
+      interposer: {eeprom: 21-0054, dev_file: Clement_PDB_MP},
+      hdd0: {eeprom: 25-0056, dev_file: Clemente_E1_S_BP_MP},
+      hdd1: {eeprom: 37-0056, dev_file: Clemente_E1_S_BP_MP_0},
+    }
+
+#- name: LFFRUEeprom~OSFP
+#  retries: 3
+#  retry_delay: 3
+#  args:
+#    force_update: false
+#    fru_util: tools/platforms/clemente/utils/fruid-util.py
+#    fru_config: etc/fru_clemente_wrt.json
+#    allow_empty_value: true
+#    components_info: {
+#      osfp: {eeprom: 29-0052, dev_file: Clement_OSFP_MP},
+#    }
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+- name: SleepTest~2min
+  proxy: controller
+  args:
+    duration: 120
+
+#- name: CheckWedge400PSUVoltage
+#  args:
+#    addresses: [ 144, 145, 146, 147, 148, 149, 154, 155, 156, 157, 158, 159, 170, 171, 172, 173, 174, 175, 186, 187, 188, 189, 190, 191, 208, 209, 210, 211, 212, 213, 218, 219, 220, 221, 222, 223 ]
+#    # 49V: 0xc400, 50V: 0xc7ff 
+#    expected_value: ["0xC400","0xC3FF"]
+
+#- loop: 10
+#  name: SledAcCycleBlock
+#  group:
+#  - name: SledAcCycle
+#    reboot: true
+#    args:
+#      always: true
+#      runtime: 3000
+#      product: clemente
+#  - name: SleepTest~2min
+#    proxy: controller
+#    args:
+#      duration: 120
+
+# AC
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+#    conditional_reboot: true
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+- name: CPLDFlash~interposer_check_only
+  args:
+    check_only: true
+    fru: 'interposer'
+    component: 'cpld'
+    fw_version: '00010120'
+    postreboot: false
+
+- name: ClementeCPLDFlash~scm_check_only
+  args:
+    check_only: true
+    postreboot: false
+    fru: 'scm'
+    component: 'cpld'
+    fw_version: 'D0010233'
+
+- name: CPLDFlash~hdd0_check_only
+  args:
+    check_only: true
+    fru: 'hdd0'
+    component: 'cpld'
+    fw_version: '000B0402'
+    postreboot: false
+
+- name: CPLDFlash~hdd1_check_only
+  args:
+    check_only: true
+    fru: 'hdd1'
+    component: 'cpld'
+    fw_version: '000B0402'
+    postreboot: false
+
+- name: ClementeVRFlash~check_only
+  args:
+    check_only: true
+    force_option: false
+    cycle_threshold: 14
+    vr_info:
+      Renesas:
+        fw_version:
+          'PDB_P12V_N1_VR': '80031801'
+          'PDB_P12V_N2_VR': '80031801'
+
+- name: OOB_FW_Flash~sbios_check_only
+  args:
+    check_only: true
+    force_update: false
+    fru: hmc
+    component: sbios
+    postreboot: false
+    fw_version: 'CLE403'
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mft-4.32.0-120.arm64.rpm && rpm -ivh mft-4.32.0-120.arm64.rpm; }'
+
+- name: ClementeNICFlash~FENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    keyword: 'OCP3.0'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 2
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '28.47.2526'}
+
+- name: ClementeNICFlash~BENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    keyword: 'Mezzanine'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 4
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '40.47.1106'}
+
+# -----  FRU Check
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+- name: LFFRUEeprom~FRU_check_only
+  args:
+    check_only: true
+    fru_util: tools/platforms/clemente/utils/fruid-util.py
+    fru_config: etc/fru_clemente_chk.json
+    components_info: {
+      cpub0: {eeprom: 13-0050, dev_file: PG548_0},
+      cpub1: {eeprom: 12-0050, dev_file: PG548},
+      bsm: {eeprom: 9-0056, dev_file: BMC_Storage_Module},
+      scm: {eeprom: 9-0050, dev_file: Clemente_SCM_MP},
+      fio: {eeprom: 23-0051, dev_file: Clemente_FIO_MP},
+      osfp: {eeprom: 29-0052, dev_file: Clemente_OSFP_MP},
+      pdb: {eeprom: 1-0050, dev_file: Clemente_PDB_MP},
+      interposer: {eeprom: 21-0054, dev_file: Clemente_Interposer_MP},
+      hdd0: {eeprom: 25-0056, dev_file: Clemente_E1_S_BP_MP},
+      hdd1: {eeprom: 37-0056, dev_file: Clemente_E1_S_BP_MP_0},
+    }
+
+#- name: LFFRUEeprom~FRU_OSFP_check_only
+#  retries: 3
+#  retry_delay: 3
+#  args:
+#    check_only: true
+#    fru_util: tools/platforms/clemente/utils/fruid-util.py
+#    fru_config: etc/fru_clemente_chk.json
+#    components_info: {
+#      osfp: {eeprom: 29-0052, dev_file: Clemente_OSFP_MP},
+#    }
+
+- name: ClementeI2CStressTest
+  args:
+    script_file: 'tools/platforms/clemente/utils/i2c-test-case4-v2.sh'
+    log_folder_name: 'i2c-test-case4-result'
+
+# ----- PCI Check
+
+- name: PCICheck~check_CPU0
+  args:
+    pci_info: {
+                'SSD_0': ['0000:07:00.0', '32GT/s', 'x4'],
+                'SSD_1': ['0002:07:00.0', '32GT/s', 'x4'],
+                'FE_NIC_0': ['0006:01:00.0', '32GT/s', 'x16'],
+                'UPHY0_1': ['0000:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_1': ['0002:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_1': ['0005:00:00.0', '8GT/s', 'x1'],
+                'UPHY3_1': ['0006:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_1': ['0008:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_1': ['0009:00:00.0', '16GT/s', 'x1'],
+               # 'x1_Gen2_DP_2': ['0005:02:04.0', '8GT/s', 'x1'],
+                'x4_Gen5_UP': ['0005:01:00.0', '8GT/s', 'x1'],
+                #'x1_Gen3_DP': ['0005:02:06.0', '8GT/s', 'x1'],
+                'x1_Gen2_1': ['0005:06:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_2': ['0005:08:00.0', '5GT/s', 'x1'],
+                #'PCI_BRIDGE_1': ['0005:02:01.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_2': ['0005:02:02.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_3': ['0005:02:03.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_4': ['0005:02:05.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_5': ['0005:02:07.0', '8GT/s', 'x1'],
+                'PCI_BRIDGE_6': ['0000:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_7': ['0000:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_8': ['0000:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_9': ['0000:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_10': ['0000:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_11': ['0000:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_12': ['0008:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_13': ['0008:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_14': ['0008:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_15': ['0008:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_16': ['0008:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_17': ['0009:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_18': ['0009:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_19': ['0009:02:01.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_20': ['0009:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_21': ['0009:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_44': ['0002:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_45': ['0002:02:00.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_46': ['0002:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_47': ['0002:04:00.0', '64GT/s', 'x16'],
+               #'PCI_BRIDGE_48': ['0002:05:08.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_49': ['0002:05:0c.0', '32GT/s', 'x4'],
+               'HMC_PCISwtichConfig_0': ['0005:01:00.0', '8GT/s', 'x1', 'NVIDIA Corporation Device 2066'],
+              }
+
+- name: PCICheck~check_CPU1
+  args:
+    pci_info: {
+                'SSD_2': ['0010:07:00.0', '32GT/s', 'x4'],
+                'SSD_3': ['0012:07:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0015:01:00.0', '16GT/s', 'x4'],
+                'FE_NIC_1': ['0016:01:00.0', '32GT/s', 'x16'],
+               'UPHY0_2': ['0010:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_2': ['0012:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_2': ['0015:00:00.0', '16GT/s', 'x4'],
+                'UPHY3_3': ['0016:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_2': ['0018:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_2': ['0019:00:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_22': ['0010:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_23': ['0010:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_24': ['0010:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_25': ['0010:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_26': ['0010:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_27': ['0010:05:0c.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_28': ['0012:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_29': ['0012:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_30': ['0012:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_31': ['0012:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_32': ['0012:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_33': ['0012:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_34': ['0018:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_35': ['0018:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_36': ['0018:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_37': ['0018:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_38': ['0018:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_39': ['0019:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_40': ['0019:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_41': ['0019:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_42': ['0019:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_43': ['0019:05:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU0_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_0': ['0000:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_1': ['0000:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_2': ['0002:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_3': ['0002:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_4': ['0008:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_5': ['0009:03:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_6': ['0010:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_7': ['0010:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_8': ['0012:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_9': ['0012:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_10': ['0018:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_11': ['0019:03:00.0', '64GT/s', 'x16']
+              }
+
+- name: PCICheck~check_CPU0_B300
+  args:
+    pci_info: {
+                'B300_0': ['0008:06:00.0', '64GT/s', 'x16'],
+                'B300_1': ['0009:06:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_B300
+  args:
+    pci_info: {
+                'B300_2': ['0018:06:00.0', '64GT/s', 'x16'],
+                'B300_3': ['0019:06:00.0', '64GT/s', 'x16'],
+              }
+
+#
+- name: MACCheck
+  args:
+    device_list: [enP22s22np0, enP6s6np0, enP16s16f0np0, enP16s16f1np1,
+                  enP18s18f0np0, enP18s18f1np1, enP2s2f0np0, enP2s2f1np1,
+                  enp3s0f0np0, enp3s0f1np1]
+
+- name: ClementeBMCFailover
+  args:
+    fw_file : 'tools/platforms/clemente/utils/otp'
+
+# ConfigCheck
+#
+- name: ConfigCheck
+  args:
+    fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot]
+    bom_override: {'cpu_speed~overwrite': {'min_speed': 3.2, 'max_speed': 3.5}}
+
+#
+# FAN Speed Check
+#
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: FanSpeedCheck.lf_obmc_test_with_perc
+  args:
+    fan_count: 8
+    fan_speed_check_perc: [60, 20, 60, 80]
+    fan_rpm_params: ['tach_il_speed_rpm', 'tach_ol_speed_rpm']
+    fan_speed_min_20_perc: 5216
+    fan_speed_max_20_perc: 7854
+    fan_speed_min_60_perc: 14980
+    fan_speed_max_60_perc: 23562
+    fan_speed_min_80_perc: 19973
+    fan_speed_max_80_perc: 31416
+
+- name: RunOOBCmd~Fan_Mode_auto
+  args:
+    cmd: 'mfg-tool fan-mode -a'
+    expected_result: '"zone1": "auto"'
+
+#
+# SNCheck
+#
+- name: SNCheck
+  args:
+    fava_skip_tests: [test_cpu,test_dimm,test_mb]
+    nic_entries: [
+        "enP22s22np0",
+        "enP6s6np0",
+        "enP16s16f0np0",
+        "enP16s16f1np1",
+        "enP18s18f0np0",
+        "enP18s18f1np1",
+        "enP2s2f0np0",
+        "enP2s2f1np1",
+        "enp3s0f0np0",
+        "enp3s0f1np1"
+    ]
+
+#
+# PartCheck
+#
+- name: PartCheck
+  args:
+    fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+#
+# FE NIC  Iperf  temporary solution   - wangdc
+- name: ClementeL10FENetworkTest~1500mtu
+  args:
+    runtime: 180
+    mtu_value: 1500
+    threshold: 0.85
+    num_threads: 4
+    nic_speed: 200
+    interfaces:  'enP22s22np0:enP6s6np0'
+
+- name: ClementeL10FENetworkTest~5000mtu
+  args:
+    runtime: 180
+    mtu_value: 5000
+    threshold: 0.85
+    num_threads: 4
+    nic_speed: 200
+    interfaces:  'enP22s22np0:enP6s6np0'
+
+- name: ClementeL10FENetworkTest~9000mtu
+  args:
+    runtime: 180
+    mtu_value: 9000
+    threshold: 0.85
+    num_threads: 4
+    nic_speed: 200
+    interfaces:  'enP22s22np0:enP6s6np0'
+
+#
+- name: InstallRPMPackage~ib_stress
+  runner: bash
+  cmd: 'ls ; cd /tmp;wget -nv http://controller/tools/platforms/clemente/rpm/clemente_ib_stress_rpm_v625.tar.gz;tar xzfv /tmp/clemente_ib_stress_rpm_v625.tar.gz;bash -x /tmp/clemente_ib_stress_rpm_v625/pre_install_ib_stress.sh; rm /tmp/clemente_ib_stress_rpm_v625.tar.gz ; rm -rf /tmp/clemente_ib_stress_rpm_v625'
+
+- name: SleepTest~10sec
+  args:
+    duration: 10
+
+- name: ClementeIBWriteTest~15mins
+#  retries: 1
+  args:
+    runtime: 900
+    avg_bw_threshold: 720
+    port_mapping: {
+        'mlx5_0': 'enp3s0f0np0',
+        'mlx5_1': 'enp3s0f1np1',
+        'mlx5_2': 'enP2s2f0np0',
+        'mlx5_3': 'enP2s2f1np1',
+        'mlx5_5': 'enP16s16f0np0',
+        'mlx5_6': 'enP16s16f1np1',
+        'mlx5_7': 'enP18s18f0np0',
+        'mlx5_8': 'enP18s18f1np1',
+    }
+    nic_pairs: {
+        'mlx5_0': 'mlx5_5',
+        'mlx5_2': 'mlx5_7',
+    }
+
+- name: ClementeIBWriteTest~15mins
+#  retries: 1
+  args:
+    runtime: 900
+    avg_bw_threshold: 720
+    port_mapping: {
+        'mlx5_0': 'enp3s0f0np0',
+        'mlx5_1': 'enp3s0f1np1',
+        'mlx5_2': 'enP2s2f0np0',
+        'mlx5_3': 'enP2s2f1np1',
+        'mlx5_5': 'enP16s16f0np0',
+        'mlx5_6': 'enP16s16f1np1',
+        'mlx5_7': 'enP18s18f0np0',
+        'mlx5_8': 'enP18s18f1np1',
+    }
+    nic_pairs: {
+        'mlx5_1': 'mlx5_6',
+        'mlx5_3': 'mlx5_8',
+    }
+
+- name: SleepTest~20secs
+  args:
+    duration: 20
+
+# ----- Check CX8 Status
+- name: InstallRPM~mft_4.32.0-20250821
+  runner: bash
+  cmd: 'ls; cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mstflint-4.32.0-fb.el9.aarch64.rpm && rpm -ivh --force mstflint-4.32.0-fb.el9.aarch64.rpm; '
+
+- name: InstallRPMPackage~CheckCX8Status
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/CheckCX8Status.sh; chmod +x CheckCX8Status.sh; ./CheckCX8Status.sh || { rm -f /tmp/CheckCX8Status.sh; exit 1; }'
+
+#
+# dmesg check
+#
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_clemente.json
+#    dump_all_errors: true
+
+- name: SELCheck
+#  retries: 2
+#  retry_delay: 60
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_clemente_mp.json
+    product: clemente
+#    log_type: "redfish"
+#    dump_all_errors: true
+
+#
+# SDR check
+#
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: SleepTest~30sec
+  args:
+    duration: 30
+
+- name: SendFilesToBMC~Copy_WR_script
+  retries: 1
+  args:
+     files_to_copy:
+        - file_location: '/tools/platforms/clemente/utils/IOB_Sensor_WR_v2.sh'
+          file_destination: '/tmp/'
+          file_permission: '777'
+ 
+- name: RunOOBCmd~Run_WR
+  args:
+    cmd: 'cd /tmp; /tmp/IOB_Sensor_WR_v2.sh'
+
+- name: SensorCheck
+  args:
+    cycles: 1
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C'
+
+#
+# syslog check
+#
+#- name: SysLogCheck
+#  args:
+#    #err_threshold: '<1360000'
+#    syslog_filter_file: etc/syslog_filter_clemente.txt
+
+#
+# FW info
+#
+- name: RunOOBCmd~show_fw_version
+  args:
+      cmd: 'fw-util all --version'
+
+#
+# RTCDriftTest
+#
+- name: RTCDriftTest~check_only
+  continue_on_fail: false
+  args:
+    clock_sync: false
+    drift_threshold: 600
+
+#
+# SEL clear
+#
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+- name: L10_FDT_COMPLETE
+  runner: bash
+  cmd: "/bin/true"

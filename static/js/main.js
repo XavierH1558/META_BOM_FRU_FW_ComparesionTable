@@ -6,6 +6,7 @@ const appState = {
     fruCompare: null,
     matrix: null,
     matrixCompare: null,
+    yamlCompare: null,
     activeTab: 'tab-bkc',
     bkcMode: 'single',    // 'single' or 'compare'
     fruMode: 'single',    // 'single' or 'compare'
@@ -23,9 +24,13 @@ const appState = {
         fru_single: null,
         fru_dvt: null,
         fru_pvt: null,
-        matrix: null
+        matrix: null,
+        yaml_1: null,
+        yaml_2: null,
+        yaml_3: null
     }
 };
+
 
 // Global Loading Animation Controls
 function showLoading(title = '正在讀取並解析 Excel 表單...', subtitle = 'Parsing workbook data & generating comparison table') {
@@ -93,10 +98,10 @@ function initEventListeners() {
     });
 
     // Export Excel Button
-    document.getElementById('btn-export-excel').addEventListener('click', () => {
         let tabType = 'fru';
         if (appState.activeTab === 'tab-bkc') tabType = 'bkc';
         else if (appState.activeTab === 'tab-matrix') tabType = 'matrix';
+        else if (appState.activeTab === 'tab-yaml') tabType = 'yaml';
 
         let url = `/api/export-excel?type=${tabType}`;
         if (tabType === 'matrix' && appState.matrixMode === 'compare') {
@@ -108,9 +113,38 @@ function initEventListeners() {
             if (tFile) url += `&target_file=${encodeURIComponent(tFile)}`;
             if (bSheet) url += `&base_sheet=${encodeURIComponent(bSheet)}`;
             if (tSheet) url += `&target_sheet=${encodeURIComponent(tSheet)}`;
+        } else if (tabType === 'yaml') {
+            const y1 = document.getElementById('yaml-file-select-1')?.value;
+            const y2 = document.getElementById('yaml-file-select-2')?.value;
+            const y3 = document.getElementById('yaml-file-select-3')?.value;
+            const bkcF = document.getElementById('yaml-bkc-file-select')?.value;
+            const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value;
+            if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
+            if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
+            if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+            if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
+            if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
         }
         window.open(url, '_blank');
     });
+
+    // YAML Controls Change Listeners
+    const y1Sel = document.getElementById('yaml-file-select-1');
+    const y2Sel = document.getElementById('yaml-file-select-2');
+    const y3Sel = document.getElementById('yaml-file-select-3');
+    const yBkcFSel = document.getElementById('yaml-bkc-file-select');
+    const yBkcSSel = document.getElementById('yaml-bkc-sheet-select');
+    const yStationF = document.getElementById('yaml-station-filter');
+    const yStatusF = document.getElementById('yaml-status-filter');
+    const ySearchI = document.getElementById('yaml-search-input');
+
+    [y1Sel, y2Sel, y3Sel, yBkcFSel, yBkcSSel].forEach(el => {
+        if (el) el.addEventListener('change', () => fetchYamlData());
+    });
+
+    if (yStationF) yStationF.addEventListener('change', () => renderYamlTable());
+    if (yStatusF) yStatusF.addEventListener('change', () => renderYamlTable());
+    if (ySearchI) ySearchI.addEventListener('input', () => renderYamlTable());
 
 function getSummaryApiUrl(targetTab) {
     let url = `/api/release-summary?tab=${targetTab}`;
@@ -138,6 +172,20 @@ function getSummaryApiUrl(targetTab) {
     if (matBaseSheet) url += `&matrix_base_sheet=${encodeURIComponent(matBaseSheet)}`;
     if (matTargetSheet) url += `&matrix_target_sheet=${encodeURIComponent(matTargetSheet)}`;
 
+    const y1 = document.getElementById('yaml-file-select-1')?.value;
+    const y2 = document.getElementById('yaml-file-select-2')?.value;
+    const y3 = document.getElementById('yaml-file-select-3')?.value;
+    const yamlBkcFile = document.getElementById('yaml-bkc-file-select')?.value;
+    const yamlBkcSheet = document.getElementById('yaml-bkc-sheet-select')?.value;
+
+    if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
+    if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
+    if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+    if (targetTab === 'yaml') {
+        if (yamlBkcFile) url += `&bkc_file=${encodeURIComponent(yamlBkcFile)}`;
+        if (yamlBkcSheet) url += `&bkc_sheet=${encodeURIComponent(yamlBkcSheet)}`;
+    }
+
     return url;
 }
 
@@ -157,10 +205,15 @@ function getLoadingTitle(targetTab) {
             title: '正在生成 Build Matrix 架構變更摘要報告...',
             subtitle: 'Analyzing Build Matrix Configuration Diffs across Racks'
         };
+    } else if (targetTab === 'yaml') {
+        return {
+            title: '正在生成 Test Suite (YAML) 合規摘要報告...',
+            subtitle: 'Comparing Test Suite YAML files against BKC Table Standard'
+        };
     } else {
         return {
             title: '正在生成 全平台綜合發版摘要報告...',
-            subtitle: 'Analyzing BKC, FRU Spec, and Build Matrix differences'
+            subtitle: 'Analyzing BKC, FRU Spec, Build Matrix, and YAML test suite differences'
         };
     }
 }
@@ -172,6 +225,8 @@ function getLoadingTitle(targetTab) {
         if (appState.activeTab === 'tab-bkc') defaultTab = 'bkc';
         else if (appState.activeTab === 'tab-fru') defaultTab = 'fru';
         else if (appState.activeTab === 'tab-matrix') defaultTab = 'matrix';
+        else if (appState.activeTab === 'tab-yaml') defaultTab = 'yaml';
+
 
         // Update modal tab active & greyed-out disabled styling
         document.querySelectorAll('.summary-tab-btn').forEach(b => {
@@ -703,6 +758,7 @@ async function fetchAllData() {
             bkcPromise,
             fruPromise,
             fetchMatrixData(),
+            fetchYamlData(),
             fetchAndPopulateTimelines(),
             checkCriticalWatchlistAlerts()
         ]);
@@ -712,6 +768,7 @@ async function fetchAllData() {
         if (statusText) statusText.textContent = 'Data Error';
     }
 }
+
 
 
 function populateFileSelect(selectId, files, activePath) {
@@ -2425,4 +2482,186 @@ function populateTimelineDropdown(elemId, fileList) {
         select.appendChild(opt);
     });
 }
+
+// -------------------------------------------------------------
+// Test Suite (YAML) Comparison Feature Implementation
+// -------------------------------------------------------------
+async function fetchYamlData() {
+    try {
+        const y1Select = document.getElementById('yaml-file-select-1');
+        const y2Select = document.getElementById('yaml-file-select-2');
+        const y3Select = document.getElementById('yaml-file-select-3');
+        const bkcFileSelect = document.getElementById('yaml-bkc-file-select');
+        const bkcSheetSelect = document.getElementById('yaml-bkc-sheet-select');
+
+        const y1 = y1Select ? y1Select.value : '';
+        const y2 = y2Select ? y2Select.value : '';
+        const y3 = y3Select ? y3Select.value : '';
+        const bkcFile = bkcFileSelect ? bkcFileSelect.value : '';
+        const bkcSheet = bkcSheetSelect ? bkcSheetSelect.value : '';
+
+        let url = `/api/yaml-compare?`;
+        const queryParts = [];
+        if (y1) queryParts.push(`yaml_1=${encodeURIComponent(y1)}`);
+        if (y2) queryParts.push(`yaml_2=${encodeURIComponent(y2)}`);
+        if (y3) queryParts.push(`yaml_3=${encodeURIComponent(y3)}`);
+        if (bkcFile) queryParts.push(`bkc_file=${encodeURIComponent(bkcFile)}`);
+        if (bkcSheet) queryParts.push(`bkc_sheet=${encodeURIComponent(bkcSheet)}`);
+        url += queryParts.join('&');
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.success) {
+            appState.yamlCompare = data;
+            
+            // Update Summary Cards & Badge
+            const summary = data.summary || {};
+            const val1 = document.getElementById('yaml-stat-val-1');
+            const val2 = document.getElementById('yaml-stat-val-2');
+            const val3 = document.getElementById('yaml-stat-val-3');
+            const val4 = document.getElementById('yaml-stat-val-4');
+            const badgeDiff = document.getElementById('yaml-badge-diff');
+
+            if (val1) val1.textContent = summary.total_yaml_checks || 0;
+            if (val2) val2.textContent = summary.matched_count || 0;
+            if (val3) val3.textContent = summary.mismatch_count || 0;
+            if (val4) val4.textContent = `${summary.compliance_rate || 0}%`;
+            if (badgeDiff) badgeDiff.textContent = `${summary.mismatch_count || 0} Diffs`;
+
+            // Populate File Selectors
+            const availYaml = summary.available_yaml_files || [];
+            const availBkc = summary.available_bkc_files || [];
+            const availSheets = summary.bkc_sheets || [];
+
+            if (availYaml.length > 0) {
+                populateYamlFileSelect('yaml-file-select-1', availYaml, y1 || availYaml[0]?.path, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-2', availYaml, y2 || (availYaml.length > 1 ? availYaml[1]?.path : ''), "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-3', availYaml, y3 || (availYaml.length > 2 ? availYaml[2]?.path : ''), "(無 / None)");
+            }
+            if (availBkc.length > 0) {
+                populateFileSelect('yaml-bkc-file-select', availBkc, summary.bkc_file);
+            }
+            if (availSheets.length > 0) {
+                populateSheetSelect(null, 'yaml-bkc-sheet-select', availSheets, summary.bkc_sheet);
+            }
+
+            // Populate Station Filter Dropdown
+            populateYamlStationFilter(data.items || []);
+
+            // Render Table
+            renderYamlTable();
+        }
+    } catch (err) {
+        console.error('Error fetching YAML compare data:', err);
+    }
+}
+
+function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = null) {
+    const select = document.getElementById(selectId);
+    if (!select || !files) return;
+    
+    select.innerHTML = '';
+    if (emptyOptionLabel) {
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = emptyOptionLabel;
+        select.appendChild(emptyOpt);
+    }
+    files.forEach((f, idx) => {
+        const opt = document.createElement('option');
+        opt.value = f.path;
+        opt.textContent = f.display_name;
+        if (f.path === activePath || f.filename === activePath || f.display_name === activePath) {
+            opt.selected = true;
+        }
+        select.appendChild(opt);
+    });
+}
+
+function populateYamlStationFilter(items) {
+    const select = document.getElementById('yaml-station-filter');
+    if (!select) return;
+    
+    const stations = new Set();
+    items.forEach(it => {
+        if (it.station && it.station !== 'None') stations.add(it.station);
+    });
+    
+    const currentVal = select.value || 'ALL';
+    select.innerHTML = '<option value="ALL">全部工站 (All Stations)</option>';
+    
+    Array.from(stations).sort().forEach(st => {
+        const opt = document.createElement('option');
+        opt.value = st;
+        opt.textContent = st;
+        if (st === currentVal) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+function renderYamlTable() {
+    const tbody = document.getElementById('yaml-tbody');
+    if (!tbody || !appState.yamlCompare || !appState.yamlCompare.items) return;
+
+    const items = appState.yamlCompare.items;
+    const stationFilter = document.getElementById('yaml-station-filter')?.value || 'ALL';
+    const statusFilter = document.getElementById('yaml-status-filter')?.value || 'ALL';
+    const searchInput = document.getElementById('yaml-search-input')?.value || '';
+    const q = searchInput.trim().toLowerCase();
+
+    const filtered = items.filter(it => {
+        if (stationFilter !== 'ALL' && it.station !== stationFilter) return false;
+        if (statusFilter !== 'ALL' && it.status !== statusFilter) return false;
+        if (q) {
+            const searchable = `${it.station} ${it.file_name} ${it.step_location} ${it.component} ${it.sub_component} ${it.yaml_version} ${it.bkc_version} ${it.discussion_note} ${it.command}`.toLowerCase();
+            if (!searchable.includes(q)) return false;
+        }
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">無符合條件的 Test Suite (YAML) 比對資料</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = '';
+    filtered.forEach(it => {
+        const tr = document.createElement('tr');
+        if (it.status === 'MISMATCH') {
+            tr.classList.add('tr-yaml-mismatch');
+        }
+
+        let badgeClass = 'yaml-match';
+        if (it.status === 'MISMATCH') badgeClass = 'yaml-mismatch';
+        else if (it.status === 'MISSING_IN_BKC') badgeClass = 'yaml-missing-bkc';
+        else if (it.status === 'UNCHECKED_IN_YAML') badgeClass = 'yaml-unchecked';
+
+        const stationDisplay = (it.station && it.station !== 'None') 
+            ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>` 
+            : `<span class="text-muted" style="font-size:0.8rem;">-</span>`;
+
+        const stepDisplay = (it.step_location && it.step_location !== 'N/A (未涵蓋)')
+            ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(it.step_location)}</span>`
+            : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(it.step_location)}</span>`;
+
+        tr.innerHTML = `
+            <td>${stationDisplay}</td>
+            <td>${stepDisplay}</td>
+            <td>
+                <div style="font-weight: 600; color: var(--text-main);">${escapeHtml(it.sub_component || it.component)}</div>
+                <div style="font-size: 0.76rem; color: var(--text-muted);">${escapeHtml(it.bkc_group !== 'N/A' ? `${it.bkc_category} > ${it.bkc_group}` : 'YAML Test Check')}</div>
+            </td>
+            <td class="font-mono text-cyan">${escapeHtml(it.yaml_version || '-')}</td>
+            <td class="font-mono" style="color: #fbbf24; font-weight: 600;">${escapeHtml(it.bkc_version || '-')}</td>
+            <td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td>
+            <td style="font-size: 0.83rem; color: #cbd5e1; line-height: 1.4;">
+                ${escapeHtml(it.discussion_note)}
+                ${it.command ? `<div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Cmd: <code>${escapeHtml(it.command)}</code></div>` : ''}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
 

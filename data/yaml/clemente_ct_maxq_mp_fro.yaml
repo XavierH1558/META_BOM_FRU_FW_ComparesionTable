@@ -1,0 +1,1524 @@
+#
+# Clemente Compute Tray MaxQ MP FRO v4
+#
+# ChangeLog
+#    - v1
+#       1. base on clemente_ct_mp_fro_v10 
+#       2. Update BKC to MAXQ_0423
+#       3. Add excluded_sensors for SensorCheck
+#       4. Change to use ModifyTempSettings.15.1.sh since service name changed in BMC 15.1
+#     -v3
+#       1. Add IOB_Sensor_WR before SensorCheck
+#     -v4
+#       1. Add PD IST test
+#
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+# ----- Check FW/CPLD version
+
+- name: OOB_FW_Flash~bmc_flash-check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: false
+  args:
+    check_only: true
+    force_update: false
+    fru: bmc
+    component: ct_bmc
+    postreboot: false
+    fw_version: 'clemente-v2026.15.1'
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+- name: CPLDFlash~interposer_check_only
+  args:
+    check_only: true
+    fru: 'interposer'
+    component: 'cpld'
+    fw_version: '00010120'
+    postreboot: false
+
+- name: ClementeCPLDFlash~scm_check_only
+  args:
+    check_only: true
+    postreboot: false
+    fru: 'scm'
+    component: 'cpld'
+    fw_version: 'D0010233'
+
+- name: CPLDFlash~hdd0_check_only
+  args:
+    check_only: true
+    fru: 'hdd0'
+    component: 'cpld'
+    fw_version: '000B0402'
+    postreboot: false
+
+- name: CPLDFlash~hdd1_check_only
+  args:
+    check_only: true
+    fru: 'hdd1'
+    component: 'cpld'
+    fw_version: '000B0402'
+    postreboot: false
+
+- name: ClementeVRFlash~check_only
+  args:
+    check_only: true
+    force_option: false
+    cycle_threshold: 14
+    vr_info:
+      Renesas:
+        fw_version:
+          'PDB_P12V_N1_VR': '80031801'
+          'PDB_P12V_N2_VR': '80031801'
+
+- name: OOB_FW_Flash~sbios_check_only
+  args:
+    check_only: true
+    force_update: false
+    fru: hmc
+    component: sbios
+    postreboot: false
+    fw_version: 'CLE403'
+
+# ----- GB300 version check
+
+- name: ClementeGB300VersionCheck
+  args:
+    check_list: {
+      'HGX_FW_BMC_0': 'GB200Nvl-25.09-2',
+      'HGX_FW_CPLD_0': '0.22',
+      'HGX_FW_CPU_0': 'CLE403',
+      'HGX_FW_CPU_1': 'CLE403',
+      'HGX_FW_ERoT_BMC_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_1': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_1': '01.04.0031.0000_n04',
+      'HGX_FW_FPGA_0': '1.60',
+      'HGX_FW_FPGA_1': '1.60',
+      'HGX_FW_GPU_0': '97.10.59.00.13',
+      'HGX_FW_GPU_1': '97.10.59.00.13',
+      'HGX_FW_GPU_2': '97.10.59.00.13',
+      'HGX_FW_GPU_3': '97.10.59.00.13',
+      'HGX_PCIeSwitchConfig_0': '01151024',
+    }
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mft-4.32.0-120.arm64.rpm && rpm -ivh mft-4.32.0-120.arm64.rpm; }'
+
+- name: ClementeNICFlash~FENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    keyword: 'OCP3.0'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 2
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '28.47.2526'}
+
+- name: ClementeNICFlash~BENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    keyword: 'Mezzanine'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 4
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '40.47.1106'}
+
+#
+# SSD Flash
+#
+- name: SSDFlash~check_only
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+    check_only: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL61T9HFJA-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MZOL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MTFDKBT1T9TFR-1BC4DABVA:
+        vendor: micron
+        fw_version: E2FB007
+      KXDZDRJJ1T92:
+        vendor: kioxia
+        fw_version: 1PFE7110
+      MTFDLBU7T6THC-1BK4FABVA:
+        vendor: micron
+        fw_version: E5FB002
+      WUS6A7676PJP8X7:
+        vendor: wd
+        fw_version: RG109W0A
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+#
+# FRU Check
+#
+- name: LFFRUEeprom~FRU_check_only
+  args:
+    check_only: true
+    fru_util: tools/platforms/clemente/utils/fruid-util.py
+    fru_config: etc/fru_clemente_chk.json
+    components_info: {
+      cpub0: {eeprom: 13-0050, dev_file: PG548_0},
+      cpub1: {eeprom: 12-0050, dev_file: PG548},
+      bsm: {eeprom: 9-0056, dev_file: BMC_Storage_Module},
+      scm: {eeprom: 9-0050, dev_file: Clemente_SCM_MP},
+      fio: {eeprom: 23-0051, dev_file: Clemente_FIO_MP},
+      osfp: {eeprom: 29-0052, dev_file: Clemente_OSFP_MP},
+      pdb: {eeprom: 1-0050, dev_file: Clemente_PDB_MP},
+      interposer: {eeprom: 21-0054, dev_file: Clemente_Interposer_MP},
+      hdd0: {eeprom: 25-0056, dev_file: Clemente_E1_S_BP_MP},
+      hdd1: {eeprom: 37-0056, dev_file: Clemente_E1_S_BP_MP_0},
+    }
+
+#- name: LFFRUEeprom~FRU_OSFP_check_only
+#  retries: 3
+#  retry_delay: 3
+#  args:
+#    check_only: true
+#    fru_util: tools/platforms/clemente/utils/fruid-util.py
+#    fru_config: etc/fru_clemente_chk.json
+#    components_info: {
+#      osfp: {eeprom: 29-0052, dev_file: Clemente_OSFP_MP},
+#    }
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+#
+# dmesg check
+#
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_clemente.json
+#    dump_all_errors: true
+
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+#- name: SleepTest~1min
+#  args:
+#    duration: 60
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# ----- PCI Check
+
+- name: PCICheck~check_CPU0
+  args:
+    pci_info: {
+                'SSD_0': ['0000:07:00.0', '32GT/s', 'x4'],
+                'SSD_1': ['0002:07:00.0', '32GT/s', 'x4'],
+                'FE_NIC_0': ['0006:01:00.0', '32GT/s', 'x16'],
+                'UPHY0_1': ['0000:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_1': ['0002:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_1': ['0005:00:00.0', '8GT/s', 'x1'],
+                'UPHY3_1': ['0006:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_1': ['0008:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_1': ['0009:00:00.0', '16GT/s', 'x1'],
+               # 'x1_Gen2_DP_2': ['0005:02:04.0', '8GT/s', 'x1'],
+                'x4_Gen5_UP': ['0005:01:00.0', '8GT/s', 'x1'],
+                #'x1_Gen3_DP': ['0005:02:06.0', '8GT/s', 'x1'],
+                'x1_Gen2_1': ['0005:06:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_2': ['0005:08:00.0', '5GT/s', 'x1'],
+                #'PCI_BRIDGE_1': ['0005:02:01.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_2': ['0005:02:02.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_3': ['0005:02:03.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_4': ['0005:02:05.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_5': ['0005:02:07.0', '8GT/s', 'x1'],
+                'PCI_BRIDGE_6': ['0000:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_7': ['0000:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_8': ['0000:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_9': ['0000:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_10': ['0000:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_11': ['0000:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_12': ['0008:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_13': ['0008:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_14': ['0008:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_15': ['0008:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_16': ['0008:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_17': ['0009:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_18': ['0009:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_19': ['0009:02:01.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_20': ['0009:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_21': ['0009:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_44': ['0002:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_45': ['0002:02:00.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_46': ['0002:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_47': ['0002:04:00.0', '64GT/s', 'x16'],
+               #'PCI_BRIDGE_48': ['0002:05:08.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_49': ['0002:05:0c.0', '32GT/s', 'x4'],
+               'HMC_PCISwtichConfig_0': ['0005:01:00.0', '8GT/s', 'x1', 'NVIDIA Corporation Device 2066'],
+              }
+
+- name: PCICheck~check_CPU1
+  args:
+    pci_info: {
+                'SSD_2': ['0010:07:00.0', '32GT/s', 'x4'],
+                'SSD_3': ['0012:07:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0015:01:00.0', '16GT/s', 'x4'],
+                'FE_NIC_1': ['0016:01:00.0', '32GT/s', 'x16'],
+               'UPHY0_2': ['0010:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_2': ['0012:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_2': ['0015:00:00.0', '16GT/s', 'x4'],
+                'UPHY3_3': ['0016:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_2': ['0018:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_2': ['0019:00:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_22': ['0010:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_23': ['0010:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_24': ['0010:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_25': ['0010:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_26': ['0010:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_27': ['0010:05:0c.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_28': ['0012:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_29': ['0012:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_30': ['0012:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_31': ['0012:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_32': ['0012:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_33': ['0012:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_34': ['0018:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_35': ['0018:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_36': ['0018:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_37': ['0018:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_38': ['0018:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_39': ['0019:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_40': ['0019:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_41': ['0019:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_42': ['0019:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_43': ['0019:05:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU0_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_0': ['0000:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_1': ['0000:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_2': ['0002:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_3': ['0002:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_4': ['0008:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_5': ['0009:03:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_6': ['0010:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_7': ['0010:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_8': ['0012:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_9': ['0012:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_10': ['0018:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_11': ['0019:03:00.0', '64GT/s', 'x16']
+              }
+
+- name: PCICheck~check_CPU0_B300
+  args:
+    pci_info: {
+                'B300_0': ['0008:06:00.0', '64GT/s', 'x16'],
+                'B300_1': ['0009:06:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_B300
+  args:
+    pci_info: {
+                'B300_2': ['0018:06:00.0', '64GT/s', 'x16'],
+                'B300_3': ['0019:06:00.0', '64GT/s', 'x16'],
+              }
+
+# ----- PD test
+
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: RunOOBCmd~Set_FAN_Duty_50
+  args:
+    cmd: 'mfg-tool fan-speed -t 50'
+
+- name: SleepTest~20s
+  args:
+    duration: 20
+
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: InstallRPMPackage~disable_acs
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/disable_acs.sh; chmod +x disable_acs.sh; ./disable_acs.sh;'
+
+- name: RunOOBCmd~Enable_GPU0_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_0 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": true}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: RunOOBCmd~Enable_GPU1_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_1 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": true}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: RunOOBCmd~Enable_GPU2_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_2 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": true}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: RunOOBCmd~Enable_GPU3_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_3 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": true}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: NVDiagCheck~PD_60002-rev3~Field_IST
+  retries: 0
+  args:
+    field_diag_pkg: 'partnerdiag'
+    extra_args: ['--field', '--ist', '--no_bmc', '--fail_on_first_error', '--skip_driver_load']
+    test_recipe: 'spec_gb300_nvl_2_4_board_pc_field_ist.json'
+    sku_file: 'sku_gb300_nvl_2_4_board_pc_partner_mfg.json'
+    package_loc: 'platforms/clemente/tools/NVPD/L10/'
+    Partner_tools: '629-24059-0000-FLD-60002-rev3_nonvlink.tgz'
+    ist_pkg: 'DFX_GB110_IST_Field_Full_Images_b110.1.1.tar.gz'
+    pkg_folder_name: '629-24059-0000-FLD-60002-rev3_nonvlink'
+    log_folder_name: 'dgx'
+    log_subfolder_name: 'logs'
+    is_partner_diag: true
+
+- name: SleepTest~30s
+  args:
+    duration: 30
+
+- name: RunOOBCmd~Disable_GPU0_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_0 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": false}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: RunOOBCmd~Disable_GPU1_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_1 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": false}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: RunOOBCmd~Disable_GPU2_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_2 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": false}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: RunOOBCmd~Disable_GPU3_IST_PRC
+  args:
+    cmd: "curl -i -k http://172.31.13.251/redfish/v1/Systems/HGX_Baseboard_0/Processors/GPU_3 -X PATCH -H \"Content-Type: application/json\" -d '{\"Oem\": {\"Nvidia\":{\"InbandReconfigPermissions\":{\"InSystemTest\":{\"AllowOneShotConfig\": false}}}}}' 2> /dev/null"
+    expected_result: '200 OK'
+
+- name: SleepTest~30s
+  args:
+    duration: 30
+
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+#- name: SleepTest~1min
+#  args:
+#    duration: 60
+
+- name: ClementeSSIFCheck~first_try
+  timeout: 200
+  args:
+    exp_string: 'SSIF'
+    trigger_reboot: True
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: ClementeSSIFCheck~2nd_try
+  timeout: 200
+  args:
+    exp_string: 'SSIF'
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# wait 30s for FAN ready
+- name: SleepTest~30s
+  proxy: controller
+  args:
+    duration: 30
+
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: RunOOBCmd~Set_FAN_Duty_50
+  args:
+    cmd: 'mfg-tool fan-speed -t 50'
+
+- name: SleepTest~20s
+  args:
+    duration: 20
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: InstallRPMPackage~disable_acs
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/disable_acs.sh; chmod +x disable_acs.sh; ./disable_acs.sh;'
+
+- name: NVDiagCheck~PD_60002-rev3~Field_nonvlink
+  retries: 0
+  args:
+    field_diag_pkg: 'partnerdiag'
+    extra_args: ['--field', '--no_bmc', '--fail_on_first_error', '--skip_driver_load', '--level2', '--skip_tests=Cx8GpuDirectLoopback_ETH,Cx8GpuDirectCrossNIC_ETH,Cx8GpuDirectCrossNIC_IB,Cx8CpuCrossNIC_ETH,Cx8CpuCrossNIC_IB,Cx8CpuLoopback,SyslogErrorCheck,KernLogErrorCheck,SyslogAERCheck,KernLogAERCheck,CxeyegradeStart,CxeyegradeStop']
+    test_recipe: 'spec_gb300_nvl_2_4_board_pc_field_level2.json'
+    sku_file: 'sku_gb300_nvl_2_4_board_pc_partner_mfg.json'
+    package_loc: 'platforms/clemente/tools/NVPD/L10/'
+    Partner_tools: '629-24059-0000-FLD-60002-rev3_nonvlink.tgz'
+    pkg_folder_name: '629-24059-0000-FLD-60002-rev3_nonvlink'
+    log_folder_name: 'dgx'
+    log_subfolder_name: 'logs'
+    is_partner_diag: true
+
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# wait 30s for FAN ready
+- name: SleepTest~30s
+  proxy: controller
+  args:
+    duration: 30
+
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: RunOOBCmd~Set_FAN_Duty_50
+  args:
+    cmd: 'mfg-tool fan-speed -t 50'
+
+- name: SleepTest~20s
+  args:
+    duration: 20
+
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+
+- name: InstallRPMPackage~disable_acs
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/disable_acs.sh; chmod +x disable_acs.sh; ./disable_acs.sh;'
+
+
+- name: NVDiagCheck~PD_60002-rev3~Field_nonvlink_gpufielddiag
+  retries: 0
+  args:
+    field_diag_pkg: 'partnerdiag'
+    extra_args: ['--field', '--no_bmc', '--fail_on_first_error', '--skip_driver_load','--gpu_fd_pex_link_auto','--gpufielddiag']
+    test_recipe: 'spec_gb300_nvl_2_4_board_pc_field_level2.json'
+    sku_file: 'sku_gb300_nvl_2_4_board_pc_partner_mfg.json'
+    package_loc: 'platforms/clemente/tools/NVPD/L10/'
+    Partner_tools: '629-24059-0000-FLD-60002-rev3_nonvlink.tgz'
+    pkg_folder_name: '629-24059-0000-FLD-60002-rev3_nonvlink'
+    log_folder_name: 'dgx'
+    log_subfolder_name: 'logs'
+    is_partner_diag: true
+
+# AC
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+# ----- Background SEL check
+
+- name: SELCheck~background
+  background: true
+  retries: 0
+  args:
+    interval: 120
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 1
+    pcie_error_threshold: 3
+    sel_filters_file: etc/sel_filters_clemente_mp.json
+    product: clemente
+#    log_type: "redfish"
+#    dump_all_errors: true
+
+# ----- Background Dmesg check
+
+- name: DMESG_check~background
+  background: true
+  #ignore_fail: '_all_'
+  args:
+    bg_interval: 223
+    heartbeat_interval: 660
+    dmesg_filters_file: etc/dmesg_filters_clemente.json
+#    dump_all_errors: true
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# wait 30s for FAN ready
+- name: SleepTest~30s
+  proxy: controller
+  args:
+    duration: 30
+
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: RunOOBCmd~Set_FAN_Duty_50
+  args:
+    cmd: 'mfg-tool fan-speed -t 50'
+
+- name: SleepTest~20s
+  args:
+    duration: 20
+
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: InstallRPMPackage~disable_nvlink
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/disable_nvlink.sh; chmod +x disable_nvlink.sh; ./disable_nvlink.sh;'
+
+- name: SleepTest~2mins
+  args:
+    duration: 120
+
+- name: GPU_HBM_Info_Dump
+  runner: bash
+  cmd: nvidia-smi
+
+#- name: GPU_HBM_ENUM_Log_Dump
+#  runner: bash
+#  cmd: 'cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/enum_nvidia_dev_debug_v1; chmod +x /tmp/enum_nvidia_dev_debug_v1; /tmp/enum_nvidia_dev_debug_v1'
+
+- name: InstallRPMPackage~CheckNVDevice
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/check_nvidia_dev.sh; chmod +x check_nvidia_dev.sh; ./check_nvidia_dev.sh || { rm -f /tmp/check_nvidia_dev.sh; exit 1; }'
+
+- name: CSST~gemmfp8_c2c_lpddr_edp.json
+  retries: 1
+  retry_delay: 300
+  timeout: 7200
+  args:
+    package_loc: 'platforms/clemente/tools/CSST/'
+    test_pkg: 20250728_GB300_Golden_CSST_recipe_QTA
+    csst_tool: csst_aarch64
+    config_file: CONCURRENT_without_NVlink/gemmfp8_c2c_lpddr_edp.json
+
+- name: CSST~hbm_c2c_lpddr.json
+  retries: 1
+  retry_delay: 300
+  timeout: 7200
+  args:
+    package_loc: 'platforms/clemente/tools/CSST/'
+    test_pkg: 20250728_GB300_Golden_CSST_recipe_QTA
+    csst_tool: csst_aarch64
+    config_file: CONCURRENT_without_NVlink/hbm_c2c_lpddr.json
+
+- name: SleepTest~2min
+  args:
+    duration: 120
+
+# AC
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: clemente
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# ----- FIO test
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# wait 30s for FAN ready
+- name: SleepTest~30s
+  proxy: controller
+  args:
+    duration: 30
+
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: RunOOBCmd~Set_FAN_Duty_50
+  args:
+    cmd: 'mfg-tool fan-speed -t 50'
+
+- name: SleepTest~20s
+  args:
+    duration: 20
+
+- name: ClementeFIOTest~BootDrive
+  continue: true
+  args:
+    only_boot_device: true
+    fio_job_args:
+      rw: randrw
+      rwmixread: 50
+      time_based: 1
+      iodepth: 32
+      direct: 1
+      ramp_time: 10s
+      runtime: 3600
+      offset: 16G
+      bssplit: 4K/20:8K/10:16K/10:32K/10:64K/10:128K/20:256K/10:512K/10
+      numjobs: 4
+      group_reporting: 1
+      ioengine: libaio
+
+- name: ClementeFIOTest~DataDrive
+  continue: true
+  args:
+    exclude_boot_device: true
+    fio_job_args:
+      direct: 1
+      ioengine: libaio
+      refill_buffers: 1
+      norandommap: 1
+      randrepeat: 0
+      time_based: 1
+      iodepth: 64
+      iodepth_low: 1
+      runtime: 3600
+      numjobs: 16
+      group_reporting: 1
+      rw: randrw
+      percentage_random: 100,25,0
+      rwmixread: 50
+      bssplit: 4K/20:8K/10:16K/10:32K/10:64K/10:128K/20:256K/10:512K/10
+
+# ----- stress test
+
+- name: StressappTest
+  timeout: 12000
+  args:
+    runtime: 10800
+    perc_mem: .90
+
+#### SSD Smart Check ####
+- name: SMARTCheck
+  args:
+    cycles: 1
+
+- name: NvmeOCPSmartlogCheck
+  args:
+    device_list: ['/dev/nvme0n1', '/dev/nvme1n1', '/dev/nvme2n1', '/dev/nvme3n1', '/dev/nvme4n1']
+    check_param: 'PCIe correctable error count'
+    expected_value: '0'
+
+- name: PCICheck~check_CPU0
+  args:
+    pci_info: {
+                'SSD_0': ['0000:07:00.0', '32GT/s', 'x4'],
+                'SSD_1': ['0002:07:00.0', '32GT/s', 'x4'],
+                'FE_NIC_0': ['0006:01:00.0', '32GT/s', 'x16'],
+                'UPHY0_1': ['0000:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_1': ['0002:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_1': ['0005:00:00.0', '8GT/s', 'x1'],
+                'UPHY3_1': ['0006:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_1': ['0008:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_1': ['0009:00:00.0', '16GT/s', 'x1'],
+               # 'x1_Gen2_DP_2': ['0005:02:04.0', '8GT/s', 'x1'],
+                'x4_Gen5_UP': ['0005:01:00.0', '8GT/s', 'x1'],
+                #'x1_Gen3_DP': ['0005:02:06.0', '8GT/s', 'x1'],
+                'x1_Gen2_1': ['0005:06:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_2': ['0005:08:00.0', '5GT/s', 'x1'],
+                #'PCI_BRIDGE_1': ['0005:02:01.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_2': ['0005:02:02.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_3': ['0005:02:03.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_4': ['0005:02:05.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_5': ['0005:02:07.0', '8GT/s', 'x1'],
+                'PCI_BRIDGE_6': ['0000:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_7': ['0000:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_8': ['0000:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_9': ['0000:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_10': ['0000:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_11': ['0000:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_12': ['0008:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_13': ['0008:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_14': ['0008:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_15': ['0008:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_16': ['0008:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_17': ['0009:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_18': ['0009:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_19': ['0009:02:01.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_20': ['0009:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_21': ['0009:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_44': ['0002:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_45': ['0002:02:00.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_46': ['0002:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_47': ['0002:04:00.0', '64GT/s', 'x16'],
+               #'PCI_BRIDGE_48': ['0002:05:08.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_49': ['0002:05:0c.0', '32GT/s', 'x4'],
+               'HMC_PCISwtichConfig_0': ['0005:01:00.0', '8GT/s', 'x1', 'NVIDIA Corporation Device 2066'],
+              }
+
+- name: PCICheck~check_CPU1
+  args:
+    pci_info: {
+                'SSD_2': ['0010:07:00.0', '32GT/s', 'x4'],
+                'SSD_3': ['0012:07:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0015:01:00.0', '16GT/s', 'x4'],
+                'FE_NIC_1': ['0016:01:00.0', '32GT/s', 'x16'],
+               'UPHY0_2': ['0010:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_2': ['0012:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_2': ['0015:00:00.0', '16GT/s', 'x4'],
+                'UPHY3_3': ['0016:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_2': ['0018:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_2': ['0019:00:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_22': ['0010:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_23': ['0010:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_24': ['0010:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_25': ['0010:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_26': ['0010:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_27': ['0010:05:0c.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_28': ['0012:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_29': ['0012:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_30': ['0012:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_31': ['0012:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_32': ['0012:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_33': ['0012:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_34': ['0018:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_35': ['0018:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_36': ['0018:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_37': ['0018:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_38': ['0018:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_39': ['0019:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_40': ['0019:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_41': ['0019:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_42': ['0019:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_43': ['0019:05:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU0_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_0': ['0000:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_1': ['0000:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_2': ['0002:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_3': ['0002:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_4': ['0008:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_5': ['0009:03:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_6': ['0010:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_7': ['0010:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_8': ['0012:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_9': ['0012:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_10': ['0018:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_11': ['0019:03:00.0', '64GT/s', 'x16']
+              }
+
+- name: PCICheck~check_CPU0_B300
+  args:
+    pci_info: {
+                'B300_0': ['0008:06:00.0', '64GT/s', 'x16'],
+                'B300_1': ['0009:06:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_B300
+  args:
+    pci_info: {
+                'B300_2': ['0018:06:00.0', '64GT/s', 'x16'],
+                'B300_3': ['0019:06:00.0', '64GT/s', 'x16'],
+              }
+
+#############
+
+# ----- SDR check
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: SleepTest~30sec
+  args:
+    duration: 30
+
+- name: SendFilesToBMC~Copy_WR_script
+  retries: 1
+  args:
+     files_to_copy:
+        - file_location: '/tools/platforms/clemente/utils/IOB_Sensor_WR_v2.sh'
+          file_destination: '/tmp/'
+          file_permission: '777'
+ 
+- name: RunOOBCmd~Run_WR
+  args:
+    cmd: 'cd /tmp; /tmp/IOB_Sensor_WR_v2.sh'
+
+- name: SensorCheck
+  args:
+    cycles: 1
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C'
+
+# ----- AC cycle - 5 loops
+
+- loop: 5
+  name: HostACCycleBlock
+  group:
+  - name: SledAcCycle
+    reboot: true
+    args:
+      always: true
+      runtime: 3000
+      product: clemente
+  # workaround for avoid CPLD read fail issue
+  - name: GB300StatusCheck~FRU_Check_WR
+    proxy: controller
+    args:
+      script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+  - name: ConfigCheck
+    args:
+      fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot]
+      bom_override: {'cpu_speed~overwrite': {'min_speed': 3.2, 'max_speed': 3.5}}
+  - name: PartCheck
+    args:
+      fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+# wait 3 min for hmc ready
+#- name: SleepTest~3min
+#  proxy: controller
+#  args:
+#    duration: 180
+
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+#
+# SDR check
+#
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: SleepTest~30sec
+  args:
+    duration: 30
+
+- name: SendFilesToBMC~Copy_WR_script
+  retries: 1
+  args:
+     files_to_copy:
+        - file_location: '/tools/platforms/clemente/utils/IOB_Sensor_WR_v2.sh'
+          file_destination: '/tmp/'
+          file_permission: '777'
+ 
+- name: RunOOBCmd~Run_WR
+  args:
+    cmd: 'cd /tmp; /tmp/IOB_Sensor_WR_v2.sh'
+
+- name: SensorCheck~after_AC_cycle
+  args:
+    cycles: 1
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C'
+
+# ----- DC cycle - 5 loops
+
+- loop: 5
+  name: HostDCCycleBlock
+  group:
+  - name: HostDcCycle
+    reboot: true
+    timeout: 1200
+  - name: HostUpCheck
+    proxy: controller
+    args:
+      runtime: 3000
+  # workaround for avoid CPLD read fail issue
+  - name: GB300StatusCheck~FRU_Check_WR
+    proxy: controller
+    args:
+      script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+  - name: ConfigCheck
+    args:
+      fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot]
+      bom_override: {'cpu_speed~overwrite': {'min_speed': 3.2, 'max_speed': 3.5}}
+  - name: PartCheck
+    args:
+      fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+# ----- Check FW/CPLD version
+
+- name: OOB_FW_Flash~bmc_flash-check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: false
+  args:
+    check_only: true
+    force_update: false
+    fru: bmc
+    component: ct_bmc
+    postreboot: false
+    fw_version: 'clemente-v2026.15.1'
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+- name: CPLDFlash~interposer_check_only
+  args:
+    check_only: true
+    fru: 'interposer'
+    component: 'cpld'
+    fw_version: '00010120'
+    postreboot: false
+
+- name: ClementeCPLDFlash~scm_check_only
+  args:
+    check_only: true
+    postreboot: false
+    fru: 'scm'
+    component: 'cpld'
+    fw_version: 'D0010233'
+
+- name: CPLDFlash~hdd0_check_only
+  args:
+    check_only: true
+    fru: 'hdd0'
+    component: 'cpld'
+    fw_version: '000B0402'
+    postreboot: false
+
+- name: CPLDFlash~hdd1_check_only
+  args:
+    check_only: true
+    fru: 'hdd1'
+    component: 'cpld'
+    fw_version: '000B0402'
+    postreboot: false
+
+- name: ClementeVRFlash~check_only
+  args:
+    check_only: true
+    force_option: false
+    cycle_threshold: 14
+    vr_info:
+      Renesas:
+        fw_version:
+          'PDB_P12V_N1_VR': '80031801'
+          'PDB_P12V_N2_VR': '80031801'
+
+- name: OOB_FW_Flash~sbios_check_only
+  args:
+    check_only: true
+    force_update: false
+    fru: hmc
+    component: sbios
+    postreboot: false
+    fw_version: 'CLE403'
+
+# ----- GB300 version check
+
+- name: ClementeGB300VersionCheck
+  args:
+    check_list: {
+      'HGX_FW_BMC_0': 'GB200Nvl-25.09-2',
+      'HGX_FW_CPLD_0': '0.22',
+      'HGX_FW_CPU_0': 'CLE403',
+      'HGX_FW_CPU_1': 'CLE403',
+      'HGX_FW_ERoT_BMC_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_1': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_1': '01.04.0031.0000_n04',
+      'HGX_FW_FPGA_0': '1.60',
+      'HGX_FW_FPGA_1': '1.60',
+      'HGX_FW_GPU_0': '97.10.59.00.13',
+      'HGX_FW_GPU_1': '97.10.59.00.13',
+      'HGX_FW_GPU_2': '97.10.59.00.13',
+      'HGX_FW_GPU_3': '97.10.59.00.13',
+      'HGX_PCIeSwitchConfig_0': '01151024',
+    }
+
+# ----- NIC FW Check
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mft-4.32.0-120.arm64.rpm && rpm -ivh mft-4.32.0-120.arm64.rpm; }'
+
+- name: ClementeNICFlash~FENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    keyword: 'OCP3.0'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 2
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '28.47.2526'}
+
+- name: ClementeNICFlash~BENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    keyword: 'Mezzanine'
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    device_count: 4
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '40.47.1106'}
+
+# ----- SSD FW check
+
+- name: SSDFlash~check_only
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+    check_only: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL61T9HFJA-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MZOL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MTFDKBT1T9TFR-1BC4DABVA:
+        vendor: micron
+        fw_version: E2FB007
+      KXDZDRJJ1T92:
+        vendor: kioxia
+        fw_version: 1PFE7110
+      MTFDLBU7T6THC-1BK4FABVA:
+        vendor: micron
+        fw_version: E5FB002
+      WUS6A7676PJP8X7:
+        vendor: wd
+        fw_version: RG109W0A
+
+# workaround for avoid CPLD read fail issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# ----- FRU Check
+
+- name: LFFRUEeprom~FRU_check_only
+  args:
+    check_only: true
+    fru_util: tools/platforms/clemente/utils/fruid-util.py
+    fru_config: etc/fru_clemente_chk.json
+    components_info: {
+      cpub0: {eeprom: 13-0050, dev_file: PG548_0},
+      cpub1: {eeprom: 12-0050, dev_file: PG548},
+      bsm: {eeprom: 9-0056, dev_file: BMC_Storage_Module},
+      scm: {eeprom: 9-0050, dev_file: Clemente_SCM_MP},
+      fio: {eeprom: 23-0051, dev_file: Clemente_FIO_MP},
+      osfp: {eeprom: 29-0052, dev_file: Clemente_OSFP_MP},
+      pdb: {eeprom: 1-0050, dev_file: Clemente_PDB_MP},
+      interposer: {eeprom: 21-0054, dev_file: Clemente_Interposer_MP},
+      hdd0: {eeprom: 25-0056, dev_file: Clemente_E1_S_BP_MP},
+      hdd1: {eeprom: 37-0056, dev_file: Clemente_E1_S_BP_MP_0},
+    }
+
+#- name: LFFRUEeprom~FRU_OSFP_check_only
+#  retries: 3
+#  retry_delay: 3
+#  args:
+#    check_only: true
+#    fru_util: tools/platforms/clemente/utils/fruid-util.py
+#    fru_config: etc/fru_clemente_chk.json
+#    components_info: {
+#      osfp: {eeprom: 29-0052, dev_file: Clemente_OSFP_MP},
+#    }
+
+# ----- PCI Check
+
+- name: PCICheck~check_CPU0
+  args:
+    pci_info: {
+                'SSD_0': ['0000:07:00.0', '32GT/s', 'x4'],
+                'SSD_1': ['0002:07:00.0', '32GT/s', 'x4'],
+                'FE_NIC_0': ['0006:01:00.0', '32GT/s', 'x16'],
+                'UPHY0_1': ['0000:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_1': ['0002:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_1': ['0005:00:00.0', '8GT/s', 'x1'],
+                'UPHY3_1': ['0006:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_1': ['0008:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_1': ['0009:00:00.0', '16GT/s', 'x1'],
+               # 'x1_Gen2_DP_2': ['0005:02:04.0', '8GT/s', 'x1'],
+                'x4_Gen5_UP': ['0005:01:00.0', '8GT/s', 'x1'],
+                #'x1_Gen3_DP': ['0005:02:06.0', '8GT/s', 'x1'],
+                'x1_Gen2_1': ['0005:06:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_2': ['0005:08:00.0', '5GT/s', 'x1'],
+                #'PCI_BRIDGE_1': ['0005:02:01.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_2': ['0005:02:02.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_3': ['0005:02:03.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_4': ['0005:02:05.0', '8GT/s', 'x1'],
+                #'PCI_BRIDGE_5': ['0005:02:07.0', '8GT/s', 'x1'],
+                'PCI_BRIDGE_6': ['0000:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_7': ['0000:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_8': ['0000:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_9': ['0000:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_10': ['0000:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_11': ['0000:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_12': ['0008:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_13': ['0008:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_14': ['0008:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_15': ['0008:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_16': ['0008:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_17': ['0009:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_18': ['0009:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_19': ['0009:02:01.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_20': ['0009:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_21': ['0009:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_44': ['0002:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_45': ['0002:02:00.0', '64GT/s', 'x16'],
+               'PCI_BRIDGE_46': ['0002:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_47': ['0002:04:00.0', '64GT/s', 'x16'],
+               #'PCI_BRIDGE_48': ['0002:05:08.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_49': ['0002:05:0c.0', '32GT/s', 'x4'],
+               'HMC_PCISwtichConfig_0': ['0005:01:00.0', '8GT/s', 'x1', 'NVIDIA Corporation Device 2066'],
+              }
+
+- name: PCICheck~check_CPU1
+  args:
+    pci_info: {
+                'SSD_2': ['0010:07:00.0', '32GT/s', 'x4'],
+                'SSD_3': ['0012:07:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0015:01:00.0', '16GT/s', 'x4'],
+                'FE_NIC_1': ['0016:01:00.0', '32GT/s', 'x16'],
+               'UPHY0_2': ['0010:00:00.0', '32GT/s', 'x16'],
+                'UPHY1_2': ['0012:00:00.0', '32GT/s', 'x16'],
+                'UPHY2_2': ['0015:00:00.0', '16GT/s', 'x4'],
+                'UPHY3_3': ['0016:00:00.0', '32GT/s', 'x16'],
+                'UPHY4_2': ['0018:00:00.0', '16GT/s', 'x1'],
+                'UPHY5_2': ['0019:00:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_22': ['0010:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_23': ['0010:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_24': ['0010:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_25': ['0010:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_26': ['0010:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_27': ['0010:05:0c.0', '32GT/s', 'x4'],
+               'PCI_BRIDGE_28': ['0012:01:00.0', '32GT/s', 'x16'],
+                'PCI_BRIDGE_29': ['0012:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_30': ['0012:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_31': ['0012:04:00.0', '64GT/s', 'x16'],
+                #'PCI_BRIDGE_32': ['0012:05:08.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_33': ['0012:05:0c.0', '32GT/s', 'x4'],
+                'PCI_BRIDGE_34': ['0018:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_35': ['0018:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_36': ['0018:02:03.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_37': ['0018:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_38': ['0018:05:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_39': ['0019:01:00.0', '16GT/s', 'x1'],
+                'PCI_BRIDGE_40': ['0019:02:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_41': ['0019:02:01.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_42': ['0019:04:00.0', '64GT/s', 'x16'],
+                'PCI_BRIDGE_43': ['0019:05:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU0_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_0': ['0000:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_1': ['0000:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_2': ['0002:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_3': ['0002:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_4': ['0008:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_5': ['0009:03:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_BE_CX8
+  args:
+    pci_info: {
+                'BE_NIC_6': ['0010:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_7': ['0010:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_8': ['0012:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_9': ['0012:03:00.1', '64GT/s', 'x16'],
+                'BE_NIC_10': ['0018:03:00.0', '64GT/s', 'x16'],
+                'BE_NIC_11': ['0019:03:00.0', '64GT/s', 'x16']
+              }
+
+- name: PCICheck~check_CPU0_B300
+  args:
+    pci_info: {
+                'B300_0': ['0008:06:00.0', '64GT/s', 'x16'],
+                'B300_1': ['0009:06:00.0', '64GT/s', 'x16'],
+              }
+
+- name: PCICheck~check_CPU1_B300
+  args:
+    pci_info: {
+                'B300_2': ['0018:06:00.0', '64GT/s', 'x16'],
+                'B300_3': ['0019:06:00.0', '64GT/s', 'x16'],
+              }
+
+# ----- SDR check
+- name: InstallRPMPackage~clemente
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz ; tar xzfv /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz ; cd /tmp/clemente_rpm_6.16.1-0_fbk0; ./pre_install_clemente.sh; rm /tmp/clemente_rpm_6.16.1-0_fbk0.tar.gz  ; rm -rf /tmp/clemente_rpm_6.16.1-0_fbk0/'
+
+- name: InstallRPMPackage~cuda_580.105.08
+  runner: bash
+  cmd: 'mkdir /tmp/cuda/ ; cd /tmp/cuda/; wget -nv http://controller/tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz; tar xzfv /tmp/cuda/cuda-580.105.08_20251208.tgz; rpm -ivh /tmp/cuda/*rpm --nodeps --force; rpm -ivh /var/nvidia-driver*/*.rpm --nodeps --force; systemctl enable nvidia-persistenced.service ; systemctl start nvidia-persistenced.service;  rm -rf /tmp/cuda/'
+
+- name: SleepTest~30sec
+  args:
+    duration: 30
+
+- name: SendFilesToBMC~Copy_WR_script
+  retries: 1
+  args:
+     files_to_copy:
+        - file_location: '/tools/platforms/clemente/utils/IOB_Sensor_WR_v2.sh'
+          file_destination: '/tmp/'
+          file_permission: '777'
+ 
+- name: RunOOBCmd~Run_WR
+  args:
+    cmd: 'cd /tmp; /tmp/IOB_Sensor_WR_v2.sh'
+
+- name: SensorCheck~after_DC_cycle
+  args:
+    cycles: 1
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C'
+
+# ----- dmesg check
+
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_clemente.json
+#    dump_all_errors: true
+
+# ----- SEL check
+
+- name: SELCheck
+#  retries: 2
+#  retry_delay: 60
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_clemente_mp.json
+    product: clemente
+#    log_type: "redfish"
+#    dump_all_errors: true
+
+# ----- syslog check
+
+#- name: SysLogCheck
+#  args:
+#    #err_threshold: '<1360000'
+#    syslog_filter_file: etc/syslog_filter_clemente.txt
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+- name: L10_FRO_COMPLETE
+  runner: bash
+  cmd: "/bin/true"

@@ -1559,3 +1559,73 @@ a.link-gdrive:hover {
     padding-top: 0.5rem;
 }
 
+/* Test Suite YAML Tab Custom Styles */
+.badge-station {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.78rem;
+    background: rgba(2, 132, 199, 0.2);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 6px rgba(2, 132, 199, 0.15);
+}
+
+.step-location-pill {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    background: rgba(30, 41, 59, 0.8);
+    color: #cbd5e1;
+    border: 1px solid var(--border-color);
+}
+
+.badge-yaml-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.badge-yaml-status.yaml-match {
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.badge-yaml-status.yaml-mismatch {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.2);
+}
+
+.badge-yaml-status.yaml-missing-bkc {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fde047;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+}
+
+.badge-yaml-status.yaml-unchecked {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.tr-yaml-mismatch {
+    background: rgba(239, 68, 68, 0.08) !important;
+}
+
+.tr-yaml-mismatch:hover {
+    background: rgba(239, 68, 68, 0.14) !important;
+}
+
+

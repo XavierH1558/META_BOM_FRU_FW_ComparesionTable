@@ -5,6 +5,7 @@ import re
 import io
 import json
 import datetime
+import yaml
 from flask import Flask, render_template, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
@@ -18,6 +19,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(os.path.join(DATA_DIR, 'bkc'), exist_ok=True)
 os.makedirs(os.path.join(DATA_DIR, 'fru'), exist_ok=True)
 os.makedirs(os.path.join(DATA_DIR, 'matrix'), exist_ok=True)
+os.makedirs(os.path.join(DATA_DIR, 'yaml'), exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -61,6 +63,10 @@ DIR_ROOTS = {
         '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/',
         os.path.join(DATA_DIR, 'matrix'),
         UPLOAD_FOLDER
+    ],
+    'yaml': [
+        os.path.join(DATA_DIR, 'yaml'),
+        UPLOAD_FOLDER
     ]
 }
 
@@ -86,11 +92,12 @@ def scan_files_in_dirs(tab_key):
     dirs = DIR_ROOTS.get(tab_key, [])
     found = []
     seen = set()
+    valid_exts = ('.yaml', '.yml') if tab_key == 'yaml' else ('.xlsx', '.csv', '.xls')
     for d in dirs:
         if not os.path.exists(d): continue
         for root, _, files in os.walk(d):
             for f in files:
-                if f.endswith(('.xlsx', '.csv')) and not f.startswith(('._', '~$')):
+                if f.endswith(valid_exts) and not f.startswith(('._', '~$')):
                     full_p = os.path.join(root, f)
                     if full_p in seen: continue
                     seen.add(full_p)
@@ -104,11 +111,13 @@ def scan_files_in_dirs(tab_key):
                         'display_name': display_name,
                         'path': full_p,
                         'is_excel': f.endswith(('.xlsx', '.xls')),
+                        'is_yaml': f.endswith(('.yaml', '.yml')),
                         'mtime': mtime
                     })
     # Sort files by modification time descending (latest files first)
     found.sort(key=lambda x: x['mtime'], reverse=True)
     return found
+
 
 def filter_valid_data_sheets(sheets):
     ignored_keywords = {'readme', 'change log', 'changelog', 'history', 'revision history', 'single source vendor', 'instructions', 'notes'}
@@ -220,7 +229,7 @@ def upload_file():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No selected file'}), 400
     
-    if file and file.filename.endswith(('.xlsx', '.xls', '.csv')):
+    if file and file.filename.endswith(('.xlsx', '.xls', '.csv', '.yaml', '.yml')):
         filename = secure_filename(file.filename)
         save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(save_path)
@@ -236,7 +245,8 @@ def upload_file():
             'tab_type': tab_type
         })
     else:
-        return jsonify({'success': False, 'error': 'Unsupported file format. Please upload .xlsx or .csv'}), 400
+        return jsonify({'success': False, 'error': 'Unsupported file format. Please upload .xlsx, .csv, .yaml or .yml'}), 400
+
 
 @app.route('/api/status')
 def get_status():
@@ -1123,7 +1133,318 @@ def compare_two_fru_sheets(rows_dvt, rows_pvt):
     }
 
 
+def parse_single_yaml_file(path, default_station_label="Station"):
+    if not path or not os.path.exists(path):
+        return [], default_station_label, f"File not found: {path}"
+    
+    try:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        return [], default_station_label, f"YAML parse error: {str(e)}"
+    
+    if not data:
+        return [], default_station_label, "YAML file is empty"
+    
+    base_name = os.path.basename(path)
+    station_label = default_station_label
+    
+    if "clemente_ct_maxq_mp_" in base_name.lower():
+        st_code = base_name.lower().replace("clemente_ct_maxq_mp_", "").replace(".yaml", "").replace(".yml", "").upper()
+        station_label = f"Station ({st_code})"
+    elif isinstance(data, dict) and data.get('station'):
+        station_label = str(data.get('station')).strip()
+    
+    extracted_items = []
+    
+    def clean_val(v):
+        if v is None: return ""
+        v_str = str(v).strip()
+        if v_str.endswith('.0') and v_str.replace('.0', '').isdigit():
+            v_str = v_str[:-2]
+        return v_str
+    
+    if isinstance(data, list):
+        for idx, step in enumerate(data, start=1):
+            if not isinstance(step, dict): continue
+            step_name = step.get('name') or f"Step_{idx}"
+            args = step.get('args') or {}
+            if not isinstance(args, dict): continue
+            
+            # 1. check_list dictionary (e.g. ClementeGB300VersionCheck)
+            chk_list = args.get('check_list')
+            if isinstance(chk_list, dict):
+                for k, v in chk_list.items():
+                    extracted_items.append({
+                        'station': station_label,
+                        'file_name': base_name,
+                        'step_location': str(step_name),
+                        'component': str(k),
+                        'sub_component': str(k),
+                        'yaml_version': clean_val(v),
+                        'command': str(step.get('cmd') or args.get('cmd') or ''),
+                        'discussion_note': f"Test check in step '{step_name}'"
+                    })
+            
+            # 2. ssd_info dictionary (e.g. SSDFlash~check_only)
+            ssd_info = args.get('ssd_info')
+            if isinstance(ssd_info, dict):
+                for ssd_pn, info in ssd_info.items():
+                    if isinstance(info, dict) and info.get('fw_version'):
+                        extracted_items.append({
+                            'station': station_label,
+                            'file_name': base_name,
+                            'step_location': str(step_name),
+                            'component': f"SSD ({ssd_pn})",
+                            'sub_component': str(ssd_pn),
+                            'yaml_version': clean_val(info.get('fw_version')),
+                            'command': '',
+                            'discussion_note': f"SSD firmware check for part {ssd_pn}"
+                        })
+            
+            # 3. vr_info dictionary (e.g. ClementeVRFlash)
+            vr_info = args.get('vr_info')
+            if isinstance(vr_info, dict):
+                for vendor, vdata in vr_info.items():
+                    if isinstance(vdata, dict) and isinstance(vdata.get('fw_version'), dict):
+                        for vr_name, vr_ver in vdata['fw_version'].items():
+                            extracted_items.append({
+                                'station': station_label,
+                                'file_name': base_name,
+                                'step_location': str(step_name),
+                                'component': f"VR ({vr_name})",
+                                'sub_component': str(vr_name),
+                                'yaml_version': clean_val(vr_ver),
+                                'command': '',
+                                'discussion_note': f"VR Controller check for {vr_name} ({vendor})"
+                            })
+            
+            # 4. mellanox dictionary (e.g. ClementeNICFlash)
+            mlx = args.get('mellanox')
+            if isinstance(mlx, dict) and mlx.get('fw_version'):
+                kw = args.get('keyword') or 'Mellanox NIC'
+                extracted_items.append({
+                    'station': station_label,
+                    'file_name': base_name,
+                    'step_location': str(step_name),
+                    'component': f"NIC ({kw})",
+                    'sub_component': f"Mellanox {kw}",
+                    'yaml_version': clean_val(mlx.get('fw_version')),
+                    'command': str(mlx.get('fw_tool') or ''),
+                    'discussion_note': f"Mellanox NIC firmware check ({kw})"
+                })
+            
+            # 5. Direct fw_version / version in args
+            fw_ver = args.get('fw_version') or args.get('fw_ver') or args.get('version')
+            if fw_ver and not isinstance(fw_ver, dict):
+                fru = args.get('fru') or ''
+                comp = args.get('component') or ''
+                c_label = f"{fru.upper()} {comp.upper()}".strip() if (fru or comp) else str(step_name)
+                extracted_items.append({
+                    'station': station_label,
+                    'file_name': base_name,
+                    'step_location': str(step_name),
+                    'component': c_label,
+                    'sub_component': f"{fru} {comp}".strip() or c_label,
+                    'yaml_version': clean_val(fw_ver),
+                    'command': str(args.get('fw_file') or args.get('cmd') or ''),
+                    'discussion_note': f"Firmware check step '{step_name}'"
+                })
+                
+        return extracted_items, station_label, None
+
+    def traverse(node, current_path=""):
+        if isinstance(node, dict):
+            comp = node.get('component') or node.get('sub_component') or node.get('name') or node.get('test_step') or node.get('item')
+            ver = node.get('expected_version') or node.get('expected_ver') or node.get('fw_version') or node.get('fw_ver') or node.get('version') or node.get('ver')
+            step_name = node.get('step_name') or node.get('test_step') or node.get('name') or node.get('step_id') or node.get('id') or current_path
+            
+            is_root_metadata = (current_path == "" and str(comp) in ['Station', 'FVT', 'RUNIN', 'ORT'] and not node.get('command'))
+            
+            if ver and (comp or step_name) and not is_root_metadata:
+                c_name = str(comp) if comp else str(step_name)
+                sub_c = str(node.get('sub_component') or c_name)
+                
+                if not (c_name.lower() in ['version', 'station', 'description'] and not node.get('command') and not node.get('step_id')):
+                    extracted_items.append({
+                        'station': station_label,
+                        'file_name': base_name,
+                        'step_location': str(step_name) if step_name else (current_path or 'Root'),
+                        'component': c_name,
+                        'sub_component': sub_c,
+                        'yaml_version': clean_val(ver),
+                        'command': str(node.get('command') or node.get('cmd') or ''),
+                        'discussion_note': str(node.get('discussion_note') or node.get('note') or node.get('description') or '')
+                    })
+                    for k, v in node.items():
+                        if isinstance(v, (dict, list)) and k not in ['component', 'expected_version', 'fw_version']:
+                            traverse(v, f"{current_path} > {k}" if current_path else k)
+                    return
+
+            for k, v in node.items():
+                if isinstance(v, (dict, list)):
+                    traverse(v, f"{current_path} > {k}" if current_path else k)
+        elif isinstance(node, list):
+            for idx, elem in enumerate(node):
+                traverse(elem, f"{current_path}[{idx}]")
+
+    traverse(data, "")
+    return extracted_items, station_label, None
+
+
+
+def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=None):
+    bkc_p = resolve_file_path('bkc', bkc_file_path or DEFAULT_PATHS['bkc'])
+    b_rows, b_sheets, err = read_file_safe(bkc_p, sheet_name=bkc_sheet_name)
+    bkc_items = parse_bkc_items(b_rows) if b_rows else []
+    
+    all_yaml_items = []
+    station_summaries = []
+    
+    for idx, p in enumerate(yaml_file_paths):
+        if not p or not os.path.exists(p):
+            continue
+        default_label = f"Station {idx + 1} ({os.path.basename(p)})"
+        items, st_label, err_msg = parse_single_yaml_file(p, default_label)
+        if not err_msg:
+            all_yaml_items.extend(items)
+            station_summaries.append({
+                'station': st_label,
+                'file_name': os.path.basename(p),
+                'items_count': len(items)
+            })
+
+    matched_bkc_indices = set()
+    comparison_results = []
+    
+    def normalize_str(s):
+        if not s: return ""
+        return re.sub(r'[^a-zA-Z0-9]', '', str(s)).lower()
+
+    for yaml_item in all_yaml_items:
+        y_comp = yaml_item['component']
+        y_sub = yaml_item['sub_component']
+        y_ver = yaml_item['yaml_version']
+        y_norm = normalize_str(y_comp)
+        ysub_norm = normalize_str(y_sub)
+        
+        matched_bkc = None
+        matched_idx = -1
+        
+        for idx, b_item in enumerate(bkc_items):
+            b_sub = b_item.get('sub_component', '')
+            b_grp = b_item.get('group', '')
+            b_sub_norm = normalize_str(b_sub)
+            b_grp_norm = normalize_str(b_grp)
+            
+            if ysub_norm and ysub_norm == b_sub_norm:
+                matched_bkc = b_item
+                matched_idx = idx
+                break
+            elif y_norm and (y_norm == b_sub_norm or y_norm == b_grp_norm):
+                matched_bkc = b_item
+                matched_idx = idx
+                break
+            elif y_norm and len(y_norm) >= 3 and (y_norm in b_sub_norm or b_sub_norm in y_norm):
+                matched_bkc = b_item
+                matched_idx = idx
+                break
+        
+        if matched_bkc:
+            matched_bkc_indices.add(matched_idx)
+            bkc_ver = matched_bkc.get('version', '')
+            ver_match = (compare_versions(bkc_ver, y_ver) == 'same') or (y_ver.lower() == bkc_ver.lower())
+            
+            status = 'MATCH' if ver_match else 'MISMATCH'
+            status_label = '🟢 吻合 (Follow BKC)' if ver_match else '🔴 不符合 BKC'
+            
+            note = yaml_item.get('discussion_note')
+            if not note:
+                if ver_match:
+                    note = f"測試腳本期望值 ({y_ver}) 與 BKC 標準完全一致。"
+                else:
+                    note = f"測試腳本設為 {y_ver}，與 BKC 標準版本 {bkc_ver} 不符，請與客戶討論更正。"
+            
+            comparison_results.append({
+                'station': yaml_item['station'],
+                'file_name': yaml_item['file_name'],
+                'step_location': yaml_item['step_location'],
+                'component': yaml_item['component'],
+                'sub_component': matched_bkc.get('sub_component') or yaml_item['sub_component'],
+                'bkc_group': matched_bkc.get('group', 'General'),
+                'bkc_category': matched_bkc.get('category', 'General'),
+                'yaml_version': y_ver,
+                'bkc_version': bkc_ver if bkc_ver else '(Empty)',
+                'status': status,
+                'status_label': status_label,
+                'discussion_note': note,
+                'command': yaml_item.get('command', '')
+            })
+        else:
+            comparison_results.append({
+                'station': yaml_item['station'],
+                'file_name': yaml_item['file_name'],
+                'step_location': yaml_item['step_location'],
+                'component': yaml_item['component'],
+                'sub_component': yaml_item['sub_component'],
+                'bkc_group': 'N/A',
+                'bkc_category': 'N/A',
+                'yaml_version': y_ver,
+                'bkc_version': 'N/A (未列出)',
+                'status': 'MISSING_IN_BKC',
+                'status_label': '🟡 BKC未定義',
+                'discussion_note': yaml_item.get('discussion_note') or "該測試項目在指定的 BKC Table Sheet 中未找到對應組件。",
+                'command': yaml_item.get('command', '')
+            })
+
+    for idx, b_item in enumerate(bkc_items):
+        if idx not in matched_bkc_indices and b_item.get('sub_component'):
+            comparison_results.append({
+                'station': 'None',
+                'file_name': 'N/A',
+                'step_location': 'N/A (未涵蓋)',
+                'component': b_item.get('group', 'Component'),
+                'sub_component': b_item.get('sub_component', ''),
+                'bkc_group': b_item.get('group', ''),
+                'bkc_category': b_item.get('category', ''),
+                'yaml_version': 'N/A (未測試)',
+                'bkc_version': b_item.get('version', '') or '(Empty)',
+                'status': 'UNCHECKED_IN_YAML',
+                'status_label': '⚪ 測試腳本未涵蓋',
+                'discussion_note': "BKC 表格中列出的組件，在所選的 1-3 個 YAML 測試腳本中皆未進行版本比對驗證。",
+                'command': ''
+            })
+
+    matched_count = sum(1 for r in comparison_results if r['status'] == 'MATCH')
+    mismatch_count = sum(1 for r in comparison_results if r['status'] == 'MISMATCH')
+    missing_bkc_count = sum(1 for r in comparison_results if r['status'] == 'MISSING_IN_BKC')
+    unchecked_count = sum(1 for r in comparison_results if r['status'] == 'UNCHECKED_IN_YAML')
+    
+    total_checks = len(all_yaml_items)
+    compliance_rate = round((matched_count / total_checks * 100), 1) if total_checks > 0 else 0.0
+
+    active_sheet = bkc_sheet_name if (bkc_sheet_name and bkc_sheet_name in b_sheets) else (b_sheets[0] if b_sheets else 'Default')
+
+    return {
+        'summary': {
+            'total_yaml_checks': total_checks,
+            'matched_count': matched_count,
+            'mismatch_count': mismatch_count,
+            'missing_bkc_count': missing_bkc_count,
+            'unchecked_bkc_count': unchecked_count,
+            'compliance_rate': compliance_rate,
+            'stations_count': len(station_summaries),
+            'stations': station_summaries,
+            'bkc_file': os.path.basename(bkc_p),
+            'bkc_sheet': active_sheet,
+            'bkc_sheets': b_sheets
+        },
+        'items': comparison_results
+    }
+
+
 @app.route('/api/global-search', methods=['GET'])
+
 def api_global_search():
     """Fast search across active and latest BKC, FRU, and Build Matrix tables with fuzzy-clean matching."""
     q_raw = request.args.get('q', '')
@@ -1232,14 +1553,94 @@ def api_global_search():
     return jsonify({'success': True, 'query': q_raw, 'results': results})
 
 
+@app.route('/api/yaml-compare', methods=['GET', 'POST'])
+def get_yaml_compare():
+    """Compare 1 to 3 test suite YAML files against reference BKC table sheet."""
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        yaml_files = data.get('yaml_files', [])
+        bkc_file = data.get('bkc_file')
+        bkc_sheet = data.get('bkc_sheet')
+    else:
+        y1 = request.args.get('yaml_1')
+        y2 = request.args.get('yaml_2')
+        y3 = request.args.get('yaml_3')
+        yaml_files = [f for f in [y1, y2, y3] if f]
+        bkc_file = request.args.get('bkc_file')
+        bkc_sheet = request.args.get('bkc_sheet')
+
+    available_yaml = scan_files_in_dirs('yaml')
+    
+    if not yaml_files:
+        yaml_files = [f['path'] for f in available_yaml[:3]]
+    else:
+        resolved_files = []
+        for f in yaml_files:
+            if os.path.exists(f):
+                resolved_files.append(f)
+            else:
+                found_match = False
+                for av in available_yaml:
+                    if av['filename'] == f or os.path.basename(av['path']) == f:
+                        resolved_files.append(av['path'])
+                        found_match = True
+                        break
+                if not found_match and f:
+                    resolved_files.append(f)
+        yaml_files = resolved_files
+
+    bkc_p = resolve_file_path('bkc', bkc_file or DEFAULT_PATHS['bkc'])
+    res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet)
+    
+    res['summary']['available_yaml_files'] = available_yaml
+    res['summary']['available_bkc_files'] = scan_files_in_dirs('bkc')
+    
+    return jsonify({
+        'success': True,
+        'summary': res['summary'],
+        'items': res['items']
+    })
+
+
+@app.route('/api/upload-yaml', methods=['POST'])
+def upload_yaml():
+    """Upload 1 to 3 .yaml or .yml test suite files."""
+    if 'files' not in request.files and 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+    
+    files = request.files.getlist('files') or [request.files['file']]
+    uploaded_files = []
+    
+    for f in files:
+        if f and f.filename.endswith(('.yaml', '.yml')):
+            filename = secure_filename(f.filename)
+            save_path = os.path.join(UPLOAD_FOLDER, filename)
+            f.save(save_path)
+            uploaded_files.append({
+                'filename': filename,
+                'path': save_path
+            })
+            
+    if not uploaded_files:
+        return jsonify({'success': False, 'error': 'Only .yaml or .yml files are supported'}), 400
+        
+    return jsonify({
+        'success': True,
+        'message': f"Successfully uploaded {len(uploaded_files)} YAML test suite file(s).",
+        'files': uploaded_files
+    })
+
+
 @app.route('/api/history', methods=['GET'])
+
 def api_history():
     """List available historical files and snapshot metadata across all tabs."""
     history = {}
-    for tab_key in ['bkc', 'fru', 'matrix']:
+    for tab_key in ['bkc', 'fru', 'matrix', 'yaml']:
         files = scan_files_in_dirs(tab_key)
         history[tab_key] = files
     return jsonify({'success': True, 'history': history})
+
 
 
 @app.route('/api/release-summary', methods=['GET'])
@@ -1333,7 +1734,36 @@ def api_release_summary():
             if diff_count == 0:
                 md.append("- *No build matrix differences detected between selected sheets.*")
 
+    elif tab == 'yaml':
+        y1 = request.args.get('yaml_1')
+        y2 = request.args.get('yaml_2')
+        y3 = request.args.get('yaml_3')
+        y_files = [f for f in [y1, y2, y3] if f]
+        bkc_f = request.args.get('bkc_file')
+        bkc_s = request.args.get('bkc_sheet')
+        y_res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_f, bkc_sheet_name=bkc_s)
+        summary = y_res['summary']
+
+        md.append(f"# 🧪 Test Suite (YAML) Compliance Summary")
+        md.append(f"**Generated Time:** `{now_str}` | **BKC Reference:** `{summary.get('bkc_file')}` (`{summary.get('bkc_sheet')}`)\n")
+        md.append(f"## 📋 Compliance Overview")
+        md.append(f"- **Total Extracted FW/HW Checks:** `{summary.get('total_yaml_checks')}` items")
+        md.append(f"- **Follow BKC (Compliant):** `{summary.get('matched_count')}` items")
+        md.append(f"- **BKC Mismatches (Discrepancies):** `{summary.get('mismatch_count')}` items")
+        md.append(f"- **Overall Compliance Rate:** `{summary.get('compliance_rate')}%` across `{summary.get('stations_count')}` stations\n")
+        md.append(f"## 🔄 Test Suite Version Discrepancies Detail")
+        mismatch_items = [it for it in y_res['items'] if it['status'] == 'MISMATCH']
+        if mismatch_items:
+            for idx, it in enumerate(mismatch_items, start=1):
+                md.append(f"{idx}. **[{it.get('station')}]** `{it.get('sub_component')}` at step `{it.get('step_location')}`: YAML `{it.get('yaml_version')}` 🆚 BKC `{it.get('bkc_version')}`")
+                md.append(f"   - *Discussion Note:* {it.get('discussion_note')}")
+        else:
+            md.append("- *All test suite firmware/hardware specifications comply with BKC table.*")
+
     else: # ALL
+        y_res = compare_yaml_with_bkc([], bkc_file_path=bkc_p)
+        y_sum = y_res['summary']
+
         md.append(f"# 🚀 META VR200 (SanMiguel) All-in-One Release Summary Report")
         md.append(f"**Generated Time:** `{now_str}`")
         md.append(f"**Environment:** Hardware & Firmware Verification Platform\n")
@@ -1342,7 +1772,8 @@ def api_release_summary():
         md.append(f"- **BKC Firmware Table:** `{len(bkc_items)}` components loaded from `{os.path.basename(bkc_p)}`")
         md.append(f"- **FRU Specification:** `{fru_res.get('diff_count', 0)}` diffs (`{os.path.basename(dvt_p)}` 🆚 `{os.path.basename(pvt_p)}`)")
         if mat_res:
-            md.append(f"- **Build Matrix:** `{mat_res.get('diff_items_count', 0)}` diffs (`{b_sheet_name}` 🆚 `{t_sheet_name}`)\n")
+            md.append(f"- **Build Matrix:** `{mat_res.get('diff_items_count', 0)}` diffs (`{b_sheet_name}` 🆚 `{t_sheet_name}`)")
+        md.append(f"- **Test Suite (YAML):** `{y_sum.get('compliance_rate')}%` compliance (`{y_sum.get('mismatch_count')}` mismatches across `{y_sum.get('stations_count')}` test stations)\n")
 
         md.append(f"## ⚠️ 2. Critical Watchlist Impact")
         impacted_watchlist = []
@@ -1387,7 +1818,55 @@ def api_export_excel():
     fill_diff = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
     font_diff = Font(name="Calibri", size=10, bold=True, color="92400E")
 
-    if tab_type == 'bkc':
+    if tab_type == 'yaml':
+        ws.title = "Test Suite YAML Comparison"
+        headers = ["Station", "Script Step & Location", "Component", "YAML Expected Version", "BKC Standard Version", "Compliance Status", "Discussion & Action Notes", "Test Command"]
+        ws.append(headers)
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.fill = fill_header
+            cell.font = font_header
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        y1 = request.args.get('yaml_1')
+        y2 = request.args.get('yaml_2')
+        y3 = request.args.get('yaml_3')
+        y_files = [f for f in [y1, y2, y3] if f]
+        bkc_file = request.args.get('bkc_file')
+        bkc_sheet = request.args.get('bkc_sheet')
+
+        res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_file, bkc_sheet_name=bkc_sheet)
+        
+        row_idx = 2
+        for item in res.get('items', []):
+            if diff_only and item.get('status') == 'MATCH':
+                continue
+            ws.append([
+                item.get('station'),
+                item.get('step_location'),
+                item.get('sub_component') or item.get('component'),
+                item.get('yaml_version'),
+                item.get('bkc_version'),
+                item.get('status_label'),
+                item.get('discussion_note'),
+                item.get('command')
+            ])
+            if item.get('status') == 'MISMATCH':
+                for col in range(1, len(headers) + 1):
+                    c = ws.cell(row=row_idx, column=col)
+                    c.fill = fill_diff
+                    c.font = font_diff
+            elif item.get('status') == 'MISSING_IN_BKC':
+                fill_warn = PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid")
+                font_warn = Font(name="Calibri", size=10, color="854D0E")
+                for col in range(1, len(headers) + 1):
+                    c = ws.cell(row=row_idx, column=col)
+                    c.fill = fill_warn
+                    c.font = font_warn
+            row_idx += 1
+
+    elif tab_type == 'bkc':
+
         ws.title = "BKC Comparison"
         headers = ["Category", "Group", "Sub Component", "Meta Owner", "DVT FW Version", "PVT FW Version", "Diff Status"]
         ws.append(headers)

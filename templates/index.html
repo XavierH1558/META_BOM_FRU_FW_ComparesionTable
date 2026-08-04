@@ -75,7 +75,13 @@
                 <span>Build Matrix Comparison</span>
                 <span class="badge badge-info" id="matrix-badge-configs">3 Configs</span>
             </button>
+            <button class="nav-tab" data-tab="tab-yaml">
+                <i class="fa-solid fa-file-code"></i>
+                <span>Test Suite (YAML) 比對</span>
+                <span class="badge badge-danger" id="yaml-badge-diff">0 Diffs</span>
+            </button>
         </nav>
+
 
         <!-- Critical Watchlist Alert Banner -->
         <div id="critical-alert-banner" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 0.65rem 1.2rem; margin-bottom: 1rem; color: #f8fafc; font-size: 0.88rem; align-items: center; justify-content: space-between;">
@@ -469,7 +475,111 @@
             </div>
         </section>
 
+        <!-- Tab 4: Test Suite (YAML) Comparison -->
+        <section class="tab-content" id="tab-yaml">
+            <div class="control-panel">
+                <div class="summary-cards" id="yaml-summary-cards">
+                    <div class="stat-card" id="yaml-stat-card-1">
+                        <div class="stat-icon bg-blue"><i class="fa-solid fa-file-code"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="yaml-stat-val-1">0</span>
+                            <span class="stat-label">Extracted FW/HW Checks</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="yaml-stat-card-2">
+                        <div class="stat-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="yaml-stat-val-2">0</span>
+                            <span class="stat-label">Follow BKC (Compliant)</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="yaml-stat-card-3">
+                        <div class="stat-icon bg-red"><i class="fa-solid fa-circle-xmark"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="yaml-stat-val-3">0</span>
+                            <span class="stat-label">BKC Mismatches (Discrepancies)</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="yaml-stat-card-4">
+                        <div class="stat-icon bg-purple"><i class="fa-solid fa-chart-pie"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="yaml-stat-val-4">0%</span>
+                            <span class="stat-label">Compliance Rate</span>
+                        </div>
+                    </div>
+                </div>
 
+                <div class="filter-bar flex-wrap" style="gap: 0.8rem;">
+                    <!-- YAML Files Selection (1 to 3 files) -->
+                    <div class="select-box" title="選擇 Station 1 測試腳本 YAML 檔案">
+                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 1:</span>
+                        <select id="yaml-file-select-1" style="max-width: 170px;"></select>
+                    </div>
+
+                    <div class="select-box" title="選擇 Station 2 測試腳本 YAML 檔案 (可選)">
+                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 2:</span>
+                        <select id="yaml-file-select-2" style="max-width: 170px;"></select>
+                    </div>
+
+                    <div class="select-box" title="選擇 Station 3 測試腳本 YAML 檔案 (可選)">
+                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 3:</span>
+                        <select id="yaml-file-select-3" style="max-width: 170px;"></select>
+                    </div>
+
+                    <!-- Target BKC File & Sheet Selection -->
+                    <div class="select-box" title="選擇對照的 BKC Table 檔案與工作表">
+                        <span class="select-label" style="color: var(--warning-amber); font-weight: 600;"><i class="fa-solid fa-table"></i> BKC Sheet:</span>
+                        <select id="yaml-bkc-file-select" style="max-width: 160px;"></select>
+                        <select id="yaml-bkc-sheet-select" style="max-width: 120px;"></select>
+                    </div>
+
+                    <!-- Search Input -->
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="yaml-search-input" placeholder="搜尋工站、腳本步驟、組件或版本..." />
+                    </div>
+
+                    <!-- Station Filter Select -->
+                    <div class="select-box">
+                        <select id="yaml-station-filter">
+                            <option value="ALL">全部工站 (All Stations)</option>
+                        </select>
+                    </div>
+
+                    <!-- Status Filter Select -->
+                    <div class="select-box">
+                        <select id="yaml-status-filter">
+                            <option value="ALL">全部狀態 (All Statuses)</option>
+                            <option value="MISMATCH">🔴 僅顯示不符合 BKC (Mismatches Only)</option>
+                            <option value="MATCH">🟢 僅顯示符合 (Matches Only)</option>
+                            <option value="MISSING_IN_BKC">🟡 僅顯示 BKC未定義</option>
+                            <option value="UNCHECKED_IN_YAML">⚪ 僅顯示 腳本未涵蓋</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-container">
+                    <table class="data-table" id="yaml-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 140px;">測試工站 / 來源檔案</th>
+                                <th style="width: 190px;">測試腳本 / 位置步驟 (Traceability)</th>
+                                <th style="width: 160px;">組件與項目 (Component)</th>
+                                <th style="width: 120px;">YAML 預期版本</th>
+                                <th style="width: 120px;">BKC 標準版本</th>
+                                <th style="width: 140px;">合規比對狀態</th>
+                                <th>對照討論說明 / 行動建議 (Discussion Notes)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="yaml-tbody">
+                            <tr><td colspan="7" class="text-center py-4">載入 Test Suite (YAML) 比對資料中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
 
     </main>
 
@@ -477,7 +587,7 @@
     <div class="modal-overlay" id="upload-modal" style="display: none;">
         <div class="modal-card">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-cloud-arrow-up"></i> 上傳新 Excel (.xlsx) / CSV 檔案</h3>
+                <h3><i class="fa-solid fa-cloud-arrow-up"></i> 上傳新 Excel (.xlsx) / CSV / YAML 檔案</h3>
                 <button class="btn-close-modal" id="btn-close-upload"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
@@ -488,12 +598,13 @@
                         <option value="fru_dvt">FRU Specification (DVT Base)</option>
                         <option value="fru_pvt">FRU Specification (PVT Target)</option>
                         <option value="matrix">Build Matrix</option>
+                        <option value="yaml">Test Suite (YAML)</option>
                     </select>
                 </div>
                 <div class="dropzone" id="dropzone">
                     <div class="dropzone-icon"><i class="fa-solid fa-file-circle-plus"></i></div>
-                    <p class="dropzone-text">將 Excel (`.xlsx`) 或 CSV 檔案拖曳至此處，或點擊選擇檔案</p>
-                    <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display: none;" />
+                    <p class="dropzone-text">將 Excel (`.xlsx`), CSV 或 YAML (`.yaml`, `.yml`) 檔案拖曳至此處，或點擊選擇檔案</p>
+                    <input type="file" id="file-input" accept=".xlsx,.xls,.csv,.yaml,.yml" style="display: none;" />
                     <button class="btn btn-secondary btn-sm" onclick="document.getElementById('file-input').click()">
                         選擇電腦中的檔案
                     </button>
@@ -517,7 +628,9 @@
                         <button class="btn btn-secondary btn-sm summary-tab-btn" data-sumtab="bkc">💻 BKC Table</button>
                         <button class="btn btn-secondary btn-sm summary-tab-btn" data-sumtab="fru">📄 FRU Spec</button>
                         <button class="btn btn-secondary btn-sm summary-tab-btn" data-sumtab="matrix">🧱 Build Matrix</button>
+                        <button class="btn btn-secondary btn-sm summary-tab-btn" data-sumtab="yaml">🧪 Test Suite (YAML)</button>
                     </div>
+
                     <div style="display: flex; gap: 0.4rem;">
                         <button class="btn btn-warning btn-sm" id="btn-copy-summary-markdown"><i class="fa-solid fa-copy"></i> 複製 Markdown 摘要</button>
                         <button class="btn btn-secondary btn-sm" id="btn-copy-summary-text"><i class="fa-solid fa-align-left"></i> 複製純文字</button>

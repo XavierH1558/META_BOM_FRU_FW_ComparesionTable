@@ -1,0 +1,35 @@
+# META VR200 (SanMiguel) L10 Station 3 - Ongoing Reliability Test (ORT)
+station: "Station 3 (ORT)"
+description: "ORT System Stability & High Temperature Test Suite"
+version: "1.1.0"
+
+validation_items:
+  - id: "ORT_CHECK_01"
+    name: "Validate_BMC_FW"
+    component: "BMC"
+    sub_component: "Primary BMC"
+    expected_ver: "2.14.0"
+
+  - id: "ORT_CHECK_02"
+    name: "Validate_BIOS_FW"
+    component: "System BIOS"
+    sub_component: "Host BIOS"
+    expected_ver: "1.0.5"
+
+  - id: "ORT_CHECK_03"
+    name: "Validate_CPU_CPLD"
+    component: "CPU CPLD"
+    sub_component: "MB CPLD"
+    expected_ver: "1.0.4"
+
+  - id: "ORT_CHECK_04"
+    name: "Validate_Power_Sequencer"
+    component: "Power Sequencer"
+    sub_component: "ADM1278"
+    expected_ver: "1.0.1"
+
+  - id: "ORT_CHECK_05"
+    name: "Validate_Retimer_FW"
+    component: "Retimer"
+    sub_component: "PCIe Switch Retimer"
+    expected_ver: "2.4.1"
