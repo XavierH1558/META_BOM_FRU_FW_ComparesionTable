@@ -79,6 +79,11 @@ function initTabs() {
 
             btn.classList.add('active');
             document.getElementById(targetTab).classList.add('active');
+
+            // Lazy-load YAML data on first visit to YAML tab
+            if (targetTab === 'tab-yaml' && !appState.yamlCompare) {
+                fetchYamlData();
+            }
         });
     });
 }
@@ -98,6 +103,7 @@ function initEventListeners() {
     });
 
     // Export Excel Button
+    document.getElementById('btn-export-excel').addEventListener('click', () => {
         let tabType = 'fru';
         if (appState.activeTab === 'tab-bkc') tabType = 'bkc';
         else if (appState.activeTab === 'tab-matrix') tabType = 'matrix';
@@ -856,7 +862,6 @@ async function fetchAllData() {
             bkcPromise,
             fruPromise,
             fetchMatrixData(),
-            fetchYamlData(),
             fetchAndPopulateTimelines(),
             checkCriticalWatchlistAlerts()
         ]);
@@ -2551,6 +2556,18 @@ async function checkCriticalWatchlistAlerts() {
     }
 }
 
+function populateTimelineDropdown(selectId, files) {
+    const select = document.getElementById(selectId);
+    if (!select || !files || files.length === 0) return;
+    select.innerHTML = '';
+    files.forEach((f, idx) => {
+        const opt = document.createElement('option');
+        opt.value = f.path || '';
+        opt.textContent = f.display_name || f.filename || `File ${idx + 1}`;
+        select.appendChild(opt);
+    });
+}
+
 async function fetchAndPopulateTimelines() {
     try {
         const res = await fetch('/api/history');
@@ -2617,9 +2634,9 @@ async function fetchYamlData() {
             const availSheets = summary.bkc_sheets || [];
 
             if (availYaml.length > 0) {
-                populateYamlFileSelect('yaml-file-select-1', availYaml, y1 || availYaml[0]?.path, "(無 / None)");
-                populateYamlFileSelect('yaml-file-select-2', availYaml, y2 || (availYaml.length > 1 ? availYaml[1]?.path : ''), "(無 / None)");
-                populateYamlFileSelect('yaml-file-select-3', availYaml, y3 || (availYaml.length > 2 ? availYaml[2]?.path : ''), "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-1', availYaml, y1 || '', "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-2', availYaml, y2 || '', "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-3', availYaml, y3 || '', "(無 / None)");
                 
                 // Populate Diff Base and Target selects
                 populateYamlFileSelect('yaml-diff-base-select', availYaml, availYaml[0]?.path);
@@ -2706,15 +2723,23 @@ async function saveYamlDisposition(itemKey, status, owner, note) {
     }
 }
 
-function renderYamlTable() {
+function renderYamlTable(page) {
     const tbody = document.getElementById('yaml-tbody');
     if (!tbody || !appState.yamlCompare || !appState.yamlCompare.items) return;
+
+    const PAGE_SIZE = 50;
+    if (page !== undefined && page !== null) appState.yamlPage = page;
+    if (appState.yamlPage === undefined) appState.yamlPage = 0;
 
     const items = appState.yamlCompare.items;
     const stationFilter = document.getElementById('yaml-station-filter')?.value || 'ALL';
     const statusFilter = document.getElementById('yaml-status-filter')?.value || 'ALL';
     const searchInput = document.getElementById('yaml-search-input')?.value || '';
     const q = searchInput.trim().toLowerCase();
+
+    const y1 = document.getElementById('yaml-file-select-1')?.value;
+    const y2 = document.getElementById('yaml-file-select-2')?.value;
+    const y3 = document.getElementById('yaml-file-select-3')?.value;
 
     const filtered = items.filter(it => {
         if (stationFilter !== 'ALL' && it.station !== stationFilter) return false;
@@ -2727,24 +2752,34 @@ function renderYamlTable() {
     });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">無符合條件的 Test Suite (YAML) 比對資料</td></tr>`;
+        const msg = (!y1 && !y2 && !y3) 
+            ? '💡 請在上方選單選擇 1 ~ 3 個 Test Suite (YAML) 測試腳本進行 BKC 合規比對' 
+            : '無符合條件的 Test Suite (YAML) 比對資料';
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted" style="font-size:1.05rem;">${msg}</td></tr>`;
+        renderYamlPagination(0, 0, PAGE_SIZE);
         return;
     }
 
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    if (appState.yamlPage >= totalPages) appState.yamlPage = totalPages - 1;
+    if (appState.yamlPage < 0) appState.yamlPage = 0;
+    const pageStart = appState.yamlPage * PAGE_SIZE;
+    const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
     tbody.innerHTML = '';
-    filtered.forEach(it => {
+    const fragment = document.createDocumentFragment();
+
+    pageItems.forEach(it => {
         const tr = document.createElement('tr');
-        if (it.status === 'MISMATCH') {
-            tr.classList.add('tr-yaml-mismatch');
-        }
+        if (it.status === 'MISMATCH') tr.classList.add('tr-yaml-mismatch');
 
         let badgeClass = 'yaml-match';
         if (it.status === 'MISMATCH') badgeClass = 'yaml-mismatch';
         else if (it.status === 'MISSING_IN_BKC') badgeClass = 'yaml-missing-bkc';
         else if (it.status === 'UNCHECKED_IN_YAML') badgeClass = 'yaml-unchecked';
 
-        const stationDisplay = (it.station && it.station !== 'None') 
-            ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>` 
+        const stationDisplay = (it.station && it.station !== 'None')
+            ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>`
             : `<span class="text-muted" style="font-size:0.8rem;">-</span>`;
 
         const stepDisplay = (it.step_location && it.step_location !== 'N/A (未涵蓋)')
@@ -2753,45 +2788,18 @@ function renderYamlTable() {
 
         const dispStatus = it.disposition_status || 'Pending';
         const dispOwner = it.disposition_owner || '';
-
         let selectClass = 'status-pending';
         if (dispStatus === 'To Update') selectClass = 'status-to-update';
         else if (dispStatus === 'Waived') selectClass = 'status-waived';
         else if (dispStatus === 'BKC Error') selectClass = 'status-bkc-error';
 
-        const dispCol = `
-            <div>
-                <select class="yaml-disp-select ${selectClass}" data-key="${escapeHtml(it.item_key)}">
-                    <option value="Pending" ${dispStatus === 'Pending' ? 'selected' : ''}>⏳ 待與客戶確認</option>
-                    <option value="To Update" ${dispStatus === 'To Update' ? 'selected' : ''}>🛠️ 確認更新腳本</option>
-                    <option value="Waived" ${dispStatus === 'Waived' ? 'selected' : ''}>🤝 客戶同意特採</option>
-                    <option value="BKC Error" ${dispStatus === 'BKC Error' ? 'selected' : ''}>⚠️ BKC需更正</option>
-                </select>
-                <input type="text" class="yaml-owner-input" placeholder="指派 Owner (如 Meta PE)" value="${escapeHtml(dispOwner)}" data-key="${escapeHtml(it.item_key)}" />
-            </div>
-        `;
+        const dispCol = `<div><select class="yaml-disp-select ${selectClass}" data-key="${escapeHtml(it.item_key)}"><option value="Pending" ${dispStatus==='Pending'?'selected':''}>⏳ 待與客戶確認</option><option value="To Update" ${dispStatus==='To Update'?'selected':''}>🛠️ 確認更新腳本</option><option value="Waived" ${dispStatus==='Waived'?'selected':''}>🤝 客戶同意特採</option><option value="BKC Error" ${dispStatus==='BKC Error'?'selected':''}>⚠️ BKC需更正</option></select><input type="text" class="yaml-owner-input" placeholder="指派 Owner" value="${escapeHtml(dispOwner)}" data-key="${escapeHtml(it.item_key)}" /></div>`;
 
-        const patchBtn = (it.status === 'MISMATCH') 
-            ? `<br><button class="btn-patch-modal" data-item='${escapeHtml(JSON.stringify(it))}'><i class="fa-solid fa-wand-magic-sparkles"></i> 修復 Patch</button>` 
+        const patchBtn = (it.status === 'MISMATCH')
+            ? `<br><button class="btn-patch-modal"><i class="fa-solid fa-wand-magic-sparkles"></i> 修復 Patch</button>`
             : '';
 
-        tr.innerHTML = `
-            <td>${stationDisplay}</td>
-            <td>${stepDisplay}</td>
-            <td>
-                <div style="font-weight: 600; color: var(--text-main);">${escapeHtml(it.sub_component || it.component)}</div>
-                <div style="font-size: 0.76rem; color: var(--text-muted);">${escapeHtml(it.bkc_group !== 'N/A' ? `${it.bkc_category} > ${it.bkc_group}` : 'YAML Test Check')}</div>
-            </td>
-            <td class="font-mono text-cyan">${escapeHtml(it.yaml_version || '-')}</td>
-            <td class="font-mono" style="color: #fbbf24; font-weight: 600;">${escapeHtml(it.bkc_version || '-')}</td>
-            <td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td>
-            <td>${dispCol}</td>
-            <td style="font-size: 0.83rem; color: #cbd5e1; line-height: 1.4;">
-                ${escapeHtml(it.discussion_note)}
-                ${it.command ? `<div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Cmd: <code>${escapeHtml(it.command)}</code></div>` : ''}
-                ${patchBtn}
-            </td>
-        `;
+        tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-weight:600;color:var(--text-main);">${escapeHtml(it.sub_component||it.component)}</div><div style="font-size:0.76rem;color:var(--text-muted);">${escapeHtml(it.bkc_group!=='N/A'?`${it.bkc_category} > ${it.bkc_group}`:'YAML Test Check')}</div></td><td class="font-mono text-cyan">${escapeHtml(it.yaml_version||'-')}</td><td class="font-mono" style="color:#fbbf24;font-weight:600;">${escapeHtml(it.bkc_version||'-')}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${escapeHtml(it.discussion_note)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${escapeHtml(it.command)}</code></div>`:''}${patchBtn}</td>`;
 
         const selectElem = tr.querySelector('.yaml-disp-select');
         const ownerElem = tr.querySelector('.yaml-owner-input');

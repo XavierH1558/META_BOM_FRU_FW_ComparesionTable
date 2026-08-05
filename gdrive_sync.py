@@ -37,52 +37,66 @@ def load_config():
 
 def get_drive_service(config):
     """
-    Build Google Drive API service using Service Account or OAuth Client.
+    Build Google Drive API service using OAuth User Credentials or Service Account.
+    Prioritizes OAuth User Authentication (credentials.json) for shared client folders.
     Uses strict READ-ONLY scope for safety.
     """
-    creds_file_setting = config.get('credentials_file', 'service_account.json')
-    creds_path = os.path.join(BASE_DIR, creds_file_setting)
+    auth_mode = config.get('auth_mode', 'oauth').lower()
+    creds_file_setting = config.get('credentials_file', 'credentials.json')
     
-    if not os.path.exists(creds_path):
-        # Fallback check if credentials.json or service_account.json exists in BASE_DIR
-        possible_paths = [
-            os.path.join(BASE_DIR, 'service_account.json'),
-            os.path.join(BASE_DIR, 'credentials.json')
-        ]
-        creds_path = next((p for p in possible_paths if os.path.exists(p)), None)
+    # 1. If auth_mode is OAuth or credentials_file is credentials.json, run OAuth User Flow
+    if auth_mode == 'oauth' or creds_file_setting == 'credentials.json':
+        oauth_path = os.path.join(BASE_DIR, 'credentials.json')
+        if not os.path.exists(oauth_path):
+            oauth_path = os.path.join(BASE_DIR, creds_file_setting)
+            
+        if not os.path.exists(oauth_path):
+            raise FileNotFoundError(f"OAuth Client Credentials not found at {oauth_path}. Please place credentials.json in root directory.")
 
-    if not creds_path or not os.path.exists(creds_path):
-        raise FileNotFoundError(f"Credentials file not found at {creds_path}. Please place service_account.json in root directory.")
+        token_path = os.path.join(BASE_DIR, 'token.json')
+        creds = None
+        if os.path.exists(token_path):
+            try:
+                creds = UserCredentials.from_authorized_user_file(token_path, SCOPES)
+            except Exception as token_err:
+                print(f"[GDrive Sync Warning] Existing token invalid, re-authenticating: {token_err}")
+                creds = None
 
-    # Try Service Account Credentials first
-    try:
-        with open(creds_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if data.get('type') == 'service_account':
-                creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
-                return build('drive', 'v3', credentials=creds)
-    except Exception:
-        pass
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as refresh_err:
+                    print(f"[GDrive Sync Warning] Refresh token failed: {refresh_err}. Starting browser OAuth flow...")
+                    creds = None
 
-    # Try OAuth 2.0 User Credentials
-    token_path = os.path.join(BASE_DIR, 'token.json')
-    creds = None
-    if os.path.exists(token_path):
+            if not creds:
+                import webbrowser
+                flow = InstalledAppFlow.from_client_secrets_file(oauth_path, SCOPES)
+                print("\n" + "="*70)
+                print("🔗 [Google Drive OAuth 2.0 個人帳號一次性授權]")
+                print("請在下方出現的連結上按住 [Ctrl + 左鍵點擊]，或複製網址至瀏覽器開啟：")
+                print("="*70 + "\n")
+                creds = flow.run_local_server(port=0, prompt='consent', open_browser=True)
+
+            with open(token_path, 'w', encoding='utf-8') as token:
+                token.write(creds.to_json())
+
+        return build('drive', 'v3', credentials=creds)
+
+    # 2. Service Account Flow (Fallback)
+    creds_path = os.path.join(BASE_DIR, creds_file_setting)
+    if os.path.exists(creds_path):
         try:
-            creds = UserCredentials.from_authorized_user_file(token_path, SCOPES)
+            with open(creds_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if data.get('type') == 'service_account':
+                    creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+                    return build('drive', 'v3', credentials=creds)
         except Exception:
-            creds = None
+            pass
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, 'w', encoding='utf-8') as token:
-            token.write(creds.to_json())
-
-    return build('drive', 'v3', credentials=creds)
+    raise FileNotFoundError(f"No valid Google credentials found (OAuth credentials.json or service_account.json).")
 
 def parse_iso_time(iso_str):
     """Parse Google Drive ISO modifiedTime string to unix timestamp."""
@@ -120,9 +134,11 @@ def download_file(service, file_id, target_path, is_google_sheet=False):
 def fetch_all_files_recursive(service, parent_folder_id):
     """
     Recursively list all files in parent_folder_id and any subfolders (e.g. PVT, DVT, EVT).
+    Returns (files_list, error_message).
     """
     all_files = []
     folders_to_scan = [parent_folder_id]
+    error_msg = None
 
     while folders_to_scan:
         current_id = folders_to_scan.pop(0)
@@ -141,9 +157,14 @@ def fetch_all_files_recursive(service, parent_folder_id):
                 else:
                     all_files.append(item)
         except Exception as e:
-            print(f"[GDrive Sync Warning] Failed scanning folder {current_id}: {e}")
+            err_str = str(e)
+            if '404' in err_str or 'notFound' in err_str:
+                error_msg = f"HTTP 404 Folder Not Found (權限不足)。請在 Google Drive 將資料夾共用給機器帳號: gdrive-sync-bot@bom-sync-service.iam.gserviceaccount.com"
+            else:
+                error_msg = f"Scan folder failed: {err_str}"
+            print(f"[GDrive Sync Warning] Failed scanning folder {current_id}: {error_msg}")
 
-    return all_files
+    return all_files, error_msg
 
 def sync_folder(service, folder_id, local_dir):
     """
@@ -155,7 +176,10 @@ def sync_folder(service, folder_id, local_dir):
 
     os.makedirs(local_dir, exist_ok=True)
     
-    files = fetch_all_files_recursive(service, folder_id)
+    files, err_msg = fetch_all_files_recursive(service, folder_id)
+    if err_msg and not files:
+        return {'status': 'error', 'reason': err_msg, 'downloaded': [], 'total_scanned': 0}
+
     downloaded = []
 
     for f in files:

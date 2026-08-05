@@ -1321,36 +1321,92 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
         if not s: return ""
         return re.sub(r'[^a-zA-Z0-9]', '', str(s)).lower()
 
-    for yaml_item in all_yaml_items:
-        y_comp = yaml_item['component']
-        y_sub = yaml_item['sub_component']
-        y_ver = yaml_item['yaml_version']
-        y_norm = normalize_str(y_comp)
-        ysub_norm = normalize_str(y_sub)
+    def calculate_match_score(yaml_item, b_item):
+        step = yaml_item.get('step_location', '')
+        comp = yaml_item.get('component', '')
+        sub = yaml_item.get('sub_component', '')
         
+        y_norm = normalize_str(comp)
+        sub_norm = normalize_str(sub)
+        step_norm = normalize_str(step)
+        
+        cat_norm = normalize_str(b_item.get('category', ''))
+        grp_norm = normalize_str(b_item.get('group', ''))
+        b_sub_norm = normalize_str(b_item.get('sub_component', ''))
+
+        if sub_norm and sub_norm == b_sub_norm:
+            return 100
+        if y_norm and y_norm == b_sub_norm:
+            return 95
+
+        score = 0
+
+        # 1. BMC Component Matching
+        if 'bmc' in sub_norm or 'bmc' in y_norm or 'bmc' in step_norm:
+            if 'openbmc' in b_sub_norm:
+                if 'ct' in sub_norm or 'ct' in step_norm or 'computetray' in cat_norm:
+                    score += 85
+                else:
+                    score += 70
+            elif 'bmc' in b_sub_norm:
+                if 'nvswitch' in grp_norm or 'nv' in grp_norm:
+                    if 'nv' in step_norm or 'nv' in sub_norm:
+                        score += 90
+                    else:
+                        score += 40
+                else:
+                    score += 65
+
+        # 2. CPLD Component Matching
+        elif 'cpld' in sub_norm or 'cpld' in y_norm or 'cpld' in step_norm:
+            if 'cpld' in b_sub_norm or 'cpld' in grp_norm or 'fpga' in b_sub_norm:
+                loc_tokens = ['interposer', 'scm', 'hdd', 'hmc', 'rmc', 'fio', 'nvswitch', 'cff']
+                y_locs = [loc for loc in loc_tokens if loc in step_norm or loc in sub_norm or loc in y_norm]
+                b_locs = [loc for loc in loc_tokens if loc in b_sub_norm or loc in grp_norm or loc in cat_norm]
+                
+                if y_locs:
+                    common_locs = set(y_locs).intersection(set(b_locs))
+                    if common_locs:
+                        score += 85
+                    else:
+                        score = 0
+                else:
+                    score += 50
+
+        # 3. SBIOS / BIOS Matching
+        elif any(k in sub_norm or k in step_norm for k in ['sbios', 'bios']):
+            if any(k in b_sub_norm or k in grp_norm for k in ['sbios', 'bios']):
+                score += 80
+
+        # 4. OS / Kernel Matching
+        elif 'os' in sub_norm or 'kernel' in sub_norm:
+            if 'os' in b_sub_norm or 'kernel' in b_sub_norm:
+                score += 80
+
+        # 5. Generic substring containment
+        else:
+            if len(sub_norm) >= 3 and (sub_norm in b_sub_norm or b_sub_norm in sub_norm):
+                score += 60
+            elif len(y_norm) >= 3 and (y_norm in b_sub_norm or b_sub_norm in y_norm):
+                score += 55
+
+        return score
+
+    for yaml_item in all_yaml_items:
+        y_ver = yaml_item['yaml_version']
+        
+        best_score = 0
         matched_bkc = None
         matched_idx = -1
         
         for idx, b_item in enumerate(bkc_items):
-            b_sub = b_item.get('sub_component', '')
-            b_grp = b_item.get('group', '')
-            b_sub_norm = normalize_str(b_sub)
-            b_grp_norm = normalize_str(b_grp)
-            
-            if ysub_norm and ysub_norm == b_sub_norm:
+            score = calculate_match_score(yaml_item, b_item)
+            if score > best_score:
+                best_score = score
                 matched_bkc = b_item
                 matched_idx = idx
-                break
-            elif y_norm and (y_norm == b_sub_norm or y_norm == b_grp_norm):
-                matched_bkc = b_item
-                matched_idx = idx
-                break
-            elif y_norm and len(y_norm) >= 3 and (y_norm in b_sub_norm or b_sub_norm in y_norm):
-                matched_bkc = b_item
-                matched_idx = idx
-                break
-        
-        if matched_bkc:
+
+        if best_score >= 50 and matched_bkc:
             matched_bkc_indices.add(matched_idx)
             bkc_ver = matched_bkc.get('version', '')
             ver_match = (compare_versions(bkc_ver, y_ver) == 'same') or (y_ver.lower() == bkc_ver.lower())
@@ -1628,30 +1684,52 @@ def get_yaml_compare():
         bkc_sheet = request.args.get('bkc_sheet')
 
     available_yaml = scan_files_in_dirs('yaml')
-    
-    if not yaml_files:
-        yaml_files = [f['path'] for f in available_yaml[:3]]
-    else:
-        resolved_files = []
-        for f in yaml_files:
-            if os.path.exists(f):
-                resolved_files.append(f)
-            else:
-                found_match = False
-                for av in available_yaml:
-                    if av['filename'] == f or os.path.basename(av['path']) == f:
-                        resolved_files.append(av['path'])
-                        found_match = True
-                        break
-                if not found_match and f:
-                    resolved_files.append(f)
-        yaml_files = resolved_files
-
+    available_bkc = scan_files_in_dirs('bkc')
     bkc_p = resolve_file_path('bkc', bkc_file or DEFAULT_PATHS['bkc'])
+    b_rows, b_sheets, _ = read_file_safe(bkc_p, sheet_name=bkc_sheet)
+    active_bkc_sheet = bkc_sheet if (bkc_sheet and bkc_sheet in b_sheets) else (b_sheets[0] if b_sheets else 'Default')
+
+    if not yaml_files:
+        return jsonify({
+            'success': True,
+            'summary': {
+                'total_yaml_checks': 0,
+                'matched_count': 0,
+                'mismatch_count': 0,
+                'missing_bkc_count': 0,
+                'unchecked_count': 0,
+                'compliance_rate': 0.0,
+                'stations_count': 0,
+                'bkc_file': os.path.basename(bkc_p) if bkc_p else 'None',
+                'bkc_sheet': active_bkc_sheet,
+                'available_yaml_files': available_yaml,
+                'available_bkc_files': available_bkc,
+                'bkc_sheets': b_sheets
+            },
+            'coverage_matrix': {'stations': [], 'grid': []},
+            'items': []
+        })
+
+    resolved_files = []
+    for f in yaml_files:
+        if os.path.exists(f):
+            resolved_files.append(f)
+        else:
+            found_match = False
+            for av in available_yaml:
+                if av['filename'] == f or os.path.basename(av['path']) == f:
+                    resolved_files.append(av['path'])
+                    found_match = True
+                    break
+            if not found_match and f:
+                resolved_files.append(f)
+    yaml_files = resolved_files
+
     res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet)
     
     res['summary']['available_yaml_files'] = available_yaml
-    res['summary']['available_bkc_files'] = scan_files_in_dirs('bkc')
+    res['summary']['available_bkc_files'] = available_bkc
+    res['summary']['bkc_sheets'] = b_sheets
     
     return jsonify({
         'success': True,
