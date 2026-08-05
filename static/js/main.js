@@ -2827,9 +2827,63 @@ function renderYamlTable(page) {
             });
         }
 
-        tbody.appendChild(tr);
+        fragment.appendChild(tr);
+    });
+
+    tbody.appendChild(fragment);
+    renderYamlPagination(filtered.length, appState.yamlPage, PAGE_SIZE);
+}
+
+function renderYamlPagination(totalItems, currentPage, pageSize) {
+    let container = document.getElementById('yaml-pagination');
+    if (!container) {
+        const tableCard = document.getElementById('yaml-view-bkc-container');
+        if (!tableCard) return;
+        container = document.createElement('div');
+        container.id = 'yaml-pagination';
+        container.className = 'd-flex justify-content-between align-items-center mt-3 px-3 py-2';
+        container.style.cssText = 'border-top: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-muted);';
+        tableCard.appendChild(container);
+    }
+
+    if (totalItems === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.ceil(totalItems / pageSize);
+    const startIdx = currentPage * pageSize + 1;
+    const endIdx = Math.min((currentPage + 1) * pageSize, totalItems);
+
+    let pagesHtml = '';
+    for (let p = 0; p < totalPages; p++) {
+        const activeBtnClass = p === currentPage ? 'btn-primary' : 'btn-secondary';
+        pagesHtml += `<button class="btn btn-sm ${activeBtnClass} py-1 px-2 mx-1 yaml-page-btn" data-page="${p}">${p + 1}</button>`;
+    }
+
+    container.innerHTML = `
+        <div>顯示 <strong>${startIdx}</strong> - <strong>${endIdx}</strong> 項，共 <strong>${totalItems}</strong> 項</div>
+        <div class="d-flex align-items-center gap-1">
+            <button class="btn btn-secondary btn-sm py-1 px-2" id="yaml-prev-page" ${currentPage === 0 ? 'disabled' : ''}><i class="fa-solid fa-chevron-left"></i> 上一頁</button>
+            <div class="d-flex" style="flex-wrap: wrap; gap: 2px;">${pagesHtml}</div>
+            <button class="btn btn-secondary btn-sm py-1 px-2" id="yaml-next-page" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>下一頁 <i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+    `;
+
+    document.getElementById('yaml-prev-page')?.addEventListener('click', () => {
+        if (currentPage > 0) renderYamlTable(currentPage - 1);
+    });
+    document.getElementById('yaml-next-page')?.addEventListener('click', () => {
+        if (currentPage < totalPages - 1) renderYamlTable(currentPage + 1);
+    });
+    container.querySelectorAll('.yaml-page-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const page = parseInt(e.target.getAttribute('data-page'), 10);
+            renderYamlTable(page);
+        });
     });
 }
+
 
 function renderYamlCoverageMatrix(matrixData) {
     const thead = document.getElementById('yaml-coverage-thead');
