@@ -61,8 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initEventListeners();
     initUploadModal();
+    initYamlDragAndDrop();
     fetchAllData();
 });
+
 
 // Tab Switching System
 function initTabs() {
@@ -834,10 +836,30 @@ function initUploadModal() {
                 statusText.textContent = `Successfully uploaded ${data.filename}!`;
                 statusText.style.background = 'var(--success-bg)';
                 statusText.style.color = 'var(--success-green)';
-                setTimeout(() => {
+                setTimeout(async () => {
                     modal.style.display = 'none';
                     statusText.style.display = 'none';
-                    fetchAllData();
+
+                    if (tabType === 'yaml' || file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+                        const s1 = document.getElementById('yaml-file-select-1');
+                        const s2 = document.getElementById('yaml-file-select-2');
+                        const s3 = document.getElementById('yaml-file-select-3');
+
+                        const btnYamlTab = document.querySelector('.tab-btn[data-tab="tab-yaml"]');
+                        if (btnYamlTab) btnYamlTab.click();
+
+                        await fetchYamlData();
+
+                        const uploadedPath = data.path || data.filename;
+                        if (s1 && !s1.value) s1.value = uploadedPath;
+                        else if (s2 && !s2.value) s2.value = uploadedPath;
+                        else if (s3 && !s3.value) s3.value = uploadedPath;
+                        else if (s1) s1.value = uploadedPath;
+
+                        fetchYamlData();
+                    } else {
+                        fetchAllData();
+                    }
                 }, 1200);
             } else {
                 throw new Error(data.error);
@@ -849,6 +871,56 @@ function initUploadModal() {
         }
     }
 }
+
+function initYamlDragAndDrop() {
+    const tabYaml = document.getElementById('tab-yaml');
+    if (!tabYaml) return;
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        tabYaml.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+    });
+
+    tabYaml.addEventListener('drop', async (e) => {
+        const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
+        if (files.length === 0) return;
+
+        showLoading(`正在上傳 ${files.length} 個 YAML 測試腳本檔...`, 'Uploading dragged YAML test suite files');
+
+        try {
+            const uploadedPaths = [];
+            for (const file of files.slice(0, 3)) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('tab_type', 'yaml');
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    uploadedPaths.push(data.path || data.filename);
+                }
+            }
+
+            await fetchYamlData();
+
+            const s1 = document.getElementById('yaml-file-select-1');
+            const s2 = document.getElementById('yaml-file-select-2');
+            const s3 = document.getElementById('yaml-file-select-3');
+
+            if (uploadedPaths[0] && s1) s1.value = uploadedPaths[0];
+            if (uploadedPaths[1] && s2) s2.value = uploadedPaths[1];
+            if (uploadedPaths[2] && s3) s3.value = uploadedPaths[2];
+
+            await fetchYamlData();
+        } catch (err) {
+            console.error('YAML drag drop upload error:', err);
+        } finally {
+            hideLoading();
+        }
+    });
+}
+
 
 // Fetch Data from Backend APIs
 async function fetchAllData() {
