@@ -2913,8 +2913,11 @@ async function fetchYamlData() {
 
     logDebug('info', `[fetchYamlData] Triggered with params:`, { y1, y2, y3, bkcFile, bkcSheet });
 
-    // Always trigger full-page high-tech modal overlay to block user tab switching during calculation
-    showLoading('⚡ 載入與比對 Test Suite (YAML) 測試腳本中...', 'Extracting 1-3 station test steps & matching against BKC reference rules');
+    const hasActiveYaml = Boolean(y1 || y2 || y3);
+
+    if (hasActiveYaml) {
+        showLoading('⚡ 載入與比對 Test Suite (YAML) 測試腳本中...', 'Extracting 1-3 station test steps & matching against BKC reference rules');
+    }
 
     try {
         let url = `/api/yaml-compare?`;
@@ -2927,7 +2930,7 @@ async function fetchYamlData() {
         url += queryParts.join('&');
 
         const tbody = document.getElementById('yaml-tbody');
-        if (tbody) {
+        if (tbody && hasActiveYaml) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8" class="text-center py-5">
@@ -2951,13 +2954,19 @@ async function fetchYamlData() {
             `;
         }
 
-        startProgressSequence();
+        if (hasActiveYaml) {
+            startProgressSequence();
+        }
 
         const res = await fetch(url);
         const data = await res.json();
-        stopProgressSequenceSuccess();
+        
+        if (hasActiveYaml) {
+            stopProgressSequenceSuccess();
+        }
 
         logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
+
 
 
 
@@ -3013,9 +3022,12 @@ async function fetchYamlData() {
     } catch (err) {
         console.error('Error fetching YAML compare data:', err);
     } finally {
-        hideLoading();
+        if (hasActiveYaml) {
+            await hideLoading(700);
+        }
     }
 }
+
 
 function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = null) {
     const select = document.getElementById(selectId);
