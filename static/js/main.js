@@ -2998,22 +2998,13 @@ async function fetchYamlData() {
                 stopProgressSequenceSuccess('✅ Test Suite (YAML) 比對與載入完成！', `已成功比對對照 ${summary.total_yaml_checks || 0} 項規範數據 (合規率: ${summary.compliance_rate || 0}%)`);
             }
 
-
-
-
-
-
-
-        if (data.success) {
-            appState.yamlCompare = data;
-            
             // Update Summary Cards & Badge
-            const summary = data.summary || {};
             const val1 = document.getElementById('yaml-stat-val-1');
             const val2 = document.getElementById('yaml-stat-val-2');
             const val3 = document.getElementById('yaml-stat-val-3');
             const val4 = document.getElementById('yaml-stat-val-4');
             const badgeDiff = document.getElementById('yaml-badge-diff');
+
 
             if (val1) val1.textContent = summary.total_yaml_checks || 0;
             if (val2) val2.textContent = summary.matched_count || 0;

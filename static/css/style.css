@@ -2033,9 +2033,8 @@ a.link-gdrive:hover {
     margin-top: 1px;
 }
 
-
-}
 .heatmap-cell.match { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+
 .heatmap-cell.mismatch { background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
 .heatmap-cell.missing { background: rgba(245, 158, 11, 0.15); color: #fde047; border: 1px solid rgba(245, 158, 11, 0.3); }
 .heatmap-cell.unchecked { background: rgba(148, 163, 184, 0.1); color: #64748b; border: 1px dashed rgba(148, 163, 184, 0.2); }
