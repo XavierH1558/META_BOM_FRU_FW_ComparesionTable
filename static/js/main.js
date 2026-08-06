@@ -2835,9 +2835,8 @@ async function fetchYamlData() {
 
     logDebug('info', `[fetchYamlData] Triggered with params:`, { y1, y2, y3, bkcFile, bkcSheet });
 
-    if (y1 || y2 || y3) {
-        showLoading('⚡ 正在進行 Test Suite (YAML) 腳本合規比對分析...', 'Extracting test suite steps & calculating BKC compliance matrix');
-    }
+    // Always trigger full-page high-tech modal overlay to block user tab switching during calculation
+    showLoading('⚡ 載入與比對 Test Suite (YAML) 測試腳本中...', 'Extracting 1-3 station test steps & matching against BKC reference rules');
 
     try {
         let url = `/api/yaml-compare?`;
@@ -2850,7 +2849,7 @@ async function fetchYamlData() {
         url += queryParts.join('&');
 
         const tbody = document.getElementById('yaml-tbody');
-        if (tbody && (y1 || y2 || y3)) {
+        if (tbody) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8" class="text-center py-5">
@@ -2868,6 +2867,7 @@ async function fetchYamlData() {
         const data = await res.json();
 
         logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
+
 
 
         if (data.success) {
@@ -3265,6 +3265,8 @@ async function fetchYamlVersionDiff() {
     if (!tbody) return;
     tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4">正在分析 YAML 腳本演進異動中...</td></tr>`;
 
+    showLoading('⚡ 正在計算 YAML 腳本跨版本演進 Diff...', 'Comparing test steps & commands across selected YAML versions');
+
     try {
         const url = `/api/yaml-version-diff?base_yaml=${encodeURIComponent(baseSel || '')}&target_yaml=${encodeURIComponent(targetSel || '')}`;
         const res = await fetch(url);
@@ -3275,8 +3277,11 @@ async function fetchYamlVersionDiff() {
         }
     } catch (err) {
         console.error('Error fetching version diff:', err);
+    } finally {
+        await hideLoading(700);
     }
 }
+
 
 function renderYamlVersionDiffTable(items) {
     const tbody = document.getElementById('yaml-version-diff-tbody');
