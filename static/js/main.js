@@ -33,25 +33,49 @@ const appState = {
 
 
 // Global Loading Animation Controls
-function showLoading(title = '正在讀取並解析 Excel 表單...', subtitle = 'Parsing workbook data & generating comparison table') {
+let loadingStartTime = 0;
+
+function showLoading(title = '正在讀取與解析表單...', subtitle = 'Processing comparison data & calculating compliance matrix') {
     const overlay = document.getElementById('global-loading-overlay');
     const titleEl = document.getElementById('loading-title');
     const subEl = document.getElementById('loading-subtitle');
     if (titleEl) titleEl.textContent = title;
     if (subEl) subEl.textContent = subtitle;
     if (overlay) {
+        loadingStartTime = Date.now();
         overlay.style.display = 'flex';
-        setTimeout(() => overlay.classList.add('active'), 10);
+        void overlay.offsetWidth; // Force CSS reflow for instant animation start
+        overlay.classList.add('active');
     }
 }
 
-function hideLoading() {
+async function hideLoading(minDurationMs = 550) {
     const overlay = document.getElementById('global-loading-overlay');
-    if (overlay) {
-        overlay.classList.remove('active');
-        overlay.style.display = 'none';
+    if (!overlay) return;
+
+    const elapsed = Date.now() - loadingStartTime;
+    const remaining = Math.max(0, minDurationMs - elapsed);
+
+    if (remaining > 0) {
+        await new Promise(resolve => setTimeout(resolve, remaining));
     }
+
+    overlay.classList.remove('active');
+    setTimeout(() => {
+        if (!overlay.classList.contains('active')) {
+            overlay.style.display = 'none';
+        }
+    }, 300);
 }
+
+function showViewAnimated(target) {
+    if (!target) return;
+    target.style.display = 'block';
+    target.classList.remove('view-animated');
+    void target.offsetWidth;
+    target.classList.add('view-animated');
+}
+
 
 
 
@@ -695,7 +719,7 @@ function getLoadingTitle(targetTab) {
             btnYamlViewMatrix.classList.remove('active');
             btnYamlViewDiff.classList.remove('active');
 
-            if (containerBkc) containerBkc.style.display = 'block';
+            if (containerBkc) showViewAnimated(containerBkc);
             if (containerMatrix) containerMatrix.style.display = 'none';
             if (containerDiff) containerDiff.style.display = 'none';
 
@@ -711,7 +735,7 @@ function getLoadingTitle(targetTab) {
             btnYamlViewDiff.classList.remove('active');
 
             if (containerBkc) containerBkc.style.display = 'none';
-            if (containerMatrix) containerMatrix.style.display = 'block';
+            if (containerMatrix) showViewAnimated(containerMatrix);
             if (containerDiff) containerDiff.style.display = 'none';
 
             if (controlsBkc) controlsBkc.style.display = 'flex';
@@ -727,7 +751,7 @@ function getLoadingTitle(targetTab) {
 
             if (containerBkc) containerBkc.style.display = 'none';
             if (containerMatrix) containerMatrix.style.display = 'none';
-            if (containerDiff) containerDiff.style.display = 'block';
+            if (containerDiff) showViewAnimated(containerDiff);
 
             if (controlsBkc) controlsBkc.style.display = 'none';
             if (controlsDiff) controlsDiff.style.display = 'flex';
@@ -735,6 +759,7 @@ function getLoadingTitle(targetTab) {
             fetchYamlVersionDiff();
         });
     }
+
 
     const btnRunDiff = document.getElementById('btn-run-yaml-diff');
     if (btnRunDiff) {
