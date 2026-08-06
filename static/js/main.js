@@ -883,6 +883,24 @@ function initYamlDragAndDrop() {
         });
     });
 
+    const slots = [1, 2, 3].map(id => document.getElementById(`slot-card-${id}`)).filter(Boolean);
+    slots.forEach((slot) => {
+        ['dragenter', 'dragover'].forEach(evt => {
+            slot.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                slot.classList.add('dragover');
+            });
+        });
+        ['dragleave', 'drop'].forEach(evt => {
+            slot.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                slot.classList.remove('dragover');
+            });
+        });
+    });
+
     tabYaml.addEventListener('drop', async (e) => {
         const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
         if (files.length === 0) return;
@@ -908,9 +926,18 @@ function initYamlDragAndDrop() {
             const s2 = document.getElementById('yaml-file-select-2');
             const s3 = document.getElementById('yaml-file-select-3');
 
-            if (uploadedPaths[0] && s1) s1.value = uploadedPaths[0];
-            if (uploadedPaths[1] && s2) s2.value = uploadedPaths[1];
-            if (uploadedPaths[2] && s3) s3.value = uploadedPaths[2];
+            const targetSlotCard = e.target.closest('.station-slot-card');
+            if (targetSlotCard && targetSlotCard.dataset.slot) {
+                const slotNum = targetSlotCard.dataset.slot;
+                const targetSelect = document.getElementById(`yaml-file-select-${slotNum}`);
+                if (targetSelect && uploadedPaths[0]) {
+                    targetSelect.value = uploadedPaths[0];
+                }
+            } else {
+                if (uploadedPaths[0] && s1) s1.value = uploadedPaths[0];
+                if (uploadedPaths[1] && s2) s2.value = uploadedPaths[1];
+                if (uploadedPaths[2] && s3) s3.value = uploadedPaths[2];
+            }
 
             await fetchYamlData();
         } catch (err) {
@@ -920,6 +947,7 @@ function initYamlDragAndDrop() {
         }
     });
 }
+
 
 
 // Fetch Data from Backend APIs

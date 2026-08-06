@@ -1117,6 +1117,109 @@ a.link-gdrive:hover {
     outline: none;
 }
 
+/* Station Slots Drop Zone Panel for YAML Tab */
+.station-slots-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+@media (max-width: 1200px) {
+    .station-slots-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .station-slots-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+.station-slot-card {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1.5px dashed rgba(56, 189, 248, 0.35);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: all 0.25s ease;
+    cursor: pointer;
+    position: relative;
+}
+
+.station-slot-card:hover, .station-slot-card.dragover {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2);
+}
+
+.station-slot-card.slot-bkc {
+    border-style: solid;
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.04);
+}
+
+.station-slot-card.slot-bkc:hover {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.09);
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
+}
+
+.slot-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.slot-badge {
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.slot-badge.bg-cyan {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.slot-badge.bg-amber {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.slot-drag-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.slot-select {
+    width: 100%;
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-main);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    outline: none;
+    cursor: pointer;
+}
+
+.slot-select:focus {
+    border-color: #38bdf8;
+}
+
 .dropzone {
     border: 2px dashed var(--border-light);
     border-radius: 10px;
@@ -1130,6 +1233,7 @@ a.link-gdrive:hover {
     cursor: pointer;
     transition: all 0.2s ease;
 }
+
 
 .dropzone:hover, .dropzone.dragover {
     border-color: var(--primary-blue);

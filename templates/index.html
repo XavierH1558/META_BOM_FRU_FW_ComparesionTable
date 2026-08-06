@@ -518,33 +518,48 @@
                     </div>
                 </div>
 
+                <!-- Station Slot Cards (Large Drop Zone & Wide Selectors) -->
+                <div class="station-slots-container" id="yaml-station-slots-panel">
+                    <div class="station-slot-card" id="slot-card-1" data-slot="1">
+                        <div class="slot-header">
+                            <span class="slot-badge bg-cyan"><i class="fa-solid fa-vial"></i> Station 1 (如 FDT)</span>
+                            <span class="slot-drag-hint"><i class="fa-solid fa-cloud-arrow-up"></i> 拖曳 `.yaml` 至此</span>
+                        </div>
+                        <select id="yaml-file-select-1" class="slot-select"></select>
+                    </div>
+
+                    <div class="station-slot-card" id="slot-card-2" data-slot="2">
+                        <div class="slot-header">
+                            <span class="slot-badge bg-cyan"><i class="fa-solid fa-vial"></i> Station 2 (如 FFT)</span>
+                            <span class="slot-drag-hint"><i class="fa-solid fa-cloud-arrow-up"></i> 拖曳 `.yaml` 至此</span>
+                        </div>
+                        <select id="yaml-file-select-2" class="slot-select"></select>
+                    </div>
+
+                    <div class="station-slot-card" id="slot-card-3" data-slot="3">
+                        <div class="slot-header">
+                            <span class="slot-badge bg-cyan"><i class="fa-solid fa-vial"></i> Station 3 (如 FRO)</span>
+                            <span class="slot-drag-hint"><i class="fa-solid fa-cloud-arrow-up"></i> 拖曳 `.yaml` 至此</span>
+                        </div>
+                        <select id="yaml-file-select-3" class="slot-select"></select>
+                    </div>
+
+                    <div class="station-slot-card slot-bkc" id="slot-card-bkc">
+                        <div class="slot-header">
+                            <span class="slot-badge bg-amber"><i class="fa-solid fa-table"></i> BKC Reference Sheet</span>
+                            <span class="slot-drag-hint" style="color: #fbbf24;"><i class="fa-solid fa-book"></i> 標準對照表</span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <select id="yaml-bkc-file-select" class="slot-select" style="flex: 3;"></select>
+                            <select id="yaml-bkc-sheet-select" class="slot-select" style="flex: 2;"></select>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Controls for View 1: BKC Comparison -->
                 <div class="filter-bar flex-wrap" id="yaml-bkc-controls" style="gap: 0.8rem;">
-                    <!-- YAML Files Selection (1 to 3 files) -->
-                    <div class="select-box" title="選擇 Station 1 測試腳本 YAML 檔案">
-                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 1:</span>
-                        <select id="yaml-file-select-1" style="max-width: 170px;"></select>
-                    </div>
-
-                    <div class="select-box" title="選擇 Station 2 測試腳本 YAML 檔案 (可選)">
-                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 2:</span>
-                        <select id="yaml-file-select-2" style="max-width: 170px;"></select>
-                    </div>
-
-                    <div class="select-box" title="選擇 Station 3 測試腳本 YAML 檔案 (可選)">
-                        <span class="select-label" style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-vial"></i> Station 3:</span>
-                        <select id="yaml-file-select-3" style="max-width: 170px;"></select>
-                    </div>
-
-                    <!-- Target BKC File & Sheet Selection -->
-                    <div class="select-box" title="選擇對照的 BKC Table 檔案與工作表">
-                        <span class="select-label" style="color: var(--warning-amber); font-weight: 600;"><i class="fa-solid fa-table"></i> BKC Sheet:</span>
-                        <select id="yaml-bkc-file-select" style="max-width: 160px;"></select>
-                        <select id="yaml-bkc-sheet-select" style="max-width: 120px;"></select>
-                    </div>
-
                     <!-- Search Input -->
-                    <div class="search-box">
+                    <div class="search-box" style="flex: 2; min-width: 250px;">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
                         <input type="text" id="yaml-search-input" placeholder="搜尋工站、腳本步驟、組件或版本..." />
                     </div>
@@ -567,6 +582,7 @@
                         </select>
                     </div>
                 </div>
+
 
                 <!-- Controls for View 3: Version Diff (Initially Hidden) -->
                 <div class="filter-bar flex-wrap" id="yaml-diff-controls" style="display: none; gap: 0.8rem;">
