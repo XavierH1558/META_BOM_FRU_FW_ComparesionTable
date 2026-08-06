@@ -1138,13 +1138,14 @@ a.link-gdrive:hover {
 }
 
 .station-slot-card {
-    background: rgba(30, 41, 59, 0.6);
-    border: 1.5px dashed rgba(56, 189, 248, 0.35);
+    background: rgba(30, 41, 59, 0.7);
+    border: 2px dashed rgba(56, 189, 248, 0.45);
     border-radius: 12px;
-    padding: 0.85rem 1rem;
+    padding: 0.9rem 1.1rem;
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
+    min-height: 85px;
     transition: all 0.25s ease;
     cursor: pointer;
     position: relative;
@@ -1152,21 +1153,21 @@ a.link-gdrive:hover {
 
 .station-slot-card:hover, .station-slot-card.dragover {
     border-color: #38bdf8;
-    background: rgba(56, 189, 248, 0.12);
+    background: rgba(56, 189, 248, 0.15);
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2);
+    box-shadow: 0 6px 20px rgba(56, 189, 248, 0.3);
 }
 
 .station-slot-card.slot-bkc {
     border-style: solid;
-    border-color: rgba(245, 158, 11, 0.35);
-    background: rgba(245, 158, 11, 0.04);
+    border-color: rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.06);
 }
 
 .station-slot-card.slot-bkc:hover {
     border-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.09);
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
+    background: rgba(245, 158, 11, 0.12);
+    box-shadow: 0 6px 20px rgba(245, 158, 11, 0.25);
 }
 
 .slot-header {
@@ -1176,9 +1177,9 @@ a.link-gdrive:hover {
 }
 
 .slot-badge {
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     font-weight: 700;
-    padding: 0.2rem 0.55rem;
+    padding: 0.25rem 0.6rem;
     border-radius: 6px;
     display: inline-flex;
     align-items: center;
@@ -1198,27 +1199,36 @@ a.link-gdrive:hover {
 }
 
 .slot-drag-hint {
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     color: var(--text-muted);
     font-weight: 500;
 }
 
-.slot-select {
-    width: 100%;
+.slot-select,
+#yaml-file-select-1,
+#yaml-file-select-2,
+#yaml-file-select-3 {
+    width: 100% !important;
+    min-width: 220px !important;
     background: var(--bg-main);
-    border: 1px solid var(--border-color);
+    border: 1.5px solid var(--border-color);
     border-radius: 8px;
     color: var(--text-main);
-    padding: 0.5rem 0.75rem;
-    font-size: 0.88rem;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.9rem;
     font-weight: 500;
     outline: none;
     cursor: pointer;
 }
 
-.slot-select:focus {
+.slot-select:focus,
+#yaml-file-select-1:focus,
+#yaml-file-select-2:focus,
+#yaml-file-select-3:focus {
     border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
 }
+
 
 .dropzone {
     border: 2px dashed var(--border-light);
