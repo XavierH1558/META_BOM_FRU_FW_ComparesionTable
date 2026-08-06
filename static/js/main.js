@@ -521,7 +521,7 @@ function initEventListeners() {
         else if (appState.activeTab === 'tab-matrix') tabType = 'matrix';
         else if (appState.activeTab === 'tab-yaml') tabType = 'yaml';
 
-        let url = `/api/export-excel?type=${tabType}`;
+        let url = `/api/export-excel?type=${tabType}&project=${encodeURIComponent(currentProject)}`;
         if (tabType === 'matrix' && appState.matrixMode === 'compare') {
             const bFile = document.getElementById('matrix-base-file-select')?.value;
             const tFile = document.getElementById('matrix-target-file-select')?.value;
@@ -565,7 +565,7 @@ function initEventListeners() {
     if (ySearchI) ySearchI.addEventListener('input', () => renderYamlTable());
 
 function getSummaryApiUrl(targetTab) {
-    let url = `/api/release-summary?tab=${targetTab}`;
+    let url = `/api/release-summary?tab=${targetTab}&project=${encodeURIComponent(currentProject)}`;
 
     const bkcFile = document.getElementById('bkc-file-select')?.value;
     if (bkcFile) url += `&bkc_file=${encodeURIComponent(bkcFile)}`;
@@ -1245,6 +1245,7 @@ function initUploadModal() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('tab_type', tabType);
+        formData.append('project', currentProject);
 
         try {
             const res = await fetch('/api/upload', {
@@ -1359,6 +1360,7 @@ function initYamlDragAndDrop() {
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('tab_type', 'yaml');
+                formData.append('project', currentProject);
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.success) {
@@ -3086,7 +3088,7 @@ async function updateWatchlistKeywords(keywords) {
 
 async function checkCriticalWatchlistAlerts() {
     try {
-        const res = await fetch('/api/release-summary');
+        const res = await fetch(`/api/release-summary?project=${encodeURIComponent(currentProject)}`);
         const data = await res.json();
         const banner = document.getElementById('critical-alert-banner');
         const text = document.getElementById('critical-alert-text');
@@ -3117,7 +3119,7 @@ function populateTimelineDropdown(selectId, files) {
 
 async function fetchAndPopulateTimelines() {
     try {
-        const res = await fetch('/api/history');
+        const res = await fetch(`/api/history?project=${encodeURIComponent(currentProject)}`);
         const data = await res.json();
         if (data.success) {
             populateTimelineDropdown('bkc-timeline-select', data.history.bkc || []);
@@ -3339,7 +3341,8 @@ async function saveYamlDisposition(itemKey, status, owner, note) {
                 key: itemKey,
                 disposition_status: status,
                 owner: owner,
-                note: note
+                note: note,
+                project: currentProject
             })
         });
     } catch (err) {
@@ -3650,7 +3653,7 @@ async function fetchYamlVersionDiff() {
     startProgressSequence();
 
     try {
-        const url = `/api/yaml-version-diff?base_yaml=${encodeURIComponent(baseSel || '')}&target_yaml=${encodeURIComponent(targetSel || '')}`;
+        const url = `/api/yaml-version-diff?project=${encodeURIComponent(currentProject)}&base_yaml=${encodeURIComponent(baseSel || '')}&target_yaml=${encodeURIComponent(targetSel || '')}`;
         const res = await fetch(url);
         const data = await res.json();
         stopProgressSequenceSuccess();
