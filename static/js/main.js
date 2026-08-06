@@ -103,6 +103,11 @@ function updateProgress(percent, stageText, subText) {
     const stageTable = document.getElementById('yaml-table-stage-label');
     const subTable = document.getElementById('yaml-table-loading-sub');
 
+    const fillDiff = document.getElementById('diff-table-progress-fill');
+    const percentDiff = document.getElementById('diff-table-percent-label');
+    const stageDiff = document.getElementById('diff-table-stage-label');
+    const subDiff = document.getElementById('diff-table-loading-sub');
+
     if (fillOverlay) fillOverlay.style.width = `${percent}%`;
     if (percentOverlay) percentOverlay.textContent = `${percent}%`;
     if (stageOverlay && stageText) stageOverlay.textContent = stageText;
@@ -112,7 +117,13 @@ function updateProgress(percent, stageText, subText) {
     if (percentTable) percentTable.textContent = `${percent}%`;
     if (stageTable && stageText) stageTable.textContent = stageText;
     if (subTable && subText) subTable.textContent = subText;
+
+    if (fillDiff) fillDiff.style.width = `${percent}%`;
+    if (percentDiff) percentDiff.textContent = `${percent}%`;
+    if (stageDiff && stageText) stageDiff.textContent = stageText;
+    if (subDiff && subText) subDiff.textContent = subText;
 }
+
 
 async function simulateProgressSequence() {
     updateProgress(15, '📦 階段 1/4: 正在解析 Station 1~3 之 .yaml 測試腳本步驟...', 'Extracting test step locations & component checks');
@@ -834,7 +845,7 @@ function getLoadingTitle(targetTab) {
     const controlsDiff = document.getElementById('yaml-diff-controls');
 
     if (btnYamlViewBkc) {
-        btnYamlViewBkc.addEventListener('click', () => {
+        btnYamlViewBkc.addEventListener('click', async () => {
             btnYamlViewBkc.classList.add('active');
             btnYamlViewMatrix.classList.remove('active');
             btnYamlViewDiff.classList.remove('active');
@@ -849,7 +860,7 @@ function getLoadingTitle(targetTab) {
     }
 
     if (btnYamlViewMatrix) {
-        btnYamlViewMatrix.addEventListener('click', () => {
+        btnYamlViewMatrix.addEventListener('click', async () => {
             btnYamlViewMatrix.classList.add('active');
             btnYamlViewBkc.classList.remove('active');
             btnYamlViewDiff.classList.remove('active');
@@ -860,11 +871,15 @@ function getLoadingTitle(targetTab) {
 
             if (controlsBkc) controlsBkc.style.display = 'flex';
             if (controlsDiff) controlsDiff.style.display = 'none';
+
+            showLoading('⚡ 正在產生跨工站測試覆蓋熱力圖...', 'Calculating station-to-station coverage matrix & heatmap cells');
+            simulateProgressSequence();
+            await hideLoading(650);
         });
     }
 
     if (btnYamlViewDiff) {
-        btnYamlViewDiff.addEventListener('click', () => {
+        btnYamlViewDiff.addEventListener('click', async () => {
             btnYamlViewDiff.classList.add('active');
             btnYamlViewBkc.classList.remove('active');
             btnYamlViewMatrix.classList.remove('active');
@@ -879,6 +894,7 @@ function getLoadingTitle(targetTab) {
             fetchYamlVersionDiff();
         });
     }
+
 
 
     const btnRunDiff = document.getElementById('btn-run-yaml-diff');
