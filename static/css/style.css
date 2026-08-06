@@ -2083,7 +2083,284 @@ a.link-gdrive:hover {
     border-color: #38bdf8;
     box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
 }
+}
 
+
+/* =====================================================================
+   PROJECT SWITCHER
+   ===================================================================== */
+
+.project-switcher {
+    position: relative;
+    margin-left: 1rem;
+    z-index: 1000;
+}
+
+.project-switcher-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 10px;
+    padding: 0.45rem 0.9rem;
+    cursor: pointer;
+    color: #f1f5f9;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+}
+
+.project-switcher-btn:hover {
+    border-color: rgba(56, 189, 248, 0.7);
+    background: rgba(56, 189, 248, 0.08);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.2);
+}
+
+.project-switcher-btn.open {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+}
+
+/* Clemente theme override */
+body.project-clemente .project-switcher-btn {
+    border-color: rgba(168, 85, 247, 0.35);
+}
+body.project-clemente .project-switcher-btn:hover,
+body.project-clemente .project-switcher-btn.open {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.1);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.2);
+}
+
+.project-switcher-label {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.project-switcher-arrow {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+}
+
+.project-switcher-btn.open .project-switcher-arrow {
+    transform: rotate(180deg);
+}
+
+/* Project Color Dots */
+.project-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.project-dot-cyan {
+    background: #38bdf8;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
+}
+
+.project-dot-purple {
+    background: #a855f7;
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.8);
+}
+
+/* Dropdown Panel */
+.project-switcher-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 220px;
+    background: rgba(15, 23, 42, 0.97);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 12px;
+    padding: 0.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.1);
+    backdrop-filter: blur(12px);
+    animation: dropdownFadeIn 0.18s ease;
+}
+
+.project-switcher-dropdown.visible {
+    display: block;
+}
+
+@keyframes dropdownFadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.project-dropdown-header {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.6rem 0.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 0.3rem;
+}
+
+.project-option {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #cbd5e1;
+    font-family: 'Inter', sans-serif;
+    transition: background 0.15s, color 0.15s;
+    text-align: left;
+}
+
+.project-option:hover {
+    background: rgba(255,255,255,0.06);
+    color: #f1f5f9;
+}
+
+.project-option.active {
+    background: rgba(56, 189, 248, 0.1);
+    color: #f1f5f9;
+}
+
+.project-option[data-project="clemente"].active {
+    background: rgba(168, 85, 247, 0.12);
+}
+
+.project-option-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.project-option-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.project-option-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.project-option-check {
+    font-size: 0.85rem;
+    color: #38bdf8;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.project-option.active .project-option-check {
+    opacity: 1;
+}
+
+.project-option[data-project="clemente"].active .project-option-check {
+    color: #a855f7;
+}
+
+
+/* =====================================================================
+   PROJECT SWITCH FULL-PAGE TRANSITION OVERLAY
+   ===================================================================== */
+
+.project-switch-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 10, 20, 0.92);
+    backdrop-filter: blur(16px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.project-switch-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.project-switch-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2rem;
+}
+
+.project-switch-spinner {
+    width: 52px;
+    height: 52px;
+    border: 3px solid rgba(56, 189, 248, 0.15);
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+}
+
+.project-switch-overlay.theme-purple .project-switch-spinner {
+    border-color: rgba(168, 85, 247, 0.15);
+    border-top-color: #a855f7;
+}
+
+.project-switch-project-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.8);
+    animation: pulseDot 1.2s ease-in-out infinite;
+}
+
+.project-switch-overlay.theme-purple .project-switch-project-dot {
+    background: #a855f7;
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.8);
+}
+
+@keyframes pulseDot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%       { transform: scale(1.35); opacity: 0.7; }
+}
+
+.project-switch-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.project-switch-sub {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Clemente purple accent theme on body */
+body.project-clemente {
+    --accent-cyan: #a855f7;
+    --neon-cyan: rgba(168, 85, 247, 0.5);
+}
+
+body.project-clemente .app-header {
+    border-bottom-color: rgba(168, 85, 247, 0.25);
+}
+
+body.project-clemente .nav-tab.active {
+    border-color: #a855f7;
+    color: #a855f7;
+    box-shadow: 0 -2px 0 #a855f7 inset, 0 0 15px rgba(168, 85, 247, 0.15);
+}
 
 
 

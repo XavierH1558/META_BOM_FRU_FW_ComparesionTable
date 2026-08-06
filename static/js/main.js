@@ -72,6 +72,34 @@ const appState = {
     }
 };
 
+// ============================================================
+// MULTI-PROJECT SUPPORT
+// ============================================================
+let currentProject = 'sanmiguel'; // default project
+
+const PROJECT_META = {
+    sanmiguel: {
+        id: 'sanmiguel',
+        label: 'SanMiguel (VR200)',
+        shortLabel: 'SanMiguel',
+        brandTitle: 'META VR200 (SanMiguel) Comparison Hub',
+        colorTheme: 'cyan',
+        dotClass: 'project-dot-cyan',
+        overlayTheme: ''
+    },
+    clemente: {
+        id: 'clemente',
+        label: 'Clemente (GB300)',
+        shortLabel: 'Clemente',
+        brandTitle: 'META GB300 (Clemente) Comparison Hub',
+        colorTheme: 'purple',
+        dotClass: 'project-dot-purple',
+        overlayTheme: 'theme-purple'
+    }
+};
+
+
+
 
 
 // Global Loading Animation Controls
@@ -264,8 +292,129 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     initUploadModal();
     initYamlManualUploads();
+    initProjectSwitcher();
     fetchAllData();
 });
+
+// ============================================================
+// PROJECT SWITCHER LOGIC
+// ============================================================
+
+function initProjectSwitcher() {
+    const btn      = document.getElementById('project-switcher-btn');
+    const dropdown = document.getElementById('project-switcher-dropdown');
+    if (!btn || !dropdown) return;
+
+    // Toggle dropdown
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = dropdown.classList.contains('visible');
+        dropdown.classList.toggle('visible', !isOpen);
+        btn.classList.toggle('open', !isOpen);
+        btn.setAttribute('aria-expanded', String(!isOpen));
+    });
+
+    // Close on outside click
+    document.addEventListener('click', () => {
+        dropdown.classList.remove('visible');
+        btn.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+    });
+
+    // Project option click
+    dropdown.querySelectorAll('.project-option').forEach(opt => {
+        opt.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const projectId = opt.getAttribute('data-project');
+            if (projectId && projectId !== currentProject) {
+                switchProject(projectId);
+            }
+            dropdown.classList.remove('visible');
+            btn.classList.remove('open');
+        });
+    });
+}
+
+async function switchProject(projectId) {
+    if (projectId === currentProject) return;
+
+    const meta = PROJECT_META[projectId];
+    if (!meta) return;
+
+    // Show transition overlay
+    const overlay = document.getElementById('project-switch-overlay');
+    const overlayTitle = document.getElementById('overlay-project-title');
+    const overlaySub   = document.getElementById('overlay-project-sub');
+    const overlayDot   = document.getElementById('overlay-project-dot');
+
+    if (overlay) {
+        overlay.className = `project-switch-overlay ${meta.overlayTheme}`;
+        if (overlayTitle) overlayTitle.textContent = `正在切換至 ${meta.label}...`;
+        if (overlaySub)   overlaySub.textContent   = '重置資料並重新載入中，請稍候...';
+        if (overlayDot) {
+            overlayDot.className = `project-switch-project-dot`;
+            overlayDot.style.background = meta.colorTheme === 'purple' ? '#a855f7' : '#38bdf8';
+            overlayDot.style.boxShadow  = meta.colorTheme === 'purple'
+                ? '0 0 20px rgba(168, 85, 247, 0.8)'
+                : '0 0 20px rgba(56, 189, 248, 0.8)';
+        }
+        void overlay.offsetWidth;
+        overlay.classList.add('active');
+    }
+
+    // Small delay to let overlay animate in
+    await new Promise(r => setTimeout(r, 350));
+
+    // Switch project
+    currentProject = projectId;
+
+    // Reset app state data (keep UI prefs)
+    appState.bkc = null;
+    appState.bkcCompare = null;
+    appState.fruSingle = null;
+    appState.fruCompare = null;
+    appState.matrix = null;
+    appState.matrixCompare = null;
+    appState.yamlCompare = null;
+    appState.selectedFiles = { bkc: null, fru_single: null, fru_dvt: null, fru_pvt: null, matrix: null, yaml_1: null, yaml_2: null, yaml_3: null };
+
+    // Update body theme class
+    document.body.classList.remove('project-sanmiguel', 'project-clemente');
+    document.body.classList.add(`project-${projectId}`);
+
+    // Update brand title
+    const brandTitle = document.getElementById('app-brand-title');
+    if (brandTitle) brandTitle.textContent = meta.brandTitle;
+
+    // Update switcher button UI
+    const switcherLabel = document.getElementById('project-switcher-label');
+    const switcherDot   = document.getElementById('project-switcher-dot');
+    if (switcherLabel) switcherLabel.textContent = meta.label;
+    if (switcherDot) {
+        switcherDot.className = `project-dot ${meta.dotClass}`;
+    }
+
+    // Update dropdown active state
+    document.querySelectorAll('.project-option').forEach(opt => {
+        opt.classList.toggle('active', opt.getAttribute('data-project') === projectId);
+    });
+
+    logDebug('info', `[Project] Switched to: ${projectId}`, meta);
+
+    // Reload all data for new project
+    try {
+        await fetchAllData();
+    } catch (err) {
+        logDebug('error', `[Project] Data reload failed for ${projectId}`, err);
+    }
+
+    // Dismiss overlay
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
+
+
 
 function initYamlManualUploads() {
     [1, 2, 3].forEach(slotNum => {
@@ -292,6 +441,7 @@ function initYamlManualUploads() {
                     const formData = new FormData();
                     formData.append('file', file);
                     formData.append('tab_type', 'yaml');
+                    formData.append('project', currentProject);
 
                     const res = await fetch('/api/upload', { method: 'POST', body: formData });
                     const data = await res.json();
@@ -628,7 +778,7 @@ function getLoadingTitle(targetTab) {
             if (!q) return;
             showLoading(`全域搜尋中: "${q}"...`, 'Scanning BKC, FRU Spec, and Build Matrix datasets');
             try {
-                const res = await fetch(`/api/global-search?q=${encodeURIComponent(q)}`);
+                const res = await fetch(`/api/global-search?q=${encodeURIComponent(q)}&project=${encodeURIComponent(currentProject)}`);
                 const data = await res.json();
                 if (data.success) {
                     renderGlobalSearchResults(data.results, q);
@@ -1318,10 +1468,10 @@ async function fetchBkcData(sheet = null) {
     showLoading('正在讀取並解析 BKC Table...', 'Parsing BKC Firmware Control Table');
     try {
         let url = '/api/bkc';
-        const params = [];
+        const params = [`project=${encodeURIComponent(currentProject)}`];
         if (appState.selectedFiles.bkc) params.push(`file_path=${encodeURIComponent(appState.selectedFiles.bkc)}`);
         if (sheet) params.push(`sheet=${encodeURIComponent(sheet)}`);
-        if (params.length > 0) url += '?' + params.join('&');
+        url += '?' + params.join('&');
 
         const res = await fetch(url);
         const data = await res.json();
@@ -1346,11 +1496,11 @@ async function fetchBkcCompareData(baseSheet = null, targetSheet = null) {
     showLoading('正在比對 BKC Table...', 'Comparing BKC Base vs Target Worksheets');
     try {
         let url = '/api/bkc-compare';
-        const params = [];
+        const params = [`project=${encodeURIComponent(currentProject)}`];
         if (appState.selectedFiles.bkc) params.push(`file_path=${encodeURIComponent(appState.selectedFiles.bkc)}`);
         if (baseSheet) params.push(`base_sheet=${encodeURIComponent(baseSheet)}`);
         if (targetSheet) params.push(`target_sheet=${encodeURIComponent(targetSheet)}`);
-        if (params.length > 0) url += '?' + params.join('&');
+        url += '?' + params.join('&');
 
         const res = await fetch(url);
         const data = await res.json();
@@ -1915,10 +2065,10 @@ async function fetchFruSingleData(sheet = null) {
     showLoading('正在讀取並解析 FRU Spec...', 'Parsing FRU specification workbook');
     try {
         let url = '/api/fru';
-        const params = [];
+        const params = [`project=${encodeURIComponent(currentProject)}`];
         if (appState.selectedFiles.fru_single) params.push(`file_path=${encodeURIComponent(appState.selectedFiles.fru_single)}`);
         if (sheet) params.push(`sheet=${encodeURIComponent(sheet)}`);
-        if (params.length > 0) url += '?' + params.join('&');
+        url += '?' + params.join('&');
 
         const res = await fetch(url);
         const data = await res.json();
@@ -1943,12 +2093,12 @@ async function fetchFruCompareData(bSheet = null, tSheet = null) {
     showLoading('正在比對 FRU Specifications...', 'Comparing FRU Base vs Target workbooks');
     try {
         let url = '/api/fru-compare';
-        const params = [];
+        const params = [`project=${encodeURIComponent(currentProject)}`];
         if (appState.selectedFiles.fru_dvt) params.push(`dvt_file=${encodeURIComponent(appState.selectedFiles.fru_dvt)}`);
         if (appState.selectedFiles.fru_pvt) params.push(`pvt_file=${encodeURIComponent(appState.selectedFiles.fru_pvt)}`);
         if (bSheet) params.push(`base_sheet=${encodeURIComponent(bSheet)}`);
         if (tSheet) params.push(`target_sheet=${encodeURIComponent(tSheet)}`);
-        if (params.length > 0) url += '?' + params.join('&');
+        url += '?' + params.join('&');
 
         const res = await fetch(url);
         const data = await res.json();
@@ -2433,10 +2583,10 @@ async function fetchMatrixData(sheet = null) {
     showLoading('正在讀取並解析 Build Matrix...', 'Parsing Excel workbook & rendering matrix table');
     try {
         let url = '/api/build-matrix';
-        const params = [];
+        const params = [`project=${encodeURIComponent(currentProject)}`];
         if (appState.selectedFiles.matrix) params.push(`file_path=${encodeURIComponent(appState.selectedFiles.matrix)}`);
         if (sheet) params.push(`sheet=${encodeURIComponent(sheet)}`);
-        if (params.length > 0) url += '?' + params.join('&');
+        url += '?' + params.join('&');
 
         const res = await fetch(url);
         const data = await res.json();
@@ -2478,12 +2628,12 @@ async function fetchMatrixCompareData() {
         const targetSheet = document.getElementById('matrix-target-sheet-select')?.value;
 
         let url = '/api/build-matrix-compare';
-        const params = [];
+        const params = [`project=${encodeURIComponent(currentProject)}`];
         if (baseFile) params.push(`base_file=${encodeURIComponent(baseFile)}`);
         if (targetFile) params.push(`target_file=${encodeURIComponent(targetFile)}`);
         if (baseSheet)   params.push(`base_sheet=${encodeURIComponent(baseSheet)}`);
         if (targetSheet) params.push(`target_sheet=${encodeURIComponent(targetSheet)}`);
-        if (params.length > 0) url += '?' + params.join('&');
+        url += '?' + params.join('&');
 
         const tbody = document.getElementById('matrix-tbody');
         tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4">比對 Build Matrix 中...</td></tr>`;
@@ -3005,7 +3155,7 @@ async function fetchYamlData() {
 
     try {
         let url = `/api/yaml-compare?`;
-        const queryParts = [];
+        const queryParts = [`project=${encodeURIComponent(currentProject)}`];
         if (y1) queryParts.push(`yaml_1=${encodeURIComponent(y1)}`);
         if (y2) queryParts.push(`yaml_2=${encodeURIComponent(y2)}`);
         if (y3) queryParts.push(`yaml_3=${encodeURIComponent(y3)}`);

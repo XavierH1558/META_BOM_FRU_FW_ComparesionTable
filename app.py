@@ -56,50 +56,93 @@ try:
 except Exception as g_err:
     print(f"[GDrive Sync] Background scheduler initialization skipped: {g_err}")
 
-# Base directory roots (supports local Mac paths + repo data folder + uploads)
-DIR_ROOTS = {
-    'bkc': [
-        '/Volumes/DATA/Projects/META/VR200-SanMiguel/BKC Table/',
-        os.path.join(DATA_DIR, 'bkc'),
-        UPLOAD_FOLDER
-    ],
-    'fru': [
-        '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/DVT/',
-        '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/PVT1-1/',
-        os.path.join(DATA_DIR, 'fru'),
-        UPLOAD_FOLDER
-    ],
-    'matrix': [
-        '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/',
-        os.path.join(DATA_DIR, 'matrix'),
-        UPLOAD_FOLDER
-    ],
-    'yaml': [
-        os.path.join(DATA_DIR, 'yaml'),
-        UPLOAD_FOLDER
-    ]
+# ============================================================
+# MULTI-PROJECT CONFIGURATION
+# To add Clemente local Mac paths, update the 'mac_paths' lists
+# under PROJECT_CONFIGS['clemente'] below.
+# ============================================================
+PROJECT_CONFIGS = {
+    'sanmiguel': {
+        'id': 'sanmiguel',
+        'label': 'SanMiguel (VR200)',
+        'color_theme': 'cyan',
+        'dir_roots': {
+            'bkc': [
+                '/Volumes/DATA/Projects/META/VR200-SanMiguel/BKC Table/',
+                os.path.join(DATA_DIR, 'bkc'),
+            ],
+            'fru': [
+                '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/DVT/',
+                '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/PVT1-1/',
+                os.path.join(DATA_DIR, 'fru'),
+            ],
+            'matrix': [
+                '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/',
+                os.path.join(DATA_DIR, 'matrix'),
+            ],
+            'yaml': [
+                os.path.join(DATA_DIR, 'yaml'),
+            ]
+        },
+        'default_paths': {
+            'bkc':     '/Volumes/DATA/Projects/META/VR200-SanMiguel/BKC Table/San Miguel(VR200) FW control table - 3way.xlsx',
+            'fru_dvt': '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/DVT/Maxwell_Earth_FRU table_DVT_20260708.xlsx',
+            'fru_pvt': '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/PVT1-1/Maxwell_Earth_FRU table_PVT1-1_20260709-1639.xlsx',
+            'matrix':  '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/SanMiguel(Ingrasys) Build Matrix_DVT_Draft_260325.xlsx'
+        }
+    },
+    'clemente': {
+        'id': 'clemente',
+        'label': 'Clemente (GB300)',
+        'color_theme': 'purple',
+        'dir_roots': {
+            # TODO: Add Clemente local Mac paths when available
+            # e.g. '/Volumes/DATA/Projects/META/GB300-Clemente/BKC Table/'
+            'bkc':    [os.path.join(DATA_DIR, 'clemente', 'bkc')],
+            'fru':    [os.path.join(DATA_DIR, 'clemente', 'fru')],
+            'matrix': [os.path.join(DATA_DIR, 'clemente', 'matrix')],
+            'yaml':   [os.path.join(DATA_DIR, 'clemente', 'yaml')],
+        },
+        'default_paths': {
+            # TODO: Update with actual Clemente file paths
+            'bkc':     '',
+            'fru_dvt': '',
+            'fru_pvt': '',
+            'matrix':  ''
+        }
+    }
 }
 
-def resolve_file_path(tab_key, mac_fallback_path):
-    if os.path.exists(mac_fallback_path):
-        return mac_fallback_path
-    files = scan_files_in_dirs(tab_key)
-    if files:
-        return files[0]['path']
-    return mac_fallback_path
+# Create Clemente data subdirectories
+for _tab in ['bkc', 'fru', 'matrix', 'yaml']:
+    os.makedirs(os.path.join(DATA_DIR, 'clemente', _tab), exist_ok=True)
 
-DEFAULT_PATHS = {
-    'bkc': '/Volumes/DATA/Projects/META/VR200-SanMiguel/BKC Table/San Miguel(VR200) FW control table - 3way.xlsx',
-    'fru_dvt': '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/DVT/Maxwell_Earth_FRU table_DVT_20260708.xlsx',
-    'fru_pvt': '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/PVT1-1/Maxwell_Earth_FRU table_PVT1-1_20260709-1639.xlsx',
-    'matrix': '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/SanMiguel(Ingrasys) Build Matrix_DVT_Draft_260325.xlsx'
+# Per-project upload folders
+for _proj in PROJECT_CONFIGS:
+    os.makedirs(os.path.join(UPLOAD_FOLDER, _proj), exist_ok=True)
+
+# Per-project active paths (runtime overrides when user selects a file)
+ACTIVE_PATHS = {
+    proj: dict(cfg['default_paths'])
+    for proj, cfg in PROJECT_CONFIGS.items()
 }
 
+def get_project_config(project_id):
+    """Return config for the given project id, defaulting to sanmiguel."""
+    return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS['sanmiguel'])
 
-ACTIVE_PATHS = dict(DEFAULT_PATHS)
+def get_project_upload_folder(project_id):
+    folder = os.path.join(UPLOAD_FOLDER, project_id)
+    os.makedirs(folder, exist_ok=True)
+    return folder
 
-def scan_files_in_dirs(tab_key):
-    dirs = DIR_ROOTS.get(tab_key, [])
+def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
+    cfg = get_project_config(project_id)
+    proj_upload = get_project_upload_folder(project_id)
+    dirs = list(cfg['dir_roots'].get(tab_key, []))
+    # Always include the project-specific upload folder
+    if proj_upload not in dirs:
+        dirs.append(proj_upload)
     found = []
     seen = set()
     valid_exts = ('.yaml', '.yml') if tab_key == 'yaml' else ('.xlsx', '.csv', '.xls')
@@ -111,10 +154,10 @@ def scan_files_in_dirs(tab_key):
                     full_p = os.path.join(root, f)
                     if full_p in seen: continue
                     seen.add(full_p)
-                    
-                    is_upload = (d == UPLOAD_FOLDER)
+
+                    is_upload = (d == proj_upload)
                     display_name = f"[Uploaded] {f}" if is_upload else os.path.basename(f)
-                    
+
                     mtime = os.path.getmtime(full_p) if os.path.exists(full_p) else 0
                     found.append({
                         'filename': f,
@@ -127,6 +170,15 @@ def scan_files_in_dirs(tab_key):
     # Sort files by modification time descending (latest files first)
     found.sort(key=lambda x: x['mtime'], reverse=True)
     return found
+
+
+def resolve_file_path(tab_key, mac_fallback_path, project_id='sanmiguel'):
+    if os.path.exists(mac_fallback_path):
+        return mac_fallback_path
+    files = scan_files_in_dirs(tab_key, project_id)
+    if files:
+        return files[0]['path']
+    return mac_fallback_path
 
 
 def filter_valid_data_sheets(sheets):
@@ -222,37 +274,53 @@ def compare_versions(ver_base, ver_target):
 def index():
     return render_template('index.html')
 
+@app.route('/api/projects')
+def get_projects():
+    """Return list of supported projects and their metadata."""
+    projects = []
+    for proj_id, cfg in PROJECT_CONFIGS.items():
+        projects.append({
+            'id': proj_id,
+            'label': cfg['label'],
+            'color_theme': cfg['color_theme'],
+        })
+    return jsonify({'success': True, 'projects': projects})
+
 @app.route('/api/files')
 def get_files():
     tab_key = request.args.get('type', 'bkc')
-    files = scan_files_in_dirs(tab_key)
+    project_id = request.args.get('project', 'sanmiguel')
+    files = scan_files_in_dirs(tab_key, project_id)
     return jsonify({'success': True, 'type': tab_key, 'files': files})
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
-    
+
     file = request.files['file']
     tab_type = request.form.get('tab_type', 'bkc')
-    
+    project_id = request.form.get('project', 'sanmiguel')
+
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No selected file'}), 400
-    
+
     if file and file.filename.endswith(('.xlsx', '.xls', '.csv', '.yaml', '.yml')):
         filename = secure_filename(file.filename)
-        save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        proj_upload = get_project_upload_folder(project_id)
+        save_path = os.path.join(proj_upload, filename)
         file.save(save_path)
-        
-        # Set as active path for the given type
-        if tab_type in ACTIVE_PATHS:
-            ACTIVE_PATHS[tab_type] = save_path
-        
+
+        # Set as active path for the given project + type
+        if project_id in ACTIVE_PATHS and tab_type in ACTIVE_PATHS[project_id]:
+            ACTIVE_PATHS[project_id][tab_type] = save_path
+
         return jsonify({
             'success': True,
             'filename': filename,
             'saved_path': save_path,
-            'tab_type': tab_type
+            'tab_type': tab_type,
+            'project': project_id
         })
     else:
         return jsonify({'success': False, 'error': 'Unsupported file format. Please upload .xlsx, .csv, .yaml or .yml'}), 400
@@ -260,23 +328,28 @@ def upload_file():
 
 @app.route('/api/status')
 def get_status():
+    project_id = request.args.get('project', 'sanmiguel')
     status = {}
-    for key, path in ACTIVE_PATHS.items():
+    proj_paths = ACTIVE_PATHS.get(project_id, {})
+    for key, path in proj_paths.items():
         status[key] = {
             'path': path,
-            'exists': os.path.exists(path),
-            'filename': os.path.basename(path),
-            'is_excel': os.path.splitext(path)[1].lower() in ['.xlsx', '.xls']
+            'exists': os.path.exists(path) if path else False,
+            'filename': os.path.basename(path) if path else '',
+            'is_excel': os.path.splitext(path)[1].lower() in ['.xlsx', '.xls'] if path else False
         }
     return jsonify(status)
 
 @app.route('/api/bkc')
 def get_bkc():
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    default_bkc = proj_cfg['default_paths'].get('bkc', '')
+
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('bkc', default_bkc, project_id)
     requested_sheet = request.args.get('sheet', None)
 
-    
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
     if err:
         return jsonify({'success': False, 'error': err}), 400
@@ -363,7 +436,7 @@ def get_bkc():
         'sheets': sheets,
         'active_sheet': requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None),
         'active_file': path,
-        'available_files': scan_files_in_dirs('bkc'),
+        'available_files': scan_files_in_dirs('bkc', project_id),
         'categories_summary': cat_summary
     }
 
@@ -378,10 +451,13 @@ def get_bkc():
 
 @app.route('/api/bkc-compare')
 def get_bkc_compare():
-    req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    default_bkc = proj_cfg['default_paths'].get('bkc', '')
 
-    
+    req_path = request.args.get('file_path', None)
+    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('bkc', default_bkc, project_id)
+
     base_sheet = request.args.get('base_sheet', None)
     target_sheet = request.args.get('target_sheet', None)
 
@@ -523,7 +599,7 @@ def get_bkc_compare():
         'base_sheet': b_sheet,
         'target_sheet': t_sheet,
         'active_file': path,
-        'available_files': scan_files_in_dirs('bkc'),
+        'available_files': scan_files_in_dirs('bkc', project_id),
         'categories_summary': cat_summary
     }
 
@@ -593,8 +669,12 @@ def parse_fru_sheet_smart(rows):
 
 @app.route('/api/fru')
 def get_fru():
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    default_fru_dvt = proj_cfg['default_paths'].get('fru_dvt', '')
+
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
+    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('fru', default_fru_dvt, project_id)
     requested_sheet = request.args.get('sheet', 'FRU-A')
 
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
@@ -629,7 +709,7 @@ def get_fru():
         'sheets': sheets,
         'active_sheet': requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None),
         'active_file': path,
-        'available_files': scan_files_in_dirs('fru')
+        'available_files': scan_files_in_dirs('fru', project_id)
     }
 
     return jsonify({
@@ -640,11 +720,16 @@ def get_fru():
 
 @app.route('/api/fru-compare')
 def get_fru_compare():
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    default_fru_dvt = proj_cfg['default_paths'].get('fru_dvt', '')
+    default_fru_pvt = proj_cfg['default_paths'].get('fru_pvt', '')
+
     req_dvt = request.args.get('dvt_file', None)
     req_pvt = request.args.get('pvt_file', None)
     
-    path_dvt = req_dvt if (req_dvt and os.path.exists(req_dvt)) else resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
-    path_pvt = req_pvt if (req_pvt and os.path.exists(req_pvt)) else resolve_file_path('fru', DEFAULT_PATHS['fru_pvt'])
+    path_dvt = req_dvt if (req_dvt and os.path.exists(req_dvt)) else resolve_file_path('fru', default_fru_dvt, project_id)
+    path_pvt = req_pvt if (req_pvt and os.path.exists(req_pvt)) else resolve_file_path('fru', default_fru_pvt, project_id)
 
 
     requested_sheet = request.args.get('sheet', None)
@@ -732,7 +817,7 @@ def get_fru_compare():
         'sheets_target': sheets_pvt,
         'base_sheet': base_sheet if (base_sheet and base_sheet in sheets_dvt) else (sheets_dvt[0] if sheets_dvt else None),
         'target_sheet': target_sheet if (target_sheet and target_sheet in sheets_pvt) else (sheets_pvt[0] if sheets_pvt else None),
-        'available_files': scan_files_in_dirs('fru')
+        'available_files': scan_files_in_dirs('fru', project_id)
     }
 
 
@@ -891,8 +976,12 @@ def compare_two_matrix_sheets(base_rows, tgt_rows):
 
 @app.route('/api/build-matrix')
 def get_build_matrix():
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    default_matrix = proj_cfg['default_paths'].get('matrix', '')
+
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('matrix', default_matrix, project_id)
     requested_sheet = request.args.get('sheet', None)
 
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
@@ -933,7 +1022,7 @@ def get_build_matrix():
             'diff_items_count': total_diff,
             'sheets': sheets,
             'active_sheet': active_sh,
-            'available_files': scan_files_in_dirs('matrix')
+            'available_files': scan_files_in_dirs('matrix', project_id)
         },
         'items': items_list,
         'auto_compare': auto_compare
@@ -943,12 +1032,16 @@ def get_build_matrix():
 @app.route('/api/build-matrix-compare')
 def get_build_matrix_compare():
     """Compare two build-matrix sheets (can be different files or different sheets in same file)."""
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    default_matrix = proj_cfg['default_paths'].get('matrix', '')
+
     base_file  = request.args.get('base_file',  None)
     base_sheet = request.args.get('base_sheet', None)
     tgt_file   = request.args.get('target_file',  None)
     tgt_sheet  = request.args.get('target_sheet', None)
 
-    default_path = resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+    default_path = resolve_file_path('matrix', default_matrix, project_id)
     base_path = base_file if (base_file and os.path.exists(base_file)) else default_path
     tgt_path  = tgt_file  if (tgt_file  and os.path.exists(tgt_file))  else default_path
 
@@ -982,7 +1075,9 @@ def get_build_matrix_compare():
             'diff_items_count': res['diff_items_count'],
             'base_sheets':   base_sheets,
             'target_sheets': tgt_sheets,
-            'available_files': scan_files_in_dirs('matrix')
+            'available_files': scan_files_in_dirs('matrix', project_id),
+            'base_path': base_path,
+            'target_path': tgt_path
         },
         'items': res['items']
     })
@@ -1303,8 +1398,10 @@ def parse_single_yaml_file(path, default_station_label="Station"):
 
 
 
-def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=None):
-    bkc_p = resolve_file_path('bkc', bkc_file_path or DEFAULT_PATHS['bkc'])
+def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=None, project_id='sanmiguel'):
+    proj_cfg = get_project_config(project_id)
+    default_bkc = proj_cfg['default_paths'].get('bkc', '')
+    bkc_p = resolve_file_path('bkc', bkc_file_path or default_bkc, project_id)
     b_rows, b_sheets, err = read_file_safe(bkc_p, sheet_name=bkc_sheet_name)
     bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
@@ -1593,7 +1690,8 @@ def api_global_search():
         return False
 
     # 1. Search BKC (Active latest files only, max 2)
-    bkc_files = scan_files_in_dirs('bkc')[:2]
+    project_id = request.args.get('project', 'sanmiguel')
+    bkc_files = scan_files_in_dirs('bkc', project_id)[:2]
     for f in bkc_files:
         try:
             r_first, sheets, _ = read_file_safe_cached(f['path'])
@@ -1620,7 +1718,7 @@ def api_global_search():
             pass
 
     # 2. Search FRU (Active latest files only, max 3)
-    fru_files = scan_files_in_dirs('fru')[:3]
+    fru_files = scan_files_in_dirs('fru', project_id)[:3]
     for f in fru_files:
         try:
             r_first, sheets, _ = read_file_safe_cached(f['path'])
@@ -1648,7 +1746,7 @@ def api_global_search():
             pass
 
     # 3. Search Matrix (Active latest files only, max 3)
-    matrix_files = scan_files_in_dirs('matrix')[:3]
+    matrix_files = scan_files_in_dirs('matrix', project_id)[:3]
     for f in matrix_files:
         try:
             r_first, sheets, _ = read_file_safe_cached(f['path'])
@@ -1685,6 +1783,7 @@ def get_yaml_compare():
         yaml_files = data.get('yaml_files', [])
         bkc_file = data.get('bkc_file')
         bkc_sheet = data.get('bkc_sheet')
+        project_id = data.get('project', 'sanmiguel')
     else:
         y1 = request.args.get('yaml_1')
         y2 = request.args.get('yaml_2')
@@ -1692,10 +1791,14 @@ def get_yaml_compare():
         yaml_files = [f for f in [y1, y2, y3] if f]
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
+        project_id = request.args.get('project', 'sanmiguel')
 
-    available_yaml = scan_files_in_dirs('yaml')
-    available_bkc = scan_files_in_dirs('bkc')
-    bkc_p = resolve_file_path('bkc', bkc_file or DEFAULT_PATHS['bkc'])
+    proj_cfg = get_project_config(project_id)
+    default_bkc = proj_cfg['default_paths'].get('bkc', '')
+
+    available_yaml = scan_files_in_dirs('yaml', project_id)
+    available_bkc = scan_files_in_dirs('bkc', project_id)
+    bkc_p = resolve_file_path('bkc', bkc_file or default_bkc, project_id)
     b_rows, b_sheets, _ = read_file_safe(bkc_p, sheet_name=bkc_sheet)
     active_bkc_sheet = bkc_sheet if (bkc_sheet and bkc_sheet in b_sheets) else (b_sheets[0] if b_sheets else 'Default')
 
@@ -1735,7 +1838,7 @@ def get_yaml_compare():
                 resolved_files.append(f)
     yaml_files = resolved_files
 
-    res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet)
+    res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
     
     res['summary']['available_yaml_files'] = available_yaml
     res['summary']['available_bkc_files'] = available_bkc
@@ -1864,14 +1967,17 @@ def api_yaml_version_diff():
         req = request.get_json(silent=True) or {}
         base_path = req.get('base_yaml')
         target_path = req.get('target_yaml')
+        project_id = req.get('project', 'sanmiguel')
     else:
         base_path = request.args.get('base_yaml')
         target_path = request.args.get('target_yaml')
+        project_id = request.args.get('project', 'sanmiguel')
 
-    available_yaml = scan_files_in_dirs('yaml')
+    available_yaml = scan_files_in_dirs('yaml', project_id)
     
     if not base_path and len(available_yaml) > 0:
         base_path = available_yaml[0]['path']
+
     if not target_path and len(available_yaml) > 1:
         target_path = available_yaml[1]['path']
     elif not target_path and len(available_yaml) > 0:
@@ -1950,12 +2056,12 @@ def api_yaml_version_diff():
 
 
 @app.route('/api/history', methods=['GET'])
-
 def api_history():
     """List available historical files and snapshot metadata across all tabs."""
+    project_id = request.args.get('project', 'sanmiguel')
     history = {}
     for tab_key in ['bkc', 'fru', 'matrix', 'yaml']:
-        files = scan_files_in_dirs(tab_key)
+        files = scan_files_in_dirs(tab_key, project_id)
         history[tab_key] = files
     return jsonify({'success': True, 'history': history})
 
@@ -1965,12 +2071,15 @@ def api_history():
 def api_release_summary():
     """Generate structured Markdown and Text summary reports per tab or overall using current active selections."""
     tab = request.args.get('tab', 'all').lower()
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    proj_defaults = proj_cfg['default_paths']
     watchlist = load_watchlist()
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
     # Gather BKC stats
     bkc_file_req = request.args.get('bkc_file')
-    bkc_p = resolve_file_path('bkc', bkc_file_req or DEFAULT_PATHS['bkc'])
+    bkc_p = resolve_file_path('bkc', bkc_file_req or proj_defaults.get('bkc', ''), project_id)
     b_rows, b_sheets, _ = read_file_safe(bkc_p)
     bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
@@ -1980,8 +2089,8 @@ def api_release_summary():
     dvt_sheet_req = request.args.get('fru_base_sheet')
     pvt_sheet_req = request.args.get('fru_target_sheet')
 
-    dvt_p = resolve_file_path('fru', dvt_file_req or DEFAULT_PATHS['fru_dvt'])
-    pvt_p = resolve_file_path('fru', pvt_file_req or DEFAULT_PATHS['fru_pvt'])
+    dvt_p = resolve_file_path('fru', dvt_file_req or proj_defaults.get('fru_dvt', ''), project_id)
+    pvt_p = resolve_file_path('fru', pvt_file_req or proj_defaults.get('fru_pvt', ''), project_id)
     
     r1, s1, _ = read_file_safe(dvt_p, sheet_name=dvt_sheet_req)
     r2, s2, _ = read_file_safe(pvt_p, sheet_name=pvt_sheet_req)
@@ -1993,8 +2102,8 @@ def api_release_summary():
     mat_b_sheet_req = request.args.get('matrix_base_sheet')
     mat_t_sheet_req = request.args.get('matrix_target_sheet')
 
-    mat_b_p = resolve_file_path('matrix', mat_b_file_req or DEFAULT_PATHS['matrix'])
-    mat_t_p = resolve_file_path('matrix', mat_t_file_req or DEFAULT_PATHS['matrix'])
+    mat_b_p = resolve_file_path('matrix', mat_b_file_req or proj_defaults.get('matrix', ''), project_id)
+    mat_t_p = resolve_file_path('matrix', mat_t_file_req or proj_defaults.get('matrix', ''), project_id)
 
     r_b, s_b, _ = read_file_safe(mat_b_p, sheet_name=mat_b_sheet_req)
     r_t, s_t, _ = read_file_safe(mat_t_p, sheet_name=mat_t_sheet_req)
@@ -2059,16 +2168,13 @@ def api_release_summary():
         y_files = [f for f in [y1, y2, y3] if f]
         bkc_f = request.args.get('bkc_file')
         bkc_s = request.args.get('bkc_sheet')
-        y_res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_f, bkc_sheet_name=bkc_s)
-        summary = y_res['summary']
-
-        md.append(f"# 🧪 Test Suite (YAML) Compliance Summary")
-        md.append(f"**Generated Time:** `{now_str}` | **BKC Reference:** `{summary.get('bkc_file')}` (`{summary.get('bkc_sheet')}`)\n")
-        md.append(f"## 📋 Compliance Overview")
-        md.append(f"- **Total Extracted FW/HW Checks:** `{summary.get('total_yaml_checks')}` items")
-        md.append(f"- **Follow BKC (Compliant):** `{summary.get('matched_count')}` items")
-        md.append(f"- **BKC Mismatches (Discrepancies):** `{summary.get('mismatch_count')}` items")
-        md.append(f"- **Overall Compliance Rate:** `{summary.get('compliance_rate')}%` across `{summary.get('stations_count')}` stations\n")
+        y_res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_f, bkc_sheet_name=bkc_s, project_id=project_id)
+        
+        md.append(f"### ⚡ Test Suite (YAML) Compliance Report")
+        md.append(f"- **BKC Reference File**: `{y_res['summary']['bkc_file']}` (Sheet: `{y_res['summary']['bkc_sheet']}`)")
+        md.append(f"- **Overall Compliance Rate**: **{y_res['summary']['compliance_rate']}%** ({y_res['summary']['matched_count']}/{y_res['summary']['total_yaml_checks']} items compliant)")
+        md.append(f"- **Mismatches / Violations**: {y_res['summary']['mismatch_count']} items")
+        md.append(f"- **Missing in BKC Table**: {y_res['summary']['missing_bkc_count']} items\n")
         md.append(f"## 🔄 Test Suite Version Discrepancies Detail")
         mismatch_items = [it for it in y_res['items'] if it['status'] == 'MISMATCH']
         if mismatch_items:
@@ -2124,6 +2230,9 @@ def api_export_excel():
     """Export color-highlighted comparison Excel file."""
     tab_type = request.args.get('type', 'fru')
     diff_only = request.args.get('diff_only', 'false').lower() == 'true'
+    project_id = request.args.get('project', 'sanmiguel')
+    proj_cfg = get_project_config(project_id)
+    proj_defaults = proj_cfg['default_paths']
     
     from openpyxl.styles import PatternFill, Font, Alignment
     wb = openpyxl.Workbook()
@@ -2153,7 +2262,7 @@ def api_export_excel():
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
 
-        res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_file, bkc_sheet_name=bkc_sheet)
+        res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_file, bkc_sheet_name=bkc_sheet, project_id=project_id)
         
         row_idx = 2
         for item in res.get('items', []):
@@ -2197,7 +2306,7 @@ def api_export_excel():
             cell.font = font_header
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-        bkc_file = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+        bkc_file = resolve_file_path('bkc', proj_defaults.get('bkc', ''), project_id)
         bkc_rows, bkc_sheets, _ = read_file_safe(bkc_file)
         if bkc_rows:
             bkc_data = parse_bkc_sheet(bkc_rows)
@@ -2225,8 +2334,8 @@ def api_export_excel():
 
     elif tab_type == 'matrix':
         ws.title = "Build Matrix Comparison"
-        base_p = request.args.get('base_file') or resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
-        tgt_p  = request.args.get('target_file') or resolve_file_path('matrix', DEFAULT_PATHS['matrix'])
+        base_p = request.args.get('base_file') or resolve_file_path('matrix', proj_defaults.get('matrix', ''), project_id)
+        tgt_p  = request.args.get('target_file') or resolve_file_path('matrix', proj_defaults.get('matrix', ''), project_id)
         b_rows, b_sheets, _ = read_file_safe(base_p, sheet_name=request.args.get('base_sheet'))
         t_rows, t_sheets, _ = read_file_safe(tgt_p, sheet_name=request.args.get('target_sheet'))
         res = compare_two_matrix_sheets(b_rows, t_rows)
@@ -2255,8 +2364,8 @@ def api_export_excel():
 
     else: # Default FRU
         ws.title = "FRU Comparison"
-        dvt_p = request.args.get('dvt_file') or resolve_file_path('fru', DEFAULT_PATHS['fru_dvt'])
-        pvt_p = request.args.get('pvt_file') or resolve_file_path('fru', DEFAULT_PATHS['fru_pvt'])
+        dvt_p = request.args.get('dvt_file') or resolve_file_path('fru', proj_defaults.get('fru_dvt', ''), project_id)
+        pvt_p = request.args.get('pvt_file') or resolve_file_path('fru', proj_defaults.get('fru_pvt', ''), project_id)
         r1, _, _ = read_file_safe(dvt_p, sheet_name=request.args.get('base_sheet'))
         r2, _, _ = read_file_safe(pvt_p, sheet_name=request.args.get('target_sheet'))
         res = compare_two_fru_sheets(r1, r2)
@@ -2304,16 +2413,19 @@ def api_export_excel():
 def api_debug_search():
     """Diagnostic endpoint to inspect file scanning and matrix search matches."""
     q_raw = request.args.get('q', '15-106079')
+    project_id = request.args.get('project', 'sanmiguel')
     clean_q = re.sub(r'[^a-zA-Z0-9]', '', q_raw.lower())
 
     debug_info = {
         'query_raw': q_raw,
         'clean_query': clean_q,
+        'project': project_id,
         'scanned_files': [],
         'matches': []
     }
 
-    for f in scan_files_in_dirs('matrix'):
+    for f in scan_files_in_dirs('matrix', project_id):
+
         try:
             r_first, sheets, err = read_file_safe(f['path'])
             debug_info['scanned_files'].append({

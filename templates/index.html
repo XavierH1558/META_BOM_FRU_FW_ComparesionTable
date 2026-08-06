@@ -42,10 +42,39 @@
                     <i class="fa-solid fa-server"></i>
                 </div>
                 <div class="brand-text">
-                    <h1>META VR200 (SanMiguel) Comparison Hub</h1>
-                    <p class="subtitle">Excel (.xlsx) & CSV Release Engineering System</p>
+                    <h1 id="app-brand-title">META VR200 (SanMiguel) Comparison Hub</h1>
+                    <p class="subtitle">Excel (.xlsx) &amp; CSV Release Engineering System</p>
                 </div>
             </div>
+
+            <!-- Project Switcher -->
+            <div class="project-switcher" id="project-switcher-container">
+                <button class="project-switcher-btn" id="project-switcher-btn" aria-haspopup="true" aria-expanded="false">
+                    <span class="project-dot project-dot-cyan" id="project-switcher-dot"></span>
+                    <span class="project-switcher-label" id="project-switcher-label">SanMiguel (VR200)</span>
+                    <i class="fa-solid fa-chevron-down project-switcher-arrow" id="project-switcher-arrow"></i>
+                </button>
+                <div class="project-switcher-dropdown" id="project-switcher-dropdown">
+                    <div class="project-dropdown-header">切換專案 (Switch Project)</div>
+                    <button class="project-option active" data-project="sanmiguel" id="proj-opt-sanmiguel">
+                        <span class="project-dot project-dot-cyan"></span>
+                        <div class="project-option-info">
+                            <span class="project-option-name">SanMiguel</span>
+                            <span class="project-option-sub">VR200 · META</span>
+                        </div>
+                        <i class="fa-solid fa-circle-check project-option-check"></i>
+                    </button>
+                    <button class="project-option" data-project="clemente" id="proj-opt-clemente">
+                        <span class="project-dot project-dot-purple"></span>
+                        <div class="project-option-info">
+                            <span class="project-option-name">Clemente</span>
+                            <span class="project-option-sub">GB300 · META</span>
+                        </div>
+                        <i class="fa-solid fa-circle-check project-option-check"></i>
+                    </button>
+                </div>
+            </div>
+
             <div class="header-actions" style="display: flex; align-items: center; gap: 0.6rem;">
                 <div class="status-badge" id="system-status">
                     <span class="status-dot"></span>
@@ -74,8 +103,19 @@
         </div>
     </header>
 
+    <!-- Project Switch Transition Overlay -->
+    <div class="project-switch-overlay" id="project-switch-overlay">
+        <div class="project-switch-content">
+            <div class="project-switch-spinner"></div>
+            <div class="project-switch-project-dot" id="overlay-project-dot"></div>
+            <h2 class="project-switch-title" id="overlay-project-title">切換專案中...</h2>
+            <p class="project-switch-sub" id="overlay-project-sub">正在重新載入所有資料...</p>
+        </div>
+    </div>
+
     <!-- Main Workspace Container -->
     <main class="main-container">
+
 
         <!-- Navigation Tabs -->
         <nav class="tabs-nav">
