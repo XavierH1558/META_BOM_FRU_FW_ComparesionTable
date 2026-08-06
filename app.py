@@ -69,19 +69,19 @@ PROJECT_CONFIGS = {
         'dir_roots': {
             'bkc': [
                 '/Volumes/DATA/Projects/META/VR200-SanMiguel/BKC Table/',
-                os.path.join(DATA_DIR, 'bkc'),
+                os.path.join(DATA_DIR, 'sanmiguel', 'bkc'),
             ],
             'fru': [
                 '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/DVT/',
                 '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/PVT1-1/',
-                os.path.join(DATA_DIR, 'fru'),
+                os.path.join(DATA_DIR, 'sanmiguel', 'fru'),
             ],
             'matrix': [
                 '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/',
-                os.path.join(DATA_DIR, 'matrix'),
+                os.path.join(DATA_DIR, 'sanmiguel', 'matrix'),
             ],
             'yaml': [
-                os.path.join(DATA_DIR, 'yaml'),
+                os.path.join(DATA_DIR, 'sanmiguel', 'yaml'),
             ]
         },
         'default_paths': {
@@ -113,9 +113,10 @@ PROJECT_CONFIGS = {
     }
 }
 
-# Create Clemente data subdirectories
-for _tab in ['bkc', 'fru', 'matrix', 'yaml']:
-    os.makedirs(os.path.join(DATA_DIR, 'clemente', _tab), exist_ok=True)
+# Create project data subdirectories
+for _proj in PROJECT_CONFIGS:
+    for _tab in ['bkc', 'fru', 'matrix', 'yaml']:
+        os.makedirs(os.path.join(DATA_DIR, _proj, _tab), exist_ok=True)
 
 # Per-project upload folders
 for _proj in PROJECT_CONFIGS:
@@ -1102,24 +1103,30 @@ def api_sync_gdrive():
 
 # ==================== V2 FEATURE ENDPOINTS ====================
 
-SIGNOFF_FILE = os.path.join(DATA_DIR, 'signoffs.json')
 WATCHLIST_FILE = os.path.join(BASE_DIR, 'watchlist.json')
 
-def load_signoffs():
-    if os.path.exists(SIGNOFF_FILE):
+def get_project_signoff_file(project_id='sanmiguel'):
+    proj_dir = os.path.join(DATA_DIR, project_id)
+    os.makedirs(proj_dir, exist_ok=True)
+    return os.path.join(proj_dir, 'signoffs.json')
+
+def load_signoffs(project_id='sanmiguel'):
+    sf = get_project_signoff_file(project_id)
+    if os.path.exists(sf):
         try:
-            with open(SIGNOFF_FILE, 'r', encoding='utf-8') as f:
+            with open(sf, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return {}
     return {}
 
-def save_signoffs(data):
+def save_signoffs(data, project_id='sanmiguel'):
+    sf = get_project_signoff_file(project_id)
     try:
-        with open(SIGNOFF_FILE, 'w', encoding='utf-8') as f:
+        with open(sf, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"Failed to save signoffs: {e}")
+        print(f"Failed to save signoffs for {project_id}: {e}")
 
 def load_watchlist():
     if os.path.exists(WATCHLIST_FILE):
@@ -1151,7 +1158,8 @@ def api_watchlist():
 @app.route('/api/signoff', methods=['GET', 'POST'])
 def api_signoff():
     """Get or save engineer sign-off status and notes."""
-    signoffs = load_signoffs()
+    project_id = request.args.get('project') or (request.get_json(silent=True) or {}).get('project') or 'sanmiguel'
+    signoffs = load_signoffs(project_id)
     if request.method == 'POST':
         body = request.get_json() or {}
         key = body.get('key')
@@ -1167,7 +1175,7 @@ def api_signoff():
             'user': user,
             'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-        save_signoffs(signoffs)
+        save_signoffs(signoffs, project_id)
         return jsonify({'success': True, 'signoff': signoffs[key]})
     
     return jsonify({'success': True, 'signoffs': signoffs})
@@ -1578,25 +1586,30 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 'command': ''
             })
 
-    YAML_DISPOSITIONS_FILE = os.path.join(DATA_DIR, 'yaml_dispositions.json')
+    def get_project_dispositions_file(proj_id):
+        pdir = os.path.join(DATA_DIR, proj_id)
+        os.makedirs(pdir, exist_ok=True)
+        return os.path.join(pdir, 'yaml_dispositions.json')
 
-    def load_yaml_dispositions():
-        if os.path.exists(YAML_DISPOSITIONS_FILE):
+    def load_yaml_dispositions(proj_id='sanmiguel'):
+        df = get_project_dispositions_file(proj_id)
+        if os.path.exists(df):
             try:
-                with open(YAML_DISPOSITIONS_FILE, 'r', encoding='utf-8') as f:
+                with open(df, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception:
                 return {}
         return {}
 
-    def save_yaml_dispositions(data):
+    def save_yaml_dispositions(data, proj_id='sanmiguel'):
+        df = get_project_dispositions_file(proj_id)
         try:
-            with open(YAML_DISPOSITIONS_FILE, 'w', encoding='utf-8') as f:
+            with open(df, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[Error saving yaml dispositions]: {e}")
 
-    dispositions = load_yaml_dispositions()
+    dispositions = load_yaml_dispositions(project_id)
 
     # Attach disposition tracking to each comparison result
     for r in comparison_results:
@@ -1887,25 +1900,32 @@ def upload_yaml():
 @app.route('/api/yaml-dispositions', methods=['GET', 'POST'])
 def api_yaml_dispositions():
     """Get or save customer action dispositions & owner assignments."""
-    YAML_DISPOSITIONS_FILE = os.path.join(DATA_DIR, 'yaml_dispositions.json')
+    project_id = request.args.get('project') or (request.get_json(silent=True) or {}).get('project') or 'sanmiguel'
     
-    def load_dispositions():
-        if os.path.exists(YAML_DISPOSITIONS_FILE):
+    def get_dispositions_file(proj_id):
+        pdir = os.path.join(DATA_DIR, proj_id)
+        os.makedirs(pdir, exist_ok=True)
+        return os.path.join(pdir, 'yaml_dispositions.json')
+
+    def load_dispositions(proj_id):
+        df = get_dispositions_file(proj_id)
+        if os.path.exists(df):
             try:
-                with open(YAML_DISPOSITIONS_FILE, 'r', encoding='utf-8') as f:
+                with open(df, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception:
                 return {}
         return {}
 
-    def save_dispositions(data):
+    def save_dispositions(data, proj_id):
+        df = get_dispositions_file(proj_id)
         try:
-            with open(YAML_DISPOSITIONS_FILE, 'w', encoding='utf-8') as f:
+            with open(df, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[Error saving yaml dispositions]: {e}")
 
-    dispositions = load_dispositions()
+    dispositions = load_dispositions(project_id)
     if request.method == 'POST':
         req = request.get_json(silent=True) or {}
         key = req.get('key')
@@ -1916,7 +1936,7 @@ def api_yaml_dispositions():
                 'note': req.get('note', ''),
                 'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
             }
-            save_dispositions(dispositions)
+            save_dispositions(dispositions, project_id)
             return jsonify({'success': True, 'disposition': dispositions[key]})
         return jsonify({'success': False, 'error': 'Key is required'}), 400
         
