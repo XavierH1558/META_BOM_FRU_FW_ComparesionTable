@@ -3168,14 +3168,40 @@ function renderYamlTable(page) {
         return true;
     });
 
-    if (filtered.length === 0) {
-        const msg = (!y1 && !y2 && !y3) 
-            ? '💡 請在上方選單選擇 1 ~ 3 個 Test Suite (YAML) 測試腳本進行 BKC 合規比對' 
-            : '無符合條件的 Test Suite (YAML) 比對資料';
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted" style="font-size:1.05rem;">${msg}</td></tr>`;
+    if (!y1 && !y2 && !y3) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center py-5">
+                    <div class="empty-state-box p-4" style="border: 2px dashed rgba(56, 189, 248, 0.35); border-radius: 16px; background: rgba(15, 23, 42, 0.6); max-width: 580px; margin: 1.5rem auto;">
+                        <div class="empty-icon mb-3" style="font-size: 2.8rem; color: #38bdf8; filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.5));">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                        </div>
+                        <h4 style="color: #f8fafc; font-weight: 700; margin-bottom: 0.5rem; font-size: 1.15rem;">拖曳或選取 Test Suite (YAML) 測試腳本檔</h4>
+                        <p style="color: #94a3b8; font-size: 0.88rem; line-height: 1.5; margin-bottom: 1.2rem;">
+                            請將 Station 1、Station 2 或 Station 3 之 <code style="color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px;">.yaml</code> 測試腳本拖拽至畫面上，或點擊上方的 Station 選單進行 BKC 合規對照比對。
+                        </p>
+                        <div class="d-flex justify-content-center gap-3 flex-wrap">
+                            <span class="badge bg-blue-subtle text-cyan px-3 py-2" style="border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(56, 189, 248, 0.3);">
+                                <i class="fa-solid fa-bolt"></i> 支援多工站跨版本比對
+                            </span>
+                            <span class="badge bg-purple-subtle text-purple px-3 py-2" style="border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(168, 85, 247, 0.3);">
+                                <i class="fa-solid fa-table-cells"></i> BKC 標準合規自動對比
+                            </span>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
         renderYamlPagination(0, 0, PAGE_SIZE);
         return;
     }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted" style="font-size:1.05rem;">無符合篩選條件的 Test Suite (YAML) 比對資料</td></tr>`;
+        renderYamlPagination(0, 0, PAGE_SIZE);
+        return;
+    }
+
 
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     if (appState.yamlPage >= totalPages) appState.yamlPage = totalPages - 1;
