@@ -1590,10 +1590,34 @@ a.link-gdrive:hover {
     100% { transform: rotate(360deg); }
 }
 
+.fa-spin, .spin-icon {
+    animation: spinRing 1s linear infinite !important;
+    display: inline-block;
+}
+
+.table-loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    gap: 0.8rem;
+}
+
+.table-loading-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3.5px solid rgba(56, 189, 248, 0.2);
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: spinRing 0.8s linear infinite;
+}
+
 @keyframes pulseIcon {
     0% { transform: scale(0.9); opacity: 0.8; }
     100% { transform: scale(1.1); opacity: 1; }
 }
+
 
 @keyframes progressIndeterminate {
     0% { transform: translateX(-100%); width: 30%; }

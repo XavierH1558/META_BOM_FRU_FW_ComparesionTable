@@ -2686,19 +2686,23 @@ async function fetchAndPopulateTimelines() {
 // Test Suite (YAML) Comparison & Enhancements (1, 2, 3, 5)
 // -------------------------------------------------------------
 async function fetchYamlData() {
+    const y1Select = document.getElementById('yaml-file-select-1');
+    const y2Select = document.getElementById('yaml-file-select-2');
+    const y3Select = document.getElementById('yaml-file-select-3');
+    const bkcFileSelect = document.getElementById('yaml-bkc-file-select');
+    const bkcSheetSelect = document.getElementById('yaml-bkc-sheet-select');
+
+    const y1 = y1Select ? y1Select.value : '';
+    const y2 = y2Select ? y2Select.value : '';
+    const y3 = y3Select ? y3Select.value : '';
+    const bkcFile = bkcFileSelect ? bkcFileSelect.value : '';
+    const bkcSheet = bkcSheetSelect ? bkcSheetSelect.value : '';
+
+    if (y1 || y2 || y3) {
+        showLoading('⚡ 正在進行 Test Suite (YAML) 腳本合規比對分析...', 'Extracting test suite steps & calculating BKC compliance matrix');
+    }
+
     try {
-        const y1Select = document.getElementById('yaml-file-select-1');
-        const y2Select = document.getElementById('yaml-file-select-2');
-        const y3Select = document.getElementById('yaml-file-select-3');
-        const bkcFileSelect = document.getElementById('yaml-bkc-file-select');
-        const bkcSheetSelect = document.getElementById('yaml-bkc-sheet-select');
-
-        const y1 = y1Select ? y1Select.value : '';
-        const y2 = y2Select ? y2Select.value : '';
-        const y3 = y3Select ? y3Select.value : '';
-        const bkcFile = bkcFileSelect ? bkcFileSelect.value : '';
-        const bkcSheet = bkcSheetSelect ? bkcSheetSelect.value : '';
-
         let url = `/api/yaml-compare?`;
         const queryParts = [];
         if (y1) queryParts.push(`yaml_1=${encodeURIComponent(y1)}`);
@@ -2713,11 +2717,11 @@ async function fetchYamlData() {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8" class="text-center py-5">
-                        <div style="font-size: 2.2rem; color: #38bdf8; margin-bottom: 0.8rem;">
-                            <i class="fa-solid fa-arrows-rotate fa-spin"></i>
+                        <div class="table-loading-container">
+                            <div class="table-loading-spinner"></div>
+                            <h4 style="color: #38bdf8; font-weight: 600; margin-top: 0.5rem; font-size: 1.1rem;">⚡ 正在進行 Test Suite (YAML) 腳本與 BKC Table 合規比對分析...</h4>
+                            <p class="text-muted" style="font-size: 0.85rem;">請稍候，系統正提取腳本步驟、FW/HW 版本規範並對照簽核與討論紀錄</p>
                         </div>
-                        <h4 style="color: #38bdf8; font-weight: 600; margin-bottom: 0.4rem;">⚡ 正在進行 Test Suite (YAML) 腳本與 BKC Table 合規比對分析...</h4>
-                        <p class="text-muted" style="font-size: 0.88rem;">請稍候，系統正提取腳本步驟、FW/HW 版本規範並對照簽核與討論紀錄</p>
                     </td>
                 </tr>
             `;
@@ -2725,7 +2729,6 @@ async function fetchYamlData() {
 
         const res = await fetch(url);
         const data = await res.json();
-
 
         if (data.success) {
             appState.yamlCompare = data;
@@ -2776,10 +2779,13 @@ async function fetchYamlData() {
         }
     } catch (err) {
         console.error('Error fetching YAML compare data:', err);
+    } finally {
+        hideLoading();
     }
 }
 
 function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = null) {
+
     const select = document.getElementById(selectId);
     if (!select || !files) return;
     
