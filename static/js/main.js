@@ -546,6 +546,27 @@ function initEventListeners() {
         window.open(url, '_blank');
     });
 
+    // FAVA L10 Draft Export Button
+    const btnExportFava = document.getElementById('btn-export-fava-draft');
+    if (btnExportFava) {
+        btnExportFava.addEventListener('click', () => {
+            const y1 = document.getElementById('yaml-file-select-1')?.value || '';
+            const y2 = document.getElementById('yaml-file-select-2')?.value || '';
+            const y3 = document.getElementById('yaml-file-select-3')?.value || '';
+            const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
+            const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
+
+            let url = `/api/export-fava-draft?project=${encodeURIComponent(currentProject)}`;
+            if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
+            if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
+            if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+            if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
+            if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
+
+            window.open(url, '_blank');
+        });
+    }
+
     // YAML Controls Change Listeners
     const y1Sel = document.getElementById('yaml-file-select-1');
     const y2Sel = document.getElementById('yaml-file-select-2');

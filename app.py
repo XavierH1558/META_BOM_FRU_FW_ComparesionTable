@@ -2428,6 +2428,105 @@ def api_export_excel():
     )
 
 
+@app.route('/api/export-fava-draft', methods=['GET'])
+def api_export_fava_draft():
+    """Export YAML test suite comparison in 'FAVA L10 FW Control Table-draft' format."""
+    project_id = request.args.get('project', 'clemente')
+    bkc_file = request.args.get('bkc_file')
+    bkc_sheet = request.args.get('bkc_sheet')
+    y1 = request.args.get('yaml_1')
+    y2 = request.args.get('yaml_2')
+    y3 = request.args.get('yaml_3')
+    yaml_files = [f for f in [y1, y2, y3] if f]
+
+    proj_cfg = get_project_config(project_id)
+    default_bkc = proj_cfg['default_paths'].get('bkc', '')
+    bkc_p = resolve_file_path('bkc', bkc_file or default_bkc, project_id)
+
+    # 1. Run YAML vs BKC comparison
+    comp_res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
+    extracted_items = comp_res.get('items', [])
+
+    # Map extracted items by component/sub_component name (normalized)
+    yaml_extracted_map = {}
+    for item in extracted_items:
+        comp_name = item.get('sub_component') or item.get('component') or ''
+        norm_key = re.sub(r'[^a-zA-Z0-9]', '', comp_name.lower())
+        if norm_key:
+            yaml_extracted_map[norm_key] = item
+
+    # 2. Check for reference template file
+    template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
+    
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    
+    if os.path.exists(template_path):
+        wb = openpyxl.load_workbook(template_path)
+        sheet_name = 'FAVA L10 FW Control Table-draft'
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
+    else:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "FAVA L10 FW Control Table-draft"
+        ws.append(['Category', 'Item', 'Actual Version', 'Draft Version', 'Remark'])
+        fill_hdr = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        for c in range(1, 6):
+            cell = ws.cell(row=1, column=c)
+            cell.fill = fill_hdr
+            cell.font = font_hdr
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.views.sheetView[0].showGridLines = True
+    fill_diff = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+
+    # Update template rows with extracted Draft Versions from YAML
+    for r in range(2, ws.max_row + 1):
+        c_item = ws.cell(row=r, column=2).value
+        if c_item:
+            item_str = str(c_item).strip()
+            norm_k = re.sub(r'[^a-zA-Z0-9]', '', item_str.lower())
+            
+            # Find best match in extracted YAML items
+            matched_item = None
+            if norm_k in yaml_extracted_map:
+                matched_item = yaml_extracted_map[norm_k]
+            else:
+                for y_k, y_it in yaml_extracted_map.items():
+                    if len(y_k) >= 3 and (y_k in norm_k or norm_k in y_k):
+                        matched_item = y_it
+                        break
+
+            if matched_item:
+                extracted_ver = matched_item.get('yaml_version') or ''
+                ws.cell(row=r, column=4).value = str(extracted_ver)
+                
+                status = matched_item.get('status', 'MATCH')
+                if status == 'MISMATCH':
+                    ws.cell(row=r, column=5).value = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
+                    ws.cell(row=r, column=4).fill = fill_diff
+                    ws.cell(row=r, column=5).fill = fill_diff
+                elif status == 'MATCH':
+                    ws.cell(row=r, column=5).value = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
+
+    col_widths = {1: 22, 2: 30, 3: 25, 4: 35, 5: 35}
+    for col_idx, width in col_widths.items():
+        col_letter = openpyxl.utils.get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = width
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"FAVA_L10_FW_Control_Table_Draft_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(
+        output,
+        download_name=filename,
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
 @app.route('/api/debug-search')
 def api_debug_search():
     """Diagnostic endpoint to inspect file scanning and matrix search matches."""
