@@ -2740,22 +2740,35 @@ function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = 
     if (!select || !files) return;
     
     select.innerHTML = '';
+    let selectedSet = false;
+
     if (emptyOptionLabel) {
         const emptyOpt = document.createElement('option');
         emptyOpt.value = '';
         emptyOpt.textContent = emptyOptionLabel;
+        if (!activePath) {
+            emptyOpt.selected = true;
+            selectedSet = true;
+        }
         select.appendChild(emptyOpt);
     }
+
     files.forEach((f) => {
         const opt = document.createElement('option');
         opt.value = f.path;
         opt.textContent = f.display_name;
-        if (f.path === activePath || f.filename === activePath || f.display_name === activePath) {
+        if (activePath && (f.path === activePath || f.filename === activePath || f.display_name === activePath)) {
             opt.selected = true;
+            selectedSet = true;
         }
         select.appendChild(opt);
     });
+
+    if (!selectedSet && emptyOptionLabel && select.options.length > 0) {
+        select.options[0].selected = true;
+    }
 }
+
 
 function populateYamlStationFilter(items) {
     const select = document.getElementById('yaml-station-filter');
