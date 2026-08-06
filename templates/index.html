@@ -11,7 +11,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=8.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=9.0">
+
 
 
 
@@ -819,16 +820,37 @@
         </div>
     </div>
 
+    <!-- Debug Mode Floating Bar & Drawer -->
+    <div id="debug-toggle-btn" class="debug-toggle-btn" title="點擊開啟/關閉 Debug 診斷日誌儀表板">
+        <i class="fa-solid fa-bug"></i> Debug Mode <span class="badge bg-danger" id="debug-error-count" style="display:none; margin-left:4px; padding:2px 6px; border-radius:10px; font-size:0.75rem;">0</span>
+    </div>
+
+    <div id="debug-drawer" class="debug-drawer" style="display: none;">
+        <div class="debug-drawer-header">
+            <span><i class="fa-solid fa-terminal text-cyan"></i> 系統 Debug 診斷日誌紀錄器 (Realtime Log Console)</span>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm" id="btn-copy-debug-logs" style="background: #0284c7; color: #fff; border: none; font-weight: 600;"><i class="fa-solid fa-clipboard"></i> 📋 複製 Debug Log 貼給 AI</button>
+                <button class="btn btn-sm" id="btn-clear-debug-logs" style="background: #475569; color: #fff; border: none;"><i class="fa-solid fa-trash"></i> 清除紀錄</button>
+                <button class="btn-close-modal" id="btn-close-debug-drawer" style="background: transparent; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="debug-drawer-body" id="debug-drawer-body">
+            <div class="debug-log-line info">[System] Debug logger initialized. Drag files or change dropdowns to inspect events.</div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="app-footer">
 
         <p>META VR200 SanMiguel Hardware & Firmware Release Engineering System &copy; 2026</p>
     </footer>
 
+
     <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=8.0"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=9.0"></script>
 </body>
 </html>
+
 
 
 

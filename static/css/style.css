@@ -1821,13 +1821,80 @@ a.link-gdrive:hover {
     margin-top: 3px;
 }
 
-/* Heatmap Grid Cell Styles */
-.heatmap-cell {
-    padding: 0.5rem;
-    text-align: center;
-    border-radius: 6px;
-    font-size: 0.8rem;
+/* Debug Console Drawer & Floating Button */
+.debug-toggle-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.82rem;
     font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(2, 132, 199, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.debug-toggle-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(2, 132, 199, 0.6);
+}
+
+.debug-drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 280px;
+    z-index: 10000;
+    background: #0f172a;
+    border-top: 2px solid #38bdf8;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+}
+
+.debug-drawer-header {
+    background: #1e293b;
+    padding: 0.5rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+    color: #f8fafc;
+    font-weight: 600;
+}
+
+.debug-drawer-body {
+    flex: 1;
+    padding: 0.8rem;
+    overflow-y: auto;
+    color: #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.debug-log-line {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    line-height: 1.4;
+    word-break: break-all;
+}
+
+.debug-log-line.info { color: #38bdf8; }
+.debug-log-line.warn { color: #fbbf24; background: rgba(245, 158, 11, 0.1); }
+.debug-log-line.error { color: #f87171; background: rgba(239, 68, 68, 0.15); font-weight: 600; }
+.debug-log-line.success { color: #34d399; }
+
 }
 .heatmap-cell.match { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 .heatmap-cell.mismatch { background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }

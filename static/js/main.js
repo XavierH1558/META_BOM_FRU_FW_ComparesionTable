@@ -1,3 +1,44 @@
+// Debug Logger System
+const debugLogs = [];
+let errorCount = 0;
+
+function logDebug(level, message, details = null) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logObj = { timestamp, level, message, details };
+    debugLogs.push(logObj);
+
+    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](`[DEBUG ${timestamp}] ${message}`, details || '');
+
+    const bodyEl = document.getElementById('debug-drawer-body');
+    const badgeEl = document.getElementById('debug-error-count');
+
+    if (level === 'error') {
+        errorCount++;
+        if (badgeEl) {
+            badgeEl.textContent = errorCount;
+            badgeEl.style.display = 'inline-block';
+        }
+    }
+
+    if (bodyEl) {
+        const line = document.createElement('div');
+        line.className = `debug-log-line ${level}`;
+        const detailStr = details ? ` | ${typeof details === 'object' ? JSON.stringify(details) : details}` : '';
+        line.innerHTML = `<span style="color:#64748b;">[${timestamp}]</span> <strong>[${level.toUpperCase()}]</strong> ${message}${detailStr}`;
+        bodyEl.appendChild(line);
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
+}
+
+// Global JS Exception Monitors
+window.addEventListener('error', (e) => {
+    logDebug('error', `Uncaught JS Error: ${e.message} (${e.filename}:${e.lineno}:${e.colno})`, e.error?.stack);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+    logDebug('error', `Unhandled Promise Rejection: ${e.reason}`, e.reason?.stack);
+});
+
 // Global Application State
 const appState = {
     bkc: null,
@@ -30,6 +71,7 @@ const appState = {
         yaml_3: null
     }
 };
+
 
 
 // Global Loading Animation Controls
@@ -80,14 +122,55 @@ function showViewAnimated(target) {
 
 
 
+function initDebugDrawer() {
+    const debugToggleBtn = document.getElementById('debug-toggle-btn');
+    const debugDrawer = document.getElementById('debug-drawer');
+    const btnCloseDebug = document.getElementById('btn-close-debug-drawer');
+    const btnClearDebug = document.getElementById('btn-clear-debug-logs');
+    const btnCopyDebug = document.getElementById('btn-copy-debug-logs');
+
+    if (debugToggleBtn && debugDrawer) {
+        debugToggleBtn.addEventListener('click', () => {
+            debugDrawer.style.display = debugDrawer.style.display === 'none' ? 'flex' : 'none';
+        });
+    }
+    if (btnCloseDebug && debugDrawer) {
+        btnCloseDebug.addEventListener('click', () => {
+            debugDrawer.style.display = 'none';
+        });
+    }
+    if (btnClearDebug) {
+        btnClearDebug.addEventListener('click', () => {
+            debugLogs.length = 0;
+            errorCount = 0;
+            const badgeEl = document.getElementById('debug-error-count');
+            if (badgeEl) badgeEl.style.display = 'none';
+            const bodyEl = document.getElementById('debug-drawer-body');
+            if (bodyEl) bodyEl.innerHTML = '<div class="debug-log-line info">[System] Debug log cleared.</div>';
+        });
+    }
+    if (btnCopyDebug) {
+        btnCopyDebug.addEventListener('click', () => {
+            const formattedText = debugLogs.map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}${l.details ? ' | ' + (typeof l.details === 'object' ? JSON.stringify(l.details) : l.details) : ''}`).join('\n');
+            navigator.clipboard.writeText(formattedText || 'No logs recorded.').then(() => {
+                alert('✅ 已成功複製完整的 Debug Log 訊息！請直接貼在對話框傳送給 AI 進行診斷。');
+            }).catch(err => {
+                console.error('Clipboard copy failed:', err);
+            });
+        });
+    }
+}
+
 // Initialize Application on DOM Content Loaded
 document.addEventListener('DOMContentLoaded', () => {
+    initDebugDrawer();
     initTabs();
     initEventListeners();
     initUploadModal();
     initYamlDragAndDrop();
     fetchAllData();
 });
+
 
 
 // Tab Switching System
@@ -2750,6 +2833,8 @@ async function fetchYamlData() {
     const bkcFile = bkcFileSelect ? bkcFileSelect.value : '';
     const bkcSheet = bkcSheetSelect ? bkcSheetSelect.value : '';
 
+    logDebug('info', `[fetchYamlData] Triggered with params:`, { y1, y2, y3, bkcFile, bkcSheet });
+
     if (y1 || y2 || y3) {
         showLoading('⚡ 正在進行 Test Suite (YAML) 腳本合規比對分析...', 'Extracting test suite steps & calculating BKC compliance matrix');
     }
@@ -2781,6 +2866,9 @@ async function fetchYamlData() {
 
         const res = await fetch(url);
         const data = await res.json();
+
+        logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
+
 
         if (data.success) {
             appState.yamlCompare = data;
