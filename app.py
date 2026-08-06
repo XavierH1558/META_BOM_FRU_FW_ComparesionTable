@@ -104,11 +104,10 @@ PROJECT_CONFIGS = {
             'yaml':   [os.path.join(DATA_DIR, 'clemente', 'yaml')],
         },
         'default_paths': {
-            # TODO: Update with actual Clemente file paths
-            'bkc':     '',
-            'fru_dvt': '',
-            'fru_pvt': '',
-            'matrix':  ''
+            'bkc':     os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS_FW_Control_Table_3way.xlsx'),
+            'fru_dvt': os.path.join(DATA_DIR, 'clemente', 'fru', 'CI-Clemente_FRU_programming_MP_20260622.xlsx'),
+            'fru_pvt': os.path.join(DATA_DIR, 'clemente', 'fru', 'CI-Clemente_FRU_programming_MP_20260622.xlsx'),
+            'matrix':  os.path.join(DATA_DIR, 'clemente', 'matrix', 'PVT_Clemente(Ingrasys) Build Matrix_PVT2_20250912_Leo.xlsx')
         }
     }
 }
@@ -183,7 +182,7 @@ def resolve_file_path(tab_key, mac_fallback_path, project_id='sanmiguel'):
 
 
 def filter_valid_data_sheets(sheets):
-    ignored_keywords = {'readme', 'change log', 'changelog', 'history', 'revision history', 'single source vendor', 'instructions', 'notes'}
+    ignored_keywords = {'readme', 'change log', 'changelog', 'change_log', 'change list', 'fw list', 'history', 'revision history', 'single source vendor', 'instructions', 'notes'}
     valid = [s for s in sheets if not any(k in s.lower() for k in ignored_keywords)]
     return valid if valid else sheets
 
