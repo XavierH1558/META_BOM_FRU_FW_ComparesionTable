@@ -903,17 +903,25 @@ function initUploadModal() {
 function selectOptionByValueOrFilename(selectElement, targetValue) {
     if (!selectElement || !targetValue) return false;
     const cleanTarget = targetValue.trim().toLowerCase();
+    const targetBase = cleanTarget.split('/').pop();
+
     for (let i = 0; i < selectElement.options.length; i++) {
         const opt = selectElement.options[i];
         const val = (opt.value || '').trim().toLowerCase();
+        const valBase = val.split('/').pop();
         const txt = (opt.textContent || '').trim().toLowerCase();
-        if (val === cleanTarget || (val && cleanTarget && val.endsWith('/' + cleanTarget)) || txt === cleanTarget) {
+
+        if (val === cleanTarget || 
+            (valBase && targetBase && valBase === targetBase) || 
+            txt === cleanTarget || 
+            txt.includes(targetBase)) {
             selectElement.selectedIndex = i;
             return true;
         }
     }
     return false;
 }
+
 
 function initYamlDragAndDrop() {
     const tabYaml = document.getElementById('tab-yaml');
@@ -2829,7 +2837,6 @@ async function fetchYamlData() {
 }
 
 function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = null) {
-
     const select = document.getElementById(selectId);
     if (!select || !files) return;
     
@@ -2847,11 +2854,25 @@ function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = 
         select.appendChild(emptyOpt);
     }
 
+    const cleanActive = (activePath || '').trim().toLowerCase();
+    const activeBase = cleanActive.split('/').pop();
+
     files.forEach((f) => {
         const opt = document.createElement('option');
         opt.value = f.path;
         opt.textContent = f.display_name;
-        if (activePath && (f.path === activePath || f.filename === activePath || f.display_name === activePath)) {
+
+        const fPath = (f.path || '').trim().toLowerCase();
+        const fBase = fPath.split('/').pop();
+        const fName = (f.filename || '').trim().toLowerCase();
+        const fDisplay = (f.display_name || '').trim().toLowerCase();
+
+        if (cleanActive && (
+            fPath === cleanActive || 
+            fName === cleanActive || 
+            fDisplay === cleanActive || 
+            (fBase && activeBase && fBase === activeBase)
+        )) {
             opt.selected = true;
             selectedSet = true;
         }
@@ -2862,6 +2883,7 @@ function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = 
         select.options[0].selected = true;
     }
 }
+
 
 
 function populateYamlStationFilter(items) {
