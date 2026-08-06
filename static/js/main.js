@@ -2708,8 +2708,24 @@ async function fetchYamlData() {
         if (bkcSheet) queryParts.push(`bkc_sheet=${encodeURIComponent(bkcSheet)}`);
         url += queryParts.join('&');
 
+        const tbody = document.getElementById('yaml-tbody');
+        if (tbody && (y1 || y2 || y3)) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center py-5">
+                        <div style="font-size: 2.2rem; color: #38bdf8; margin-bottom: 0.8rem;">
+                            <i class="fa-solid fa-arrows-rotate fa-spin"></i>
+                        </div>
+                        <h4 style="color: #38bdf8; font-weight: 600; margin-bottom: 0.4rem;">⚡ 正在進行 Test Suite (YAML) 腳本與 BKC Table 合規比對分析...</h4>
+                        <p class="text-muted" style="font-size: 0.88rem;">請稍候，系統正提取腳本步驟、FW/HW 版本規範並對照簽核與討論紀錄</p>
+                    </td>
+                </tr>
+            `;
+        }
+
         const res = await fetch(url);
         const data = await res.json();
+
 
         if (data.success) {
             appState.yamlCompare = data;

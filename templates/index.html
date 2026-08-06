@@ -11,7 +11,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4.0">
+
 
 
 </head>
@@ -546,17 +547,24 @@
                         <select id="yaml-file-select-3" class="slot-select"></select>
                     </div>
 
-                    <div class="station-slot-card slot-bkc" id="slot-card-bkc">
+                    <div class="station-slot-card slot-bkc slot-bkc-wide" id="slot-card-bkc">
                         <div class="slot-header">
-                            <span class="slot-badge bg-amber"><i class="fa-solid fa-table"></i> BKC Reference Sheet</span>
-                            <span class="slot-drag-hint" style="color: #fbbf24;"><i class="fa-solid fa-book"></i> 標準對照表</span>
+                            <span class="slot-badge bg-amber"><i class="fa-solid fa-table"></i> BKC Reference Standard Table & Sheet (對照標準表)</span>
+                            <span class="slot-drag-hint" style="color: #fbbf24;"><i class="fa-solid fa-book"></i> 選擇對照的 BKC 控制表與工作頁籤</span>
                         </div>
-                        <div class="d-flex gap-2">
-                            <select id="yaml-bkc-file-select" class="slot-select" style="flex: 3;"></select>
-                            <select id="yaml-bkc-sheet-select" class="slot-select" style="flex: 2;"></select>
+                        <div class="d-flex gap-3 flex-wrap">
+                            <div style="flex: 3; min-width: 280px;">
+                                <label style="font-size: 0.78rem; color: #fbbf24; font-weight: 600; margin-bottom: 2px; display: block;"><i class="fa-solid fa-file-excel"></i> BKC 檔案:</label>
+                                <select id="yaml-bkc-file-select" class="slot-select"></select>
+                            </div>
+                            <div style="flex: 2; min-width: 200px;">
+                                <label style="font-size: 0.78rem; color: #fbbf24; font-weight: 600; margin-bottom: 2px; display: block;"><i class="fa-solid fa-table-cells"></i> BKC Sheet 工作頁籤:</label>
+                                <select id="yaml-bkc-sheet-select" class="slot-select"></select>
+                            </div>
                         </div>
                     </div>
                 </div>
+
 
                 <!-- Controls for View 1: BKC Comparison -->
                 <div class="filter-bar flex-wrap" id="yaml-bkc-controls" style="gap: 0.8rem;">
@@ -814,8 +822,9 @@
     </footer>
 
     <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=3.5"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=4.0"></script>
 </body>
 </html>
+
 
 

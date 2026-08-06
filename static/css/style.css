@@ -1120,22 +1120,21 @@ a.link-gdrive:hover {
 /* Station Slots Drop Zone Panel for YAML Tab */
 .station-slots-container {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.1rem;
     margin-bottom: 1.25rem;
 }
 
-@media (max-width: 1200px) {
-    .station-slots-container {
-        grid-template-columns: repeat(2, 1fr);
-    }
+.station-slot-card.slot-bkc-wide {
+    grid-column: 1 / -1;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 992px) {
     .station-slots-container {
         grid-template-columns: 1fr;
     }
 }
+
 
 .station-slot-card {
     background: rgba(30, 41, 59, 0.7);
