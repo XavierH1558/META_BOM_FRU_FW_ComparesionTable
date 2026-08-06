@@ -2090,6 +2090,61 @@ a.link-gdrive:hover {
    PROJECT SWITCHER
    ===================================================================== */
 
+/* Direct Segmented Project Switcher Pills */
+.project-switcher-pills {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 30px;
+    padding: 3px;
+    margin-left: 0.8rem;
+    backdrop-filter: blur(8px);
+}
+
+.project-pill-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 20px;
+    padding: 0.4rem 1rem;
+    color: #94a3b8;
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.22s ease;
+    outline: none;
+    white-space: nowrap;
+}
+
+.project-pill-btn:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.project-pill-btn.active[data-project="sanmiguel"] {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(2, 132, 199, 0.45));
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
+}
+
+.project-pill-btn.active[data-project="clemente"] {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(126, 34, 206, 0.45));
+    color: #c084fc;
+    border-color: rgba(168, 85, 247, 0.6);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.3);
+}
+
+.project-pill-sub {
+    font-size: 0.73rem;
+    opacity: 0.8;
+    margin-left: 2px;
+}
+
 .project-switcher {
     position: relative;
     margin-left: 1rem;

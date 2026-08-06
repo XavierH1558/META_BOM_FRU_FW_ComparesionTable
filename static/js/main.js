@@ -292,6 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     initUploadModal();
     initYamlManualUploads();
+    initYamlDragAndDrop();
     initProjectSwitcher();
     fetchAllData();
 });
@@ -301,36 +302,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 
 function initProjectSwitcher() {
-    const btn      = document.getElementById('project-switcher-btn');
-    const dropdown = document.getElementById('project-switcher-dropdown');
-    if (!btn || !dropdown) return;
-
-    // Toggle dropdown
-    btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = dropdown.classList.contains('visible');
-        dropdown.classList.toggle('visible', !isOpen);
-        btn.classList.toggle('open', !isOpen);
-        btn.setAttribute('aria-expanded', String(!isOpen));
-    });
-
-    // Close on outside click
-    document.addEventListener('click', () => {
-        dropdown.classList.remove('visible');
-        btn.classList.remove('open');
-        btn.setAttribute('aria-expanded', 'false');
-    });
-
-    // Project option click
-    dropdown.querySelectorAll('.project-option').forEach(opt => {
+    document.querySelectorAll('.project-pill-btn, .project-option').forEach(opt => {
         opt.addEventListener('click', (e) => {
             e.stopPropagation();
             const projectId = opt.getAttribute('data-project');
             if (projectId && projectId !== currentProject) {
                 switchProject(projectId);
             }
-            dropdown.classList.remove('visible');
-            btn.classList.remove('open');
         });
     });
 }
@@ -386,16 +364,8 @@ async function switchProject(projectId) {
     const brandTitle = document.getElementById('app-brand-title');
     if (brandTitle) brandTitle.textContent = meta.brandTitle;
 
-    // Update switcher button UI
-    const switcherLabel = document.getElementById('project-switcher-label');
-    const switcherDot   = document.getElementById('project-switcher-dot');
-    if (switcherLabel) switcherLabel.textContent = meta.label;
-    if (switcherDot) {
-        switcherDot.className = `project-dot ${meta.dotClass}`;
-    }
-
-    // Update dropdown active state
-    document.querySelectorAll('.project-option').forEach(opt => {
+    // Update segmented pill active states
+    document.querySelectorAll('.project-pill-btn, .project-option').forEach(opt => {
         opt.classList.toggle('active', opt.getAttribute('data-project') === projectId);
     });
 
@@ -415,6 +385,31 @@ async function switchProject(projectId) {
 }
 
 
+
+function addAndSelectOption(selectElement, filePath) {
+    if (!selectElement || !filePath) return false;
+    const cleanTarget = filePath.trim().toLowerCase();
+    const targetBase = cleanTarget.split('/').pop().split('\\').pop();
+
+    for (let i = 0; i < selectElement.options.length; i++) {
+        const opt = selectElement.options[i];
+        const val = (opt.value || '').trim().toLowerCase();
+        const valBase = val.split('/').pop().split('\\').pop();
+        const txt = (opt.textContent || '').trim().toLowerCase();
+
+        if (val === cleanTarget || (valBase && targetBase && valBase === targetBase) || txt === cleanTarget || txt.includes(targetBase)) {
+            selectElement.selectedIndex = i;
+            return true;
+        }
+    }
+
+    const newOpt = document.createElement('option');
+    newOpt.value = filePath;
+    newOpt.textContent = `[Uploaded] ${targetBase}`;
+    newOpt.selected = true;
+    selectElement.appendChild(newOpt);
+    return true;
+}
 
 function initYamlManualUploads() {
     [1, 2, 3].forEach(slotNum => {
@@ -448,17 +443,15 @@ function initYamlManualUploads() {
 
                     if (data.success) {
                         const uploadedFilename = data.filename || data.path;
-                        
-                        // Re-fetch YAML file options list
-                        await fetchYamlData();
 
-                        // Automatically pick the newly uploaded file in dropdown
                         if (select && uploadedFilename) {
-                            selectOptionByValueOrFilename(select, uploadedFilename);
+                            addAndSelectOption(select, uploadedFilename);
                         }
 
-                        // Trigger YAML comparison calculation & display
-                        await fetchYamlData();
+                        showSuccessToast(
+                            `✅ 已成功載入 Station ${slotNum} 腳本 (${file.name})`,
+                            '檔案已設定完畢！確定所需工站腳本皆已選擇後，請點擊「⚡ 開始 / 執行 BKC 合規比對」進行分析。'
+                        );
                     } else {
                         alert(`上傳失敗: ${data.error || '未知錯誤'}`);
                     }
@@ -466,7 +459,7 @@ function initYamlManualUploads() {
                     console.error(`Upload error for Station ${slotNum}:`, err);
                     alert(`上傳發生錯誤: ${err.message}`);
                 } finally {
-                    await hideLoading(600);
+                    await hideLoading(400);
                 }
             });
         }
@@ -567,23 +560,23 @@ function initEventListeners() {
         });
     }
 
-    // YAML Controls Change Listeners
-    const y1Sel = document.getElementById('yaml-file-select-1');
-    const y2Sel = document.getElementById('yaml-file-select-2');
-    const y3Sel = document.getElementById('yaml-file-select-3');
-    const yBkcFSel = document.getElementById('yaml-bkc-file-select');
-    const yBkcSSel = document.getElementById('yaml-bkc-sheet-select');
+    // YAML Controls & Run Comparison Button Listeners
     const yStationF = document.getElementById('yaml-station-filter');
     const yStatusF = document.getElementById('yaml-status-filter');
     const ySearchI = document.getElementById('yaml-search-input');
+    const yMergeDup = document.getElementById('yaml-merge-duplicates');
+    const btnRunYamlCompare = document.getElementById('btn-run-yaml-compare');
 
-    [y1Sel, y2Sel, y3Sel, yBkcFSel, yBkcSSel].forEach(el => {
-        if (el) el.addEventListener('change', () => fetchYamlData());
-    });
+    if (btnRunYamlCompare) {
+        btnRunYamlCompare.addEventListener('click', () => {
+            fetchYamlData();
+        });
+    }
 
     if (yStationF) yStationF.addEventListener('change', () => renderYamlTable());
     if (yStatusF) yStatusF.addEventListener('change', () => renderYamlTable());
     if (ySearchI) ySearchI.addEventListener('input', () => renderYamlTable());
+    if (yMergeDup) yMergeDup.addEventListener('change', () => renderYamlTable());
 
 function getSummaryApiUrl(targetTab) {
     let url = `/api/release-summary?tab=${targetTab}&project=${encodeURIComponent(currentProject)}`;
@@ -1347,11 +1340,11 @@ function initYamlDragAndDrop() {
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         tabYaml.addEventListener(eventName, (e) => {
             e.preventDefault();
-            e.stopPropagation();
         });
     });
 
     const slots = [1, 2, 3].map(id => document.getElementById(`slot-card-${id}`)).filter(Boolean);
+
     slots.forEach((slot) => {
         ['dragenter', 'dragover'].forEach(evt => {
             slot.addEventListener(evt, (e) => {
@@ -1360,12 +1353,61 @@ function initYamlDragAndDrop() {
                 slot.classList.add('dragover');
             });
         });
-        ['dragleave', 'drop'].forEach(evt => {
+
+        ['dragleave'].forEach(evt => {
             slot.addEventListener(evt, (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 slot.classList.remove('dragover');
             });
+        });
+
+        slot.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            slot.classList.remove('dragover');
+
+            const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
+            if (files.length === 0) return;
+
+            const slotNumStr = slot.dataset.slot || slot.id.replace('slot-card-', '');
+            const slotNum = parseInt(slotNumStr, 10) || 1;
+
+            showLoading(`正在上傳 Station ${slotNum} 的 YAML 測試腳本檔...`, 'Uploading dragged YAML test suite files');
+
+            try {
+                const uploadedPaths = [];
+                for (const file of files) {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('tab_type', 'yaml');
+                    formData.append('project', currentProject);
+                    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if (data.success) {
+                        uploadedPaths.push(data.filename || data.path);
+                    }
+                }
+
+                uploadedPaths.forEach((path, idx) => {
+                    const targetSlotNum = slotNum + idx;
+                    if (targetSlotNum <= 3) {
+                        const select = document.getElementById(`yaml-file-select-${targetSlotNum}`);
+                        if (select) {
+                            addAndSelectOption(select, path);
+                        }
+                    }
+                });
+
+                showSuccessToast(
+                    `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
+                    '檔案已設定完畢！確定所需工站腳本皆已選擇後，請點擊「⚡ 開始 / 執行 BKC 合規比對」進行分析。'
+                );
+            } catch (err) {
+                console.error(`YAML slot ${slotNum} drag drop upload error:`, err);
+            } finally {
+                hideLoading(400);
+            }
         });
     });
 
@@ -1389,30 +1431,22 @@ function initYamlDragAndDrop() {
                 }
             }
 
-            await fetchYamlData();
-
             const s1 = document.getElementById('yaml-file-select-1');
             const s2 = document.getElementById('yaml-file-select-2');
             const s3 = document.getElementById('yaml-file-select-3');
 
-            const targetSlotCard = e.target.closest('.station-slot-card');
-            if (targetSlotCard && targetSlotCard.dataset.slot) {
-                const slotNum = targetSlotCard.dataset.slot;
-                const targetSelect = document.getElementById(`yaml-file-select-${slotNum}`);
-                if (targetSelect && uploadedPaths[0]) {
-                    selectOptionByValueOrFilename(targetSelect, uploadedPaths[0]);
-                }
-            } else {
-                if (uploadedPaths[0] && s1) selectOptionByValueOrFilename(s1, uploadedPaths[0]);
-                if (uploadedPaths[1] && s2) selectOptionByValueOrFilename(s2, uploadedPaths[1]);
-                if (uploadedPaths[2] && s3) selectOptionByValueOrFilename(s3, uploadedPaths[2]);
-            }
+            if (uploadedPaths[0] && s1) addAndSelectOption(s1, uploadedPaths[0]);
+            if (uploadedPaths[1] && s2) addAndSelectOption(s2, uploadedPaths[1]);
+            if (uploadedPaths[2] && s3) addAndSelectOption(s3, uploadedPaths[2]);
 
-            await fetchYamlData();
+            showSuccessToast(
+                `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
+                '檔案已設定完畢！確定所需工站腳本皆已選擇後，請點擊「⚡ 開始 / 執行 BKC 合規比對」進行分析。'
+            );
         } catch (err) {
             console.error('YAML drag drop upload error:', err);
         } finally {
-            hideLoading();
+            hideLoading(400);
         }
     });
 }
@@ -3409,7 +3443,7 @@ function renderYamlTable(page) {
                         </div>
                         <h4 style="color: #f8fafc; font-weight: 700; margin-bottom: 0.5rem; font-size: 1.15rem;">拖曳或選取 Test Suite (YAML) 測試腳本檔</h4>
                         <p style="color: #94a3b8; font-size: 0.88rem; line-height: 1.5; margin-bottom: 1.2rem;">
-                            請將 Station 1、Station 2 或 Station 3 之 <code style="color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px;">.yaml</code> 測試腳本拖拽至畫面上，或點擊上方的 Station 選單進行 BKC 合規對照比對。
+                            請將 Station 1、Station 2 或 Station 3 之 <code style="color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px;">.yaml</code> 測試腳本拖拽至畫面上或使用選單選擇，確認無誤後點擊「⚡ 開始 / 執行 BKC 合規比對」進行分析。
                         </p>
                         <div class="d-flex justify-content-center gap-3 flex-wrap">
                             <span class="badge bg-blue-subtle text-cyan px-3 py-2" style="border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(56, 189, 248, 0.3);">
@@ -3427,18 +3461,130 @@ function renderYamlTable(page) {
         return;
     }
 
-    if (filtered.length === 0) {
+    const mergeDuplicates = document.getElementById('yaml-merge-duplicates')?.checked ?? true;
+    let displayItems = filtered;
+
+    if (mergeDuplicates && filtered.length > 0) {
+        const groups = new Map();
+
+        filtered.forEach(it => {
+            const key = (it.sub_component || it.component || it.step_location || 'Unknown').trim().toLowerCase();
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    component: it.sub_component || it.component,
+                    bkc_category: it.bkc_category,
+                    bkc_group: it.bkc_group,
+                    bkc_version: it.bkc_version,
+                    stations: [],
+                    station_versions: {},
+                    step_locations: new Set(),
+                    commands: new Set(),
+                    notes: [],
+                    raw_items: []
+                });
+            }
+
+            const grp = groups.get(key);
+            grp.raw_items.push(it);
+            if (it.station && it.station !== 'None') {
+                if (!grp.stations.includes(it.station)) {
+                    grp.stations.push(it.station);
+                }
+                grp.station_versions[it.station] = it.yaml_version || '-';
+            }
+            if (it.step_location && it.step_location !== 'N/A (未涵蓋)') {
+                grp.step_locations.add(it.step_location);
+            }
+            if (it.command) grp.commands.add(it.command);
+            if (it.discussion_note) grp.notes.push(it.discussion_note);
+        });
+
+        displayItems = Array.from(groups.values()).map(grp => {
+            const stationsCount = grp.stations.length;
+            const uniqueVersions = new Set(Object.values(grp.station_versions).filter(v => v && v !== '-'));
+            const hasVersionDiffAcrossStations = (stationsCount > 1 && uniqueVersions.size > 1);
+
+            let aggStatus = 'MATCH';
+            let aggStatusLabel = `🟢 吻合 (${stationsCount} 站一致)`;
+
+            const hasMismatch = grp.raw_items.some(x => x.status === 'MISMATCH');
+            const hasMissingBkc = grp.raw_items.some(x => x.status === 'MISSING_IN_BKC');
+
+            if (hasVersionDiffAcrossStations) {
+                aggStatus = 'MISMATCH';
+                aggStatusLabel = '🔴 跨工站版本歧異 (Diff Across Stations)';
+            } else if (hasMismatch) {
+                aggStatus = 'MISMATCH';
+                aggStatusLabel = '🔴 不符合 BKC';
+            } else if (hasMissingBkc) {
+                aggStatus = 'MISSING_IN_BKC';
+                aggStatusLabel = '🟡 BKC 未定義';
+            }
+
+            const stationBadges = grp.stations.map(st => {
+                let badgeStyle = 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);';
+                if (st.includes('Station 2') || st.includes('FRO')) {
+                    badgeStyle = 'background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4);';
+                } else if (st.includes('Station 3') || st.includes('FFT')) {
+                    badgeStyle = 'background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);';
+                }
+                return `<span class="badge py-1 px-2 me-1 mb-1" style="${badgeStyle} border-radius: 6px; font-size: 0.75rem;"><i class="fa-solid fa-vial"></i> ${escapeHtml(st)}</span>`;
+            }).join(' ');
+
+            let yamlVersionHtml = '';
+            if (uniqueVersions.size <= 1) {
+                const singleVer = Array.from(uniqueVersions)[0] || Object.values(grp.station_versions)[0] || '-';
+                yamlVersionHtml = `<span class="font-mono text-cyan">${escapeHtml(singleVer)}</span>`;
+            } else {
+                yamlVersionHtml = grp.stations.map(st => `
+                    <div style="font-size: 0.75rem;" class="font-mono">
+                        <span style="color: #94a3b8;">${escapeHtml(st.split(' ')[0] || st)}:</span> 
+                        <span style="color: #fbbf24; font-weight:600;">${escapeHtml(grp.station_versions[st])}</span>
+                    </div>
+                `).join('');
+            }
+
+            const stepsArray = Array.from(grp.step_locations);
+            const stepList = stepsArray.slice(0, 2).map(s => 
+                `<span class="step-location-pill" style="margin-bottom: 2px; display: inline-block;" title="${escapeHtml(Array.from(grp.commands)[0] || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(s)}</span>`
+            ).join(' ');
+
+            const extraStepsCount = stepsArray.length > 2 ? `<span class="text-muted" style="font-size:0.75rem;"> (+${stepsArray.length - 2} 步驟)</span>` : '';
+
+            const firstItem = grp.raw_items[0];
+
+            return {
+                is_grouped: true,
+                station_display: stationBadges || '<span class="text-muted">-</span>',
+                step_display: (stepList + extraStepsCount) || '<span class="text-muted">-</span>',
+                component: grp.component,
+                bkc_category: grp.bkc_category,
+                bkc_group: grp.bkc_group,
+                yaml_version_display: yamlVersionHtml,
+                bkc_version: grp.bkc_version,
+                status: aggStatus,
+                status_label: aggStatusLabel,
+                item_key: firstItem.item_key,
+                disposition_status: firstItem.disposition_status,
+                disposition_owner: firstItem.disposition_owner,
+                discussion_note: grp.notes[0] || firstItem.discussion_note || '',
+                command: Array.from(grp.commands)[0] || '',
+                raw_item: firstItem
+            };
+        });
+    }
+
+    if (displayItems.length === 0) {
         tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted" style="font-size:1.05rem;">無符合篩選條件的 Test Suite (YAML) 比對資料</td></tr>`;
         renderYamlPagination(0, 0, PAGE_SIZE);
         return;
     }
 
-
-    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    const totalPages = Math.ceil(displayItems.length / PAGE_SIZE);
     if (appState.yamlPage >= totalPages) appState.yamlPage = totalPages - 1;
     if (appState.yamlPage < 0) appState.yamlPage = 0;
     const pageStart = appState.yamlPage * PAGE_SIZE;
-    const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+    const pageItems = displayItems.slice(pageStart, pageStart + PAGE_SIZE);
 
     tbody.innerHTML = '';
     const fragment = document.createDocumentFragment();
@@ -3452,13 +3598,21 @@ function renderYamlTable(page) {
         else if (it.status === 'MISSING_IN_BKC') badgeClass = 'yaml-missing-bkc';
         else if (it.status === 'UNCHECKED_IN_YAML') badgeClass = 'yaml-unchecked';
 
-        const stationDisplay = (it.station && it.station !== 'None')
-            ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>`
-            : `<span class="text-muted" style="font-size:0.8rem;">-</span>`;
+        const stationDisplay = it.is_grouped
+            ? it.station_display
+            : ((it.station && it.station !== 'None')
+                ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>`
+                : `<span class="text-muted" style="font-size:0.8rem;">-</span>`);
 
-        const stepDisplay = (it.step_location && it.step_location !== 'N/A (未涵蓋)')
-            ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(it.step_location)}</span>`
-            : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(it.step_location)}</span>`;
+        const stepDisplay = it.is_grouped
+            ? it.step_display
+            : ((it.step_location && it.step_location !== 'N/A (未涵蓋)')
+                ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(it.step_location)}</span>`
+                : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(it.step_location)}</span>`);
+
+        const yamlVersionDisplay = it.is_grouped
+            ? it.yaml_version_display
+            : `<span class="font-mono text-cyan">${escapeHtml(it.yaml_version || '-')}</span>`;
 
         const dispStatus = it.disposition_status || 'Pending';
         const dispOwner = it.disposition_owner || '';
@@ -3473,7 +3627,7 @@ function renderYamlTable(page) {
             ? `<br><button class="btn-patch-modal"><i class="fa-solid fa-wand-magic-sparkles"></i> 修復 Patch</button>`
             : '';
 
-        tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-weight:600;color:var(--text-main);">${escapeHtml(it.sub_component||it.component)}</div><div style="font-size:0.76rem;color:var(--text-muted);">${escapeHtml(it.bkc_group!=='N/A'?`${it.bkc_category} > ${it.bkc_group}`:'YAML Test Check')}</div></td><td class="font-mono text-cyan">${escapeHtml(it.yaml_version||'-')}</td><td class="font-mono" style="color:#fbbf24;font-weight:600;">${escapeHtml(it.bkc_version||'-')}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${escapeHtml(it.discussion_note)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${escapeHtml(it.command)}</code></div>`:''}${patchBtn}</td>`;
+        tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-weight:600;color:var(--text-main);">${escapeHtml(it.component)}</div><div style="font-size:0.76rem;color:var(--text-muted);">${escapeHtml(it.bkc_group!=='N/A'?`${it.bkc_category} > ${it.bkc_group}`:'YAML Test Check')}</div></td><td>${yamlVersionDisplay}</td><td class="font-mono" style="color:#fbbf24;font-weight:600;">${escapeHtml(it.bkc_version||'-')}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${escapeHtml(it.discussion_note)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${escapeHtml(it.command)}</code></div>`:''}${patchBtn}</td>`;
 
         const selectElem = tr.querySelector('.yaml-disp-select');
         const ownerElem = tr.querySelector('.yaml-owner-input');
@@ -3497,7 +3651,7 @@ function renderYamlTable(page) {
         const btnPatch = tr.querySelector('.btn-patch-modal');
         if (btnPatch) {
             btnPatch.addEventListener('click', () => {
-                openYamlPatchModal(it);
+                openYamlPatchModal(it.raw_item || it);
             });
         }
 
@@ -3505,7 +3659,7 @@ function renderYamlTable(page) {
     });
 
     tbody.appendChild(fragment);
-    renderYamlPagination(filtered.length, appState.yamlPage, PAGE_SIZE);
+    renderYamlPagination(displayItems.length, appState.yamlPage, PAGE_SIZE);
 }
 
 function renderYamlPagination(totalItems, currentPage, pageSize) {

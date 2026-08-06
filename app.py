@@ -85,10 +85,10 @@ PROJECT_CONFIGS = {
             ]
         },
         'default_paths': {
-            'bkc':     '/Volumes/DATA/Projects/META/VR200-SanMiguel/BKC Table/San Miguel(VR200) FW control table - 3way.xlsx',
-            'fru_dvt': '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/DVT/Maxwell_Earth_FRU table_DVT_20260708.xlsx',
-            'fru_pvt': '/Volumes/DATA/Projects/META/VR200-SanMiguel/FRU Spec/PVT1-1/Maxwell_Earth_FRU table_PVT1-1_20260709-1639.xlsx',
-            'matrix':  '/Volumes/DATA/Projects/META/VR200-SanMiguel/Build Matrix/SanMiguel(Ingrasys) Build Matrix_DVT_Draft_260325.xlsx'
+            'bkc':     os.path.join(DATA_DIR, 'sanmiguel', 'bkc', 'San Miguel(VR200) FW control table - 3way.xlsx'),
+            'fru_dvt': os.path.join(DATA_DIR, 'sanmiguel', 'fru', 'Maxwell_Earth_FRU table_DVT_20260708.xlsx'),
+            'fru_pvt': os.path.join(DATA_DIR, 'sanmiguel', 'fru', 'Maxwell_Earth_FRU table_PVT1-1_20260709-1639.xlsx'),
+            'matrix':  os.path.join(DATA_DIR, 'sanmiguel', 'matrix', 'SanMiguel(Ingrasys) Build Matrix_DVT_Draft_260325.xlsx')
         }
     },
     'clemente': {
@@ -136,6 +136,30 @@ def get_project_upload_folder(project_id):
     os.makedirs(folder, exist_ok=True)
     return folder
 
+def is_valid_bkc_table(file_path):
+    filename = os.path.basename(file_path).lower()
+    if any(k in filename for k in ['versiontracker', 'version_tracker', 'changelog', 'change_log', 'release_note', 'releasenote', 'history', 'revision']):
+        return False
+    if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
+        return True
+    try:
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        valid_sheets = [s for s in wb.sheetnames if not any(k in s.lower() for k in ['change list', 'changelog', 'history', 'readme', 'instructions', 'notes', 'versiontracker'])]
+        if not valid_sheets:
+            wb.close()
+            return False
+        for sname in valid_sheets[:3]:
+            ws = wb[sname]
+            for row in list(ws.iter_rows(values_only=True, max_row=20)):
+                row_str = ' '.join([str(c).lower() for c in row if c is not None])
+                if any(k in row_str for k in ['component', 'sub component', 'fw version', 'control table', 'bkc version', 'dvt', 'evt', 'pvt']):
+                    wb.close()
+                    return True
+        wb.close()
+    except Exception:
+        return False
+    return False
+
 def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
     cfg = get_project_config(project_id)
     proj_upload = get_project_upload_folder(project_id)
@@ -159,16 +183,24 @@ def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
                     display_name = f"[Uploaded] {f}" if is_upload else os.path.basename(f)
 
                     mtime = os.path.getmtime(full_p) if os.path.exists(full_p) else 0
+                    is_valid_bkc = is_valid_bkc_table(full_p) if tab_key == 'bkc' else True
+
                     found.append({
                         'filename': f,
                         'display_name': display_name,
                         'path': full_p,
                         'is_excel': f.endswith(('.xlsx', '.xls')),
                         'is_yaml': f.endswith(('.yaml', '.yml')),
+                        'is_valid_bkc': is_valid_bkc,
                         'mtime': mtime
                     })
-    # Sort files by modification time descending (latest files first)
-    found.sort(key=lambda x: x['mtime'], reverse=True)
+
+    if tab_key == 'bkc':
+        # Prioritize valid BKC Control Tables over Changelog/Tracker files, then sort by mtime descending
+        found.sort(key=lambda x: (1 if x.get('is_valid_bkc') else 0, x['mtime']), reverse=True)
+    else:
+        # Sort files by modification time descending (latest files first)
+        found.sort(key=lambda x: x['mtime'], reverse=True)
     return found
 
 
@@ -182,7 +214,11 @@ def resolve_file_path(tab_key, mac_fallback_path, project_id='sanmiguel'):
 
 
 def filter_valid_data_sheets(sheets):
-    ignored_keywords = {'readme', 'change log', 'changelog', 'change_log', 'change list', 'fw list', 'history', 'revision history', 'single source vendor', 'instructions', 'notes'}
+    ignored_keywords = {
+        'readme', 'change log', 'changelog', 'change_log', 'change list', 
+        'fw list', 'history', 'revision history', 'single source vendor', 
+        'instructions', 'notes', 'version tracker', 'versiontracker', 'poevt'
+    }
     valid = [s for s in sheets if not any(k in s.lower() for k in ignored_keywords)]
     return valid if valid else sheets
 
