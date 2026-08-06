@@ -223,6 +223,61 @@ body {
     }
 }
 
+/* Glassmorphic Segmented Control Pill Toggle Buttons */
+.pill-group {
+    display: inline-flex;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 4px;
+    border-radius: 12px;
+    gap: 4px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+.pill-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    outline: none;
+}
+
+.pill-btn i {
+    font-size: 0.9rem;
+    color: #64748b;
+    transition: color 0.25s ease;
+}
+
+.pill-btn:hover {
+    color: #f1f5f9;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.pill-btn:hover i {
+    color: #38bdf8;
+}
+
+.pill-btn.active {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.5);
+}
+
+.pill-btn.active i {
+    color: #ffffff;
+}
+
+
 
 /* Control Panel & Quick Stats */
 .control-panel {
