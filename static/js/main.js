@@ -875,17 +875,20 @@ function initUploadModal() {
 
                         await fetchYamlData();
 
-                        const uploadedPath = data.path || data.filename;
-                        if (s1 && !s1.value) s1.value = uploadedPath;
-                        else if (s2 && !s2.value) s2.value = uploadedPath;
-                        else if (s3 && !s3.value) s3.value = uploadedPath;
-                        else if (s1) s1.value = uploadedPath;
+                        const targetVal = data.filename || data.path;
+                        let targetSel = null;
+                        if (s1 && (!s1.value || s1.value === '')) targetSel = s1;
+                        else if (s2 && (!s2.value || s2.value === '')) targetSel = s2;
+                        else if (s3 && (!s3.value || s3.value === '')) targetSel = s3;
+                        else targetSel = s1;
 
-                        fetchYamlData();
+                        selectOptionByValueOrFilename(targetSel, targetVal);
+                        await fetchYamlData();
                     } else {
                         fetchAllData();
                     }
                 }, 1200);
+
             } else {
                 throw new Error(data.error);
             }
@@ -895,6 +898,21 @@ function initUploadModal() {
             statusText.style.color = 'var(--danger-red)';
         }
     }
+}
+
+function selectOptionByValueOrFilename(selectElement, targetValue) {
+    if (!selectElement || !targetValue) return false;
+    const cleanTarget = targetValue.trim().toLowerCase();
+    for (let i = 0; i < selectElement.options.length; i++) {
+        const opt = selectElement.options[i];
+        const val = (opt.value || '').trim().toLowerCase();
+        const txt = (opt.textContent || '').trim().toLowerCase();
+        if (val === cleanTarget || (val && cleanTarget && val.endsWith('/' + cleanTarget)) || txt === cleanTarget) {
+            selectElement.selectedIndex = i;
+            return true;
+        }
+    }
+    return false;
 }
 
 function initYamlDragAndDrop() {
@@ -941,7 +959,7 @@ function initYamlDragAndDrop() {
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.success) {
-                    uploadedPaths.push(data.path || data.filename);
+                    uploadedPaths.push(data.filename || data.path);
                 }
             }
 
@@ -956,12 +974,12 @@ function initYamlDragAndDrop() {
                 const slotNum = targetSlotCard.dataset.slot;
                 const targetSelect = document.getElementById(`yaml-file-select-${slotNum}`);
                 if (targetSelect && uploadedPaths[0]) {
-                    targetSelect.value = uploadedPaths[0];
+                    selectOptionByValueOrFilename(targetSelect, uploadedPaths[0]);
                 }
             } else {
-                if (uploadedPaths[0] && s1) s1.value = uploadedPaths[0];
-                if (uploadedPaths[1] && s2) s2.value = uploadedPaths[1];
-                if (uploadedPaths[2] && s3) s3.value = uploadedPaths[2];
+                if (uploadedPaths[0] && s1) selectOptionByValueOrFilename(s1, uploadedPaths[0]);
+                if (uploadedPaths[1] && s2) selectOptionByValueOrFilename(s2, uploadedPaths[1]);
+                if (uploadedPaths[2] && s3) selectOptionByValueOrFilename(s3, uploadedPaths[2]);
             }
 
             await fetchYamlData();
@@ -972,6 +990,7 @@ function initYamlDragAndDrop() {
         }
     });
 }
+
 
 
 
