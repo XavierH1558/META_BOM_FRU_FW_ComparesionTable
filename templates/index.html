@@ -11,7 +11,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=18.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=19.0">
+
 
 
 
@@ -538,28 +539,32 @@
                 <!-- Station Slot Cards (Large Drop Zone & Wide Selectors) -->
                 <div class="station-slots-container" id="yaml-station-slots-panel">
                     <div class="station-slot-card" id="slot-card-1" data-slot="1">
-                        <div class="slot-header">
+                        <div class="slot-header d-flex justify-content-between align-items-center mb-1">
                             <span class="slot-badge bg-cyan"><i class="fa-solid fa-vial"></i> Station 1 (如 FDT)</span>
-                            <span class="slot-drag-hint"><i class="fa-solid fa-cloud-arrow-up"></i> 拖曳 `.yaml` 至此</span>
+                            <button type="button" class="btn-upload-slot" id="btn-upload-yaml-1"><i class="fa-solid fa-folder-open"></i> 選擇/載入 YAML 檔</button>
+                            <input type="file" id="yaml-file-input-1" accept=".yaml,.yml" style="display:none;" />
                         </div>
                         <select id="yaml-file-select-1" class="slot-select"></select>
                     </div>
 
                     <div class="station-slot-card" id="slot-card-2" data-slot="2">
-                        <div class="slot-header">
+                        <div class="slot-header d-flex justify-content-between align-items-center mb-1">
                             <span class="slot-badge bg-cyan"><i class="fa-solid fa-vial"></i> Station 2 (如 FFT)</span>
-                            <span class="slot-drag-hint"><i class="fa-solid fa-cloud-arrow-up"></i> 拖曳 `.yaml` 至此</span>
+                            <button type="button" class="btn-upload-slot" id="btn-upload-yaml-2"><i class="fa-solid fa-folder-open"></i> 選擇/載入 YAML 檔</button>
+                            <input type="file" id="yaml-file-input-2" accept=".yaml,.yml" style="display:none;" />
                         </div>
                         <select id="yaml-file-select-2" class="slot-select"></select>
                     </div>
 
                     <div class="station-slot-card" id="slot-card-3" data-slot="3">
-                        <div class="slot-header">
+                        <div class="slot-header d-flex justify-content-between align-items-center mb-1">
                             <span class="slot-badge bg-cyan"><i class="fa-solid fa-vial"></i> Station 3 (如 FRO)</span>
-                            <span class="slot-drag-hint"><i class="fa-solid fa-cloud-arrow-up"></i> 拖曳 `.yaml` 至此</span>
+                            <button type="button" class="btn-upload-slot" id="btn-upload-yaml-3"><i class="fa-solid fa-folder-open"></i> 選擇/載入 YAML 檔</button>
+                            <input type="file" id="yaml-file-input-3" accept=".yaml,.yml" style="display:none;" />
                         </div>
                         <select id="yaml-file-select-3" class="slot-select"></select>
                     </div>
+
 
                     <div class="station-slot-card slot-bkc slot-bkc-wide" id="slot-card-bkc">
                         <div class="slot-header">
@@ -897,9 +902,10 @@
 
 
     <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=18.0"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=19.0"></script>
 </body>
 </html>
+
 
 
 

@@ -263,9 +263,66 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initEventListeners();
     initUploadModal();
-    initYamlDragAndDrop();
+    initYamlManualUploads();
     fetchAllData();
 });
+
+function initYamlManualUploads() {
+    [1, 2, 3].forEach(slotNum => {
+        const btn = document.getElementById(`btn-upload-yaml-${slotNum}`);
+        const input = document.getElementById(`yaml-file-input-${slotNum}`);
+        const select = document.getElementById(`yaml-file-select-${slotNum}`);
+
+        if (btn && input) {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                input.value = '';
+                input.click();
+            });
+
+            input.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                showLoading(`正在上傳 Station ${slotNum} 的 YAML 腳本: ${file.name}...`, 'Uploading selected YAML test suite file');
+                startProgressSequence();
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('tab_type', 'yaml');
+
+                    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        const uploadedFilename = data.filename || data.path;
+                        
+                        // Re-fetch YAML file options list
+                        await fetchYamlData();
+
+                        // Automatically pick the newly uploaded file in dropdown
+                        if (select && uploadedFilename) {
+                            selectOptionByValueOrFilename(select, uploadedFilename);
+                        }
+
+                        // Trigger YAML comparison calculation & display
+                        await fetchYamlData();
+                    } else {
+                        alert(`上傳失敗: ${data.error || '未知錯誤'}`);
+                    }
+                } catch (err) {
+                    console.error(`Upload error for Station ${slotNum}:`, err);
+                    alert(`上傳發生錯誤: ${err.message}`);
+                } finally {
+                    await hideLoading(600);
+                }
+            });
+        }
+    });
+}
+
 
 
 

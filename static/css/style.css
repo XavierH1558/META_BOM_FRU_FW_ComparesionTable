@@ -2060,5 +2060,30 @@ a.link-gdrive:hover {
     box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
 }
 
+/* Manual Upload Button for Station Slots */
+.btn-upload-slot {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 0.22rem 0.6rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    outline: none;
+}
+
+.btn-upload-slot:hover {
+    background: rgba(56, 189, 248, 0.3);
+    color: #ffffff;
+    border-color: #38bdf8;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+
 
 
