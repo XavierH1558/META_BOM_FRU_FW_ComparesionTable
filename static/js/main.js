@@ -125,18 +125,39 @@ function updateProgress(percent, stageText, subText) {
 }
 
 
-async function simulateProgressSequence() {
-    updateProgress(15, '📦 階段 1/4: 正在解析 Station 1~3 之 .yaml 測試腳本步驟...', 'Extracting test step locations & component checks');
-    await new Promise(r => setTimeout(r, 120));
-    
-    updateProgress(45, '📊 階段 2/4: 正在對照 BKC 標準控制表與 Sheet...', 'Matching against target Excel control table');
-    await new Promise(r => setTimeout(r, 180));
-    
-    updateProgress(75, '⚡ 階段 3/4: 正在進行 FW/HW 版本跨工站合規比對...', 'Calculating compliance rate & discrepancies');
-    await new Promise(r => setTimeout(r, 180));
+let currentProgressInterval = null;
 
-    updateProgress(95, '📝 階段 4/4: 正在載入歷史討論、簽核處置與 Patch...', 'Rendering comparison table & matrix');
+function startProgressSequence() {
+    if (currentProgressInterval) clearInterval(currentProgressInterval);
+    
+    let currentPercent = 10;
+    updateProgress(currentPercent, '📦 階段 1/4: 正在讀取與解析 Station 1~3 測試腳本...', 'Extracting test step locations & component checks');
+
+    currentProgressInterval = setInterval(() => {
+        if (currentPercent < 35) {
+            currentPercent += 5;
+            updateProgress(currentPercent, '📦 階段 1/4: 正在解析 Station 1~3 測試腳本步驟...', 'Parsing YAML commands & component expected values');
+        } else if (currentPercent < 65) {
+            currentPercent += 4;
+            updateProgress(currentPercent, '📊 階段 2/4: 正在對照 BKC 標準控制表與 Sheet...', 'Matching against target Excel control table');
+        } else if (currentPercent < 85) {
+            currentPercent += 2;
+            updateProgress(currentPercent, '⚡ 階段 3/4: 正在進行 FW/HW 版本跨工站合規比對...', 'Calculating compliance rate & discrepancies');
+        }
+    }, 160);
 }
+
+function stopProgressSequenceSuccess() {
+    if (currentProgressInterval) {
+        clearInterval(currentProgressInterval);
+        currentProgressInterval = null;
+    }
+    updateProgress(95, '📝 階段 4/4: 正在載入歷史討論、簽核處置與 Patch...', 'Rendering comparison table & matrix');
+    setTimeout(() => {
+        updateProgress(100, '✅ 階段 4/4: 比對分析完成！', 'Data rendered successfully');
+    }, 150);
+}
+
 
 
 async function hideLoading(minDurationMs = 550) {
@@ -873,10 +894,14 @@ function getLoadingTitle(targetTab) {
             if (controlsDiff) controlsDiff.style.display = 'none';
 
             showLoading('⚡ 正在產生跨工站測試覆蓋熱力圖...', 'Calculating station-to-station coverage matrix & heatmap cells');
-            simulateProgressSequence();
+            startProgressSequence();
+            setTimeout(() => {
+                stopProgressSequenceSuccess();
+            }, 350);
             await hideLoading(650);
         });
     }
+
 
     if (btnYamlViewDiff) {
         btnYamlViewDiff.addEventListener('click', async () => {
@@ -2926,13 +2951,14 @@ async function fetchYamlData() {
             `;
         }
 
-        simulateProgressSequence();
+        startProgressSequence();
 
         const res = await fetch(url);
         const data = await res.json();
-        updateProgress(100, '✅ 階段 4/4: 比對分析完成！正在渲染畫面...', 'Comparison calculation completed');
+        stopProgressSequenceSuccess();
 
         logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
+
 
 
 
@@ -3330,14 +3356,36 @@ async function fetchYamlVersionDiff() {
     const tbody = document.getElementById('yaml-version-diff-tbody');
 
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4">正在分析 YAML 腳本演進異動中...</td></tr>`;
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="5" class="text-center py-5">
+                <div class="table-loading-container">
+                    <div class="table-loading-spinner"></div>
+                    <h4 style="color: #38bdf8; font-weight: 600; margin-top: 0.5rem; font-size: 1.1rem;">⚡ 正在進行 YAML 腳本跨版本演進 Diff 計算...</h4>
+                    <p class="text-muted" style="font-size: 0.85rem;" id="diff-table-loading-sub">請稍候，系統正比對 Base 與 Target 兩版腳本步驟與命令異動</p>
+                    
+                    <div class="progress-container">
+                        <div class="progress-header">
+                            <span id="diff-table-stage-label" style="color: #fbbf24;">📦 階段 1/3: 讀取版本腳本與比對設定</span>
+                            <span id="diff-table-percent-label" style="color: #34d399; font-weight: 700;">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="diff-table-progress-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    `;
 
     showLoading('⚡ 正在計算 YAML 腳本跨版本演進 Diff...', 'Comparing test steps & commands across selected YAML versions');
+    startProgressSequence();
 
     try {
         const url = `/api/yaml-version-diff?base_yaml=${encodeURIComponent(baseSel || '')}&target_yaml=${encodeURIComponent(targetSel || '')}`;
         const res = await fetch(url);
         const data = await res.json();
+        stopProgressSequenceSuccess();
 
         if (data.success) {
             renderYamlVersionDiffTable(data.items || []);
@@ -3348,6 +3396,7 @@ async function fetchYamlVersionDiff() {
         await hideLoading(700);
     }
 }
+
 
 
 function renderYamlVersionDiffTable(items) {
