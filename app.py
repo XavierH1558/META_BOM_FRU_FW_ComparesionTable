@@ -22,6 +22,16 @@ os.makedirs(os.path.join(DATA_DIR, 'matrix'), exist_ok=True)
 os.makedirs(os.path.join(DATA_DIR, 'yaml'), exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+@app.after_request
+def add_cache_busting_headers(response):
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 
 # Initialize Google Drive Background Sync Scheduler if enabled in gdrive_config.json
 try:
