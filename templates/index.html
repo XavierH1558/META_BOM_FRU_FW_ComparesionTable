@@ -11,7 +11,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=15.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=16.0">
+
 
 
 
@@ -853,6 +854,17 @@
         </div>
     </div>
 
+    <!-- Top Floating Success Toast Banner -->
+    <div id="toast-notification" class="toast-notification">
+        <div class="toast-icon">
+            <i class="fa-solid fa-circle-check"></i>
+        </div>
+        <div class="toast-content">
+            <div class="toast-title" id="toast-title">✅ 比對與載入分析完成！</div>
+            <div class="toast-sub" id="toast-sub">已成功對照 BKC 表單並渲染測試規範數據</div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="app-footer">
 
@@ -860,10 +872,12 @@
     </footer>
 
 
+
     <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=15.0"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=16.0"></script>
 </body>
 </html>
+
 
 
 

@@ -147,16 +147,43 @@ function startProgressSequence() {
     }, 160);
 }
 
-function stopProgressSequenceSuccess() {
+let toastTimeout = null;
+
+function showSuccessToast(title = '✅ 載入與比對分析完成！', subMessage = '已成功對照 BKC 表單並渲染測試規範數據') {
+    const toast = document.getElementById('toast-notification');
+    const titleEl = document.getElementById('toast-title');
+    const subEl = document.getElementById('toast-sub');
+
+    if (titleEl) titleEl.textContent = title;
+    if (subEl) subEl.textContent = subMessage;
+
+    if (toast) {
+        if (toastTimeout) clearTimeout(toastTimeout);
+        toast.style.display = 'flex';
+        void toast.offsetWidth;
+        toast.classList.add('active');
+
+        toastTimeout = setTimeout(() => {
+            toast.classList.remove('active');
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 400);
+        }, 3200);
+    }
+}
+
+function stopProgressSequenceSuccess(customSuccessTitle = '✅ 比對與載入分析完成！', customSuccessSub = 'Comparison table rendered successfully') {
     if (currentProgressInterval) {
         clearInterval(currentProgressInterval);
         currentProgressInterval = null;
     }
-    updateProgress(95, '📝 階段 4/4: 正在載入歷史討論、簽核處置與 Patch...', 'Rendering comparison table & matrix');
+    updateProgress(95, '📝 階段 4/4: 正在渲染比對結果與處置簽核...', 'Rendering comparison table & matrix');
     setTimeout(() => {
-        updateProgress(100, '✅ 階段 4/4: 比對分析完成！', 'Data rendered successfully');
+        updateProgress(100, customSuccessTitle, customSuccessSub);
+        showSuccessToast(customSuccessTitle, customSuccessSub);
     }, 150);
 }
+
 
 
 
@@ -2960,12 +2987,17 @@ async function fetchYamlData() {
 
         const res = await fetch(url);
         const data = await res.json();
-        
-        if (hasActiveYaml) {
-            stopProgressSequenceSuccess();
-        }
 
         logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
+
+        if (data.success) {
+            appState.yamlCompare = data;
+            const summary = data.summary || {};
+
+            if (hasActiveYaml) {
+                stopProgressSequenceSuccess('✅ Test Suite (YAML) 比對與載入完成！', `已成功比對對照 ${summary.total_yaml_checks || 0} 項規範數據 (合規率: ${summary.compliance_rate || 0}%)`);
+            }
+
 
 
 
