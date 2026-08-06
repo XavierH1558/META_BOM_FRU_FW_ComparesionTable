@@ -89,7 +89,44 @@ function showLoading(title = '正在讀取與解析表單...', subtitle = 'Proce
         void overlay.offsetWidth; // Force CSS reflow for instant animation start
         overlay.classList.add('active');
     }
+    updateProgress(10, '📦 階段 1/4: 讀取腳本與對照表...', subtitle);
 }
+
+function updateProgress(percent, stageText, subText) {
+    const fillOverlay = document.getElementById('loading-progress-fill');
+    const percentOverlay = document.getElementById('loading-percent-label');
+    const stageOverlay = document.getElementById('loading-stage-label');
+    const subOverlay = document.getElementById('loading-subtitle');
+
+    const fillTable = document.getElementById('yaml-table-progress-fill');
+    const percentTable = document.getElementById('yaml-table-percent-label');
+    const stageTable = document.getElementById('yaml-table-stage-label');
+    const subTable = document.getElementById('yaml-table-loading-sub');
+
+    if (fillOverlay) fillOverlay.style.width = `${percent}%`;
+    if (percentOverlay) percentOverlay.textContent = `${percent}%`;
+    if (stageOverlay && stageText) stageOverlay.textContent = stageText;
+    if (subOverlay && subText) subOverlay.textContent = subText;
+
+    if (fillTable) fillTable.style.width = `${percent}%`;
+    if (percentTable) percentTable.textContent = `${percent}%`;
+    if (stageTable && stageText) stageTable.textContent = stageText;
+    if (subTable && subText) subTable.textContent = subText;
+}
+
+async function simulateProgressSequence() {
+    updateProgress(15, '📦 階段 1/4: 正在解析 Station 1~3 之 .yaml 測試腳本步驟...', 'Extracting test step locations & component checks');
+    await new Promise(r => setTimeout(r, 120));
+    
+    updateProgress(45, '📊 階段 2/4: 正在對照 BKC 標準控制表與 Sheet...', 'Matching against target Excel control table');
+    await new Promise(r => setTimeout(r, 180));
+    
+    updateProgress(75, '⚡ 階段 3/4: 正在進行 FW/HW 版本跨工站合規比對...', 'Calculating compliance rate & discrepancies');
+    await new Promise(r => setTimeout(r, 180));
+
+    updateProgress(95, '📝 階段 4/4: 正在載入歷史討論、簽核處置與 Patch...', 'Rendering comparison table & matrix');
+}
+
 
 async function hideLoading(minDurationMs = 550) {
     const overlay = document.getElementById('global-loading-overlay');
@@ -2856,17 +2893,31 @@ async function fetchYamlData() {
                         <div class="table-loading-container">
                             <div class="table-loading-spinner"></div>
                             <h4 style="color: #38bdf8; font-weight: 600; margin-top: 0.5rem; font-size: 1.1rem;">⚡ 正在進行 Test Suite (YAML) 腳本與 BKC Table 合規比對分析...</h4>
-                            <p class="text-muted" style="font-size: 0.85rem;">請稍候，系統正提取腳本步驟、FW/HW 版本規範並對照簽核與討論紀錄</p>
+                            <p class="text-muted" style="font-size: 0.85rem;" id="yaml-table-loading-sub">請稍候，系統正提取腳本步驟、FW/HW 版本規範並對照簽核與討論紀錄</p>
+                            
+                            <div class="progress-container">
+                                <div class="progress-header">
+                                    <span id="yaml-table-stage-label" style="color: #fbbf24;">📦 階段 1/4: 讀取腳本與對照表</span>
+                                    <span id="yaml-table-percent-label" style="color: #34d399; font-weight: 700;">0%</span>
+                                </div>
+                                <div class="progress-bar-bg">
+                                    <div class="progress-bar-fill" id="yaml-table-progress-fill" style="width: 0%;"></div>
+                                </div>
+                            </div>
                         </div>
                     </td>
                 </tr>
             `;
         }
 
+        simulateProgressSequence();
+
         const res = await fetch(url);
         const data = await res.json();
+        updateProgress(100, '✅ 階段 4/4: 比對分析完成！正在渲染畫面...', 'Comparison calculation completed');
 
         logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
+
 
 
 

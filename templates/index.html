@@ -11,7 +11,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=10.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=11.0">
+
 
 
 
@@ -783,16 +784,24 @@
             <div class="loading-spinner-wrapper">
                 <div class="loading-spinner-ring"></div>
                 <div class="loading-spinner-icon">
-                    <i class="fa-solid fa-file-excel"></i>
+                    <i class="fa-solid fa-microchip"></i>
                 </div>
             </div>
-            <div class="loading-title" id="loading-title">正在讀取並解析 Excel 表單...</div>
-            <div class="loading-subtitle" id="loading-subtitle">Parsing workbook data & rendering comparison table</div>
-            <div class="loading-progress-bar">
-                <div class="loading-progress-line"></div>
+            <div class="loading-title" id="loading-title">⚡ 正在進行 Test Suite (YAML) 腳本合規比對...</div>
+            <div class="loading-subtitle" id="loading-subtitle">請稍候，系統正提取腳本步驟、FW/HW 版本規範並對照簽核與討論紀錄</div>
+            
+            <div class="progress-container">
+                <div class="progress-header">
+                    <span id="loading-stage-label" style="color: #fbbf24;">📦 階段 1/4: 讀取腳本與對照表</span>
+                    <span id="loading-percent-label" style="color: #34d399; font-weight: 700;">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="loading-progress-fill" style="width: 0%;"></div>
+                </div>
             </div>
         </div>
     </div>
+
 
     <!-- YAML Auto Fix Patch Modal -->
     <div class="modal-overlay" id="yaml-patch-modal" style="display: none;">
@@ -848,9 +857,10 @@
 
 
     <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=10.0"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=11.0"></script>
 </body>
 </html>
+
 
 
 

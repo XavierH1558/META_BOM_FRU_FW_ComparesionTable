@@ -1641,6 +1641,46 @@ a.link-gdrive:hover {
     animation: spinRing 0.8s linear infinite;
 }
 
+/* Dynamic Progress Bar Styling */
+.progress-container {
+    width: 420px;
+    max-width: 90%;
+    margin-top: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #38bdf8;
+}
+
+.progress-bar-bg {
+    width: 100%;
+    height: 10px;
+    background: #0f172a;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #0284c7, #38bdf8, #34d399);
+    border-radius: 20px;
+    transition: width 0.3s ease-out;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+}
+
+
 @keyframes pulseIcon {
     0% { transform: scale(0.9); opacity: 0.8; }
     100% { transform: scale(1.1); opacity: 1; }
