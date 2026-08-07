@@ -356,6 +356,16 @@ async function switchProject(projectId) {
     appState.yamlCompare = null;
     appState.selectedFiles = { bkc: null, fru_single: null, fru_dvt: null, fru_pvt: null, matrix: null, yaml_1: null, yaml_2: null, yaml_3: null };
 
+    // Reset file select dropdown values in DOM to prevent cross-project path leakage
+    [
+        'bkc-file-select', 'fru-single-file-select', 'fru-dvt-file-select', 'fru-pvt-file-select',
+        'matrix-file-select', 'matrix-base-file-select', 'matrix-target-file-select',
+        'yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-bkc-file-select'
+    ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
     // Update body theme class
     document.body.classList.remove('project-sanmiguel', 'project-clemente');
     document.body.classList.add(`project-${projectId}`);

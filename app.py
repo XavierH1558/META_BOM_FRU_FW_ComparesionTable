@@ -204,13 +204,36 @@ def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
     return found
 
 
-def resolve_file_path(tab_key, mac_fallback_path, project_id='sanmiguel'):
-    if os.path.exists(mac_fallback_path):
-        return mac_fallback_path
-    files = scan_files_in_dirs(tab_key, project_id)
-    if files:
-        return files[0]['path']
-    return mac_fallback_path
+def resolve_file_path(tab_key, req_path=None, project_id='sanmiguel'):
+    proj_cfg = get_project_config(project_id)
+    proj_defaults = proj_cfg['default_paths']
+    default_path = proj_defaults.get(tab_key) or proj_defaults.get(f"{tab_key}_dvt") or ''
+
+    scanned = scan_files_in_dirs(tab_key, project_id)
+    scanned_paths = set(os.path.abspath(f['path']) for f in scanned)
+
+    if req_path and os.path.exists(req_path):
+        abs_req = os.path.abspath(req_path)
+        if abs_req in scanned_paths:
+            return abs_req
+
+        is_cross_proj = False
+        for other_pid in PROJECT_CONFIGS:
+            if other_pid != project_id:
+                other_scanned = scan_files_in_dirs(tab_key, other_pid)
+                other_scanned_paths = set(os.path.abspath(f['path']) for f in other_scanned)
+                other_default = os.path.abspath(PROJECT_CONFIGS[other_pid]['default_paths'].get(tab_key, ''))
+                if abs_req in other_scanned_paths or abs_req == other_default or f'/{other_pid}/' in abs_req.lower() or f'vr200-sanmiguel' in abs_req.lower():
+                    is_cross_proj = True
+                    break
+
+        if not is_cross_proj:
+            return abs_req
+
+    if scanned:
+        return scanned[0]['path']
+
+    return default_path
 
 
 def filter_valid_data_sheets(sheets):
