@@ -529,10 +529,10 @@
                         <button class="pill-btn" id="btn-yaml-view-diff"><i class="fa-solid fa-code-compare"></i> 3. 腳本跨版本演進比對</button>
                     </div>
 
-                    <!-- FAVA Draft Export Button -->
+                    <!-- FAVA Draft Export & Copy Button -->
                     <div class="action-buttons-group">
-                        <button class="btn btn-outline-cyan" id="btn-export-fava-draft" title="將上傳的 1-3 工站 YAML 數據轉出為 FAVA L10 FW Control Table-draft Excel 格式">
-                            <i class="fa-solid fa-file-excel" style="color: #34d399;"></i> 轉出 FAVA L10 FW Control Table-draft
+                        <button class="btn btn-outline-cyan" id="btn-export-fava-draft" title="預覽 FAVA L10 FW Control Table-draft 格式並可一鍵複製貼至線上 Excel / Google Sheets">
+                            <i class="fa-solid fa-copy" style="color: #38bdf8;"></i> 預覽與複製 FAVA L10 Control Table
                         </button>
                     </div>
                 </div>
@@ -953,6 +953,80 @@
     </footer>
 
 
+
+    <!-- FAVA L10 FW Control Table Preview & Copy Modal -->
+    <div class="modal-overlay" id="fava-preview-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; align-items: center; justify-content: center; z-index: 10050; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);">
+        <div class="modal-card" style="max-width: 1050px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow: hidden;">
+            
+            <!-- Modal Header -->
+            <div class="modal-header d-flex justify-content-between align-items-center px-4 py-3" style="border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(30, 41, 59, 0.6);">
+                <div>
+                    <h3 style="color: #38bdf8; font-size: 1.25rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-table-list"></i> FAVA L10 FW Control Table-draft 預覽與一鍵複製
+                    </h3>
+                    <p style="color: #94a3b8; font-size: 0.85rem; margin: 0.25rem 0 0 0;" id="fava-modal-subtitle">
+                        系統已將所選 1-3 工站 YAML 數據填入草案格式。確認無誤後，點擊「一鍵複製」即可直接貼至線上 Google Sheets 或 Excel。
+                    </p>
+                </div>
+                <button class="btn-close-modal" id="btn-close-fava-modal" style="background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Modal Action Toolbar -->
+            <div class="d-flex justify-content-between align-items-center px-4 py-3 flex-wrap gap-2" style="background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid rgba(255,255,255,0.06);">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-blue-subtle text-cyan px-3 py-2" style="border-radius: 12px; font-size: 0.85rem;" id="fava-matched-badge">
+                        <i class="fa-solid fa-check"></i> 成功對照填入: 0 項組件
+                    </span>
+                    <span class="badge bg-purple-subtle text-purple px-3 py-2" style="border-radius: 12px; font-size: 0.85rem;" id="fava-total-badge">
+                        <i class="fa-solid fa-list"></i> 總項目數: 0 列
+                    </span>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary btn-sm px-3" id="btn-copy-fava-tsv" style="background: linear-gradient(135deg, #0284c7, #0369a1); border: none; font-weight: 600; border-radius: 8px; cursor: pointer;">
+                        <i class="fa-solid fa-copy"></i> 📋 一鍵複製成表格 (貼至 Excel 線上版 / Google Sheets)
+                    </button>
+                    <button class="btn btn-secondary btn-sm px-3" id="btn-download-fava-xlsx" style="background: rgba(51, 65, 85, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer;">
+                        <i class="fa-solid fa-file-excel" style="color: #34d399;"></i> 📥 下載成 Excel 檔 (.xlsx)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Body Preview Table -->
+            <div class="modal-body p-4" style="flex: 1; overflow-y: auto;">
+                <div class="table-responsive" style="border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; max-height: 55vh; overflow-y: auto;">
+                    <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+                        <thead>
+                            <tr style="background: #1e293b; color: #f8fafc; text-align: left; position: sticky; top: 0; z-index: 5;">
+                                <th style="padding: 10px 14px; width: 18%;">Category / Module</th>
+                                <th style="padding: 10px 14px; width: 22%;">Item (組件名稱)</th>
+                                <th style="padding: 10px 14px; width: 15%;">Actual Version</th>
+                                <th style="padding: 10px 14px; width: 22%; color: #38bdf8;">Draft Version (YAML 提取版本)</th>
+                                <th style="padding: 10px 14px; width: 23%;">Remark (狀態/比對備註)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fava-modal-tbody">
+                            <tr>
+                                <td colspan="5" class="text-center py-5 text-muted">
+                                    正在讀取與繪製 FAVA L10 Control Table 預覽資料...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="modal-footer px-4 py-3 d-flex justify-content-between align-items-center" style="border-top: 1px solid rgba(255,255,255,0.1); background: rgba(30, 41, 59, 0.6);">
+                <div style="color: #94a3b8; font-size: 0.82rem;">
+                    <i class="fa-solid fa-circle-info" style="color: #38bdf8;"></i> 提示：複製後，只需在線上表格 (Google Sheets / Excel Online) 選取對應儲存格按 <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">Ctrl + V</kbd> 或 <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">Cmd + V</kbd> 即可直接整批貼上。
+                </div>
+                <button class="btn btn-secondary btn-sm px-4" id="btn-footer-close-fava" style="border-radius: 8px; cursor: pointer;">關閉預覽</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Main JavaScript -->
     <script src="{{ url_for('static', filename='js/main.js') }}?v=20.4"></script>

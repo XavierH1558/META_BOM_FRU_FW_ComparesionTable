@@ -2649,6 +2649,88 @@ def api_export_fava_draft():
     )
 
 
+@app.route('/api/preview-fava-draft', methods=['GET'])
+def api_preview_fava_draft():
+    """Return JSON preview data & TSV formatted text of 'FAVA L10 FW Control Table-draft' for copy-pasting."""
+    project_id = request.args.get('project', 'clemente')
+    bkc_file = request.args.get('bkc_file')
+    bkc_sheet = request.args.get('bkc_sheet')
+    y1 = request.args.get('yaml_1')
+    y2 = request.args.get('yaml_2')
+    y3 = request.args.get('yaml_3')
+    yaml_files = [f for f in [y1, y2, y3] if f]
+
+    proj_cfg = get_project_config(project_id)
+    default_bkc = proj_cfg['default_paths'].get('bkc', '')
+    bkc_p = resolve_file_path('bkc', bkc_file or default_bkc, project_id)
+
+    comp_res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
+    extracted_items = comp_res.get('items', [])
+
+    yaml_map = {}
+    for item in extracted_items:
+        comp_name = item.get('sub_component') or item.get('component') or ''
+        norm_key = re.sub(r'[^a-zA-Z0-9]', '', comp_name.lower())
+        if norm_key:
+            yaml_map[norm_key] = item
+
+    template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
+    
+    preview_rows = []
+    if os.path.exists(template_path):
+        b_rows, sheets, _ = read_file_safe(template_path, sheet_name='FAVA L10 FW Control Table-draft')
+        for r_idx, r in enumerate(b_rows):
+            if r_idx == 0: continue
+            cat = str(r[0] or '').strip() if len(r) > 0 else ''
+            item_name = str(r[1] or '').strip() if len(r) > 1 else ''
+            act_ver = str(r[2] or '').strip() if len(r) > 2 else ''
+            draft_ver = str(r[3] or '').strip() if len(r) > 3 else ''
+            remark = str(r[4] or '').strip() if len(r) > 4 else ''
+
+            matched_item = None
+            if item_name:
+                norm_k = re.sub(r'[^a-zA-Z0-9]', '', item_name.lower())
+                matched_item = yaml_map.get(norm_k)
+                if not matched_item:
+                    for y_k, y_it in yaml_map.items():
+                        if len(y_k) >= 3 and (y_k in norm_k or norm_k in y_k):
+                            matched_item = y_it
+                            break
+                if matched_item:
+                    extracted_ver = matched_item.get('yaml_version') or ''
+                    if extracted_ver: draft_ver = str(extracted_ver)
+                    status = matched_item.get('status', 'MATCH')
+                    if status == 'MISMATCH':
+                        remark = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
+                    elif status == 'MATCH':
+                        remark = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
+
+            if item_name or cat or draft_ver:
+                preview_rows.append({
+                    'category': cat,
+                    'item': item_name,
+                    'actual_version': act_ver,
+                    'draft_version': draft_ver,
+                    'remark': remark,
+                    'is_updated': bool(matched_item),
+                    'status': matched_item.get('status', 'NONE') if matched_item else 'NONE'
+                })
+
+    # Prepare TSV string (Tab-separated values) for direct pasting into Excel/Google Sheets
+    tsv_lines = ["Category\tItem\tActual Version\tDraft Version\tRemark"]
+    for r in preview_rows:
+        tsv_lines.append(f"{r['category']}\t{r['item']}\t{r['actual_version']}\t{r['draft_version']}\t{r['remark']}")
+    tsv_text = "\n".join(tsv_lines)
+
+    return jsonify({
+        'success': True,
+        'rows': preview_rows,
+        'tsv_text': tsv_text,
+        'total_items': len(preview_rows),
+        'updated_items': len([r for r in preview_rows if r['is_updated']])
+    })
+
+
 @app.route('/api/debug-search')
 def api_debug_search():
     """Diagnostic endpoint to inspect file scanning and matrix search matches."""

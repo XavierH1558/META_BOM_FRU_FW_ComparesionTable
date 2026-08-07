@@ -551,10 +551,50 @@ function initEventListeners() {
         window.open(url, '_blank');
     });
 
-    // FAVA L10 Draft Export Button
+    // FAVA L10 Draft Preview & Copy Button
     const btnExportFava = document.getElementById('btn-export-fava-draft');
     if (btnExportFava) {
         btnExportFava.addEventListener('click', () => {
+            openFavaPreviewModal();
+        });
+    }
+
+    // Modal Close Listeners
+    ['btn-close-fava-modal', 'btn-footer-close-fava'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.addEventListener('click', () => {
+                const modal = document.getElementById('fava-preview-modal');
+                if (modal) modal.style.display = 'none';
+            });
+        }
+    });
+
+    // Modal Copy to Clipboard Button
+    const btnCopyFavaTsv = document.getElementById('btn-copy-fava-tsv');
+    if (btnCopyFavaTsv) {
+        btnCopyFavaTsv.addEventListener('click', async () => {
+            if (!currentFavaTsvText) {
+                alert('目前無可複製之表格內容！');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(currentFavaTsvText);
+                showSuccessToast(
+                    '📋 已成功複製 FAVA L10 表格至剪貼簿！',
+                    '請切換至線上 Excel 或 Google Sheets，點擊對應儲存格按 Ctrl+V (或 Cmd+V) 即可直接貼上。'
+                );
+            } catch (err) {
+                console.error('Failed to copy to clipboard:', err);
+                alert('複製失敗，請手動選取表格複製。');
+            }
+        });
+    }
+
+    // Modal Download XLSX Button
+    const btnDownloadFavaXlsx = document.getElementById('btn-download-fava-xlsx');
+    if (btnDownloadFavaXlsx) {
+        btnDownloadFavaXlsx.addEventListener('click', () => {
             const y1 = document.getElementById('yaml-file-select-1')?.value || '';
             const y2 = document.getElementById('yaml-file-select-2')?.value || '';
             const y3 = document.getElementById('yaml-file-select-3')?.value || '';
@@ -3927,6 +3967,106 @@ function renderYamlVersionDiffTable(items) {
         `;
         tbody.appendChild(tr);
     });
+}
+
+
+// ============================================================
+// FAVA L10 PREVIEW & COPY MODAL SYSTEM
+// ============================================================
+
+let currentFavaTsvText = '';
+
+async function openFavaPreviewModal() {
+    const modal = document.getElementById('fava-preview-modal');
+    const tbody = document.getElementById('fava-modal-tbody');
+    const matchedBadge = document.getElementById('fava-matched-badge');
+    const totalBadge = document.getElementById('fava-total-badge');
+
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center py-5">
+                    <div class="table-loading-spinner mb-2"></div>
+                    <div style="color: #38bdf8; font-weight: 600; font-size: 1rem;">⚡ 正在生成 FAVA L10 Control Table 預覽數據...</div>
+                    <p class="text-muted" style="font-size: 0.85rem;">請稍候，系統正提取 1-3 工站測試腳本並自動帶入表格</p>
+                </td>
+            </tr>
+        `;
+    }
+
+    const y1 = document.getElementById('yaml-file-select-1')?.value || '';
+    const y2 = document.getElementById('yaml-file-select-2')?.value || '';
+    const y3 = document.getElementById('yaml-file-select-3')?.value || '';
+    const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
+    const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
+
+    let url = `/api/preview-fava-draft?project=${encodeURIComponent(currentProject)}`;
+    if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
+    if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
+    if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+    if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
+    if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.success) {
+            currentFavaTsvText = data.tsv_text || '';
+            if (matchedBadge) matchedBadge.innerHTML = `<i class="fa-solid fa-check"></i> 成功對照填入: ${data.updated_items || 0} 項組件`;
+            if (totalBadge) totalBadge.innerHTML = `<i class="fa-solid fa-list"></i> 總項目數: ${data.total_items || 0} 列`;
+
+            renderFavaPreviewTable(data.rows || []);
+        } else {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">載入失敗: ${escapeHtml(data.error || '未知錯誤')}</td></tr>`;
+        }
+    } catch (err) {
+        console.error('Error fetching FAVA draft preview:', err);
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">載入失敗: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+function renderFavaPreviewTable(rows) {
+    const tbody = document.getElementById('fava-modal-tbody');
+    if (!tbody) return;
+
+    if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-muted">無預覽資料</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((r, idx) => {
+        const isHeaderRow = !r.item && r.category;
+        const bgStyle = isHeaderRow 
+            ? 'background: rgba(30, 41, 59, 0.7); font-weight: 700; color: #38bdf8;' 
+            : (r.is_updated ? 'background: rgba(56, 189, 248, 0.05);' : '');
+
+        const draftBadge = r.is_updated 
+            ? `<span style="color: #34d399; font-weight: 600; font-family: monospace;">${escapeHtml(r.draft_version)}</span>` 
+            : `<span style="color: #64748b; font-family: monospace;">${escapeHtml(r.draft_version || '-')}</span>`;
+
+        let remarkBadge = '-';
+        if (r.remark) {
+            if (r.remark.includes('MISMATCH')) {
+                remarkBadge = `<span class="badge bg-amber-subtle text-amber" style="padding: 2px 8px; border-radius: 4px; font-size: 0.78rem;">${escapeHtml(r.remark)}</span>`;
+            } else {
+                remarkBadge = `<span style="color: #94a3b8; font-size: 0.8rem;">${escapeHtml(r.remark)}</span>`;
+            }
+        }
+
+        return `
+            <tr style="${bgStyle} border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="padding: 8px 12px; color: ${isHeaderRow ? '#38bdf8' : '#cbd5e1'}; font-weight: ${isHeaderRow ? '700' : 'normal'};">${escapeHtml(r.category)}</td>
+                <td style="padding: 8px 12px; color: #f8fafc; font-weight: ${r.is_updated ? '600' : 'normal'};">${escapeHtml(r.item)}</td>
+                <td style="padding: 8px 12px; color: #94a3b8; font-family: monospace;">${escapeHtml(r.actual_version || '-')}</td>
+                <td style="padding: 8px 12px;">${draftBadge}</td>
+                <td style="padding: 8px 12px;">${remarkBadge}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 
