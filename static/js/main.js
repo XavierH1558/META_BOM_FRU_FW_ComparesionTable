@@ -1477,6 +1477,7 @@ async function fetchAllData() {
             bkcPromise,
             fruPromise,
             fetchMatrixData(),
+            fetchYamlData(),
             fetchAndPopulateTimelines(),
             checkCriticalWatchlistAlerts()
         ]);
