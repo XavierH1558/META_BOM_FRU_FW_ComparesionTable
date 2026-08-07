@@ -214,6 +214,33 @@ def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
     return found
 
 
+def validate_yaml_project(file_path, project_id):
+    if not file_path or not os.path.exists(file_path):
+        return True, ""
+    fname = os.path.basename(file_path).lower()
+    
+    if project_id == 'clemente':
+        if any(k in fname for k in ['sanmiguel', 'vr200', 'maxwell_earth', 'l10_station1_fvt', 'l10_station2_runin', 'l10_station3_ort']):
+            return False, f"專案不對，請重新輸入新檔案！您選擇/上傳的腳本 '{os.path.basename(file_path)}' 屬於 SanMiguel (VR200) 專案，但當前 active 專案為 Clemente (GB300)。"
+    elif project_id == 'sanmiguel':
+        if any(k in fname for k in ['clemente', 'gb300', 'maxq', 'clemente_ct_maxq_mp_fdt', 'clemente_ct_maxq_mp_fft', 'clemente_ct_maxq_mp_fro']):
+            return False, f"專案不對，請重新輸入新檔案！您選擇/上傳的腳本 '{os.path.basename(file_path)}' 屬於 Clemente (GB300) 專案，但當前 active 專案為 SanMiguel (VR200)。"
+            
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read(30000).lower()
+        if project_id == 'clemente':
+            if 'flash-sanmiguel' in content or 'sanmiguel-v' in content:
+                return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內的指令與韌體版本屬於 SanMiguel (VR200) 專案。"
+        elif project_id == 'sanmiguel':
+            if 'flash-clemente' in content or 'clemente-v' in content:
+                return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內的指令與韌體版本屬於 Clemente (GB300) 專案。"
+    except Exception:
+        pass
+        
+    return True, ""
+
+
 def resolve_file_path(tab_key, req_path=None, project_id='sanmiguel'):
     proj_cfg = get_project_config(project_id)
     proj_defaults = proj_cfg['default_paths']
@@ -379,6 +406,14 @@ def upload_file():
         proj_upload = get_project_upload_folder(project_id)
         save_path = os.path.join(proj_upload, filename)
         file.save(save_path)
+
+        if tab_type == 'yaml':
+            is_valid, err_msg = validate_yaml_project(save_path, project_id)
+            if not is_valid:
+                if os.path.exists(save_path):
+                    try: os.remove(save_path)
+                    except Exception: pass
+                return jsonify({'success': False, 'error': err_msg}), 400
 
         # Set as active path for the given project + type
         if project_id in ACTIVE_PATHS and tab_type in ACTIVE_PATHS[project_id]:
@@ -1927,6 +1962,30 @@ def get_yaml_compare():
 
     available_yaml = scan_files_in_dirs('yaml', project_id)
     available_bkc = scan_files_in_dirs('bkc', project_id)
+
+    # Validate if any selected YAML file belongs to a different project
+    for yf in yaml_files:
+        resolved_f = yf if os.path.exists(yf) else None
+        if not resolved_f:
+            for av in available_yaml:
+                if av['filename'] == yf or os.path.basename(av['path']) == yf:
+                    resolved_f = av['path']
+                    break
+        if resolved_f:
+            is_valid, err_msg = validate_yaml_project(resolved_f, project_id)
+            if not is_valid:
+                return jsonify({
+                    'success': False,
+                    'error': err_msg,
+                    'summary': {
+                        'total_yaml_checks': 0,
+                        'matched_count': 0,
+                        'mismatch_count': 0,
+                        'available_yaml_files': available_yaml,
+                        'available_bkc_files': available_bkc
+                    },
+                    'items': []
+                })
     bkc_p = resolve_file_path('bkc', bkc_file or default_bkc, project_id)
     b_rows, b_sheets, _ = read_file_safe(bkc_p, sheet_name=bkc_sheet)
     active_bkc_sheet = bkc_sheet if (bkc_sheet and bkc_sheet in b_sheets) else (b_sheets[0] if b_sheets else 'Default')

@@ -465,7 +465,8 @@ function initYamlManualUploads() {
                         );
                         await fetchYamlData();
                     } else {
-                        alert(`上傳失敗: ${data.error || '未知錯誤'}`);
+                        showProjectMismatchModal(data.error || '專案不對，請重新輸入新檔案！');
+                        input.value = '';
                     }
                 } catch (err) {
                     console.error(`Upload error for Station ${slotNum}:`, err);
@@ -560,12 +561,14 @@ function initEventListeners() {
     }
 
     // Modal Close Listeners
-    ['btn-close-fava-modal', 'btn-footer-close-fava'].forEach(id => {
+    ['btn-close-fava-modal', 'btn-footer-close-fava', 'btn-close-mismatch-modal'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) {
             btn.addEventListener('click', () => {
-                const modal = document.getElementById('fava-preview-modal');
-                if (modal) modal.style.display = 'none';
+                const modal1 = document.getElementById('fava-preview-modal');
+                const modal2 = document.getElementById('project-mismatch-modal');
+                if (modal1) modal1.style.display = 'none';
+                if (modal2) modal2.style.display = 'none';
             });
         }
     });
@@ -3399,6 +3402,8 @@ async function fetchYamlData() {
             if (data.coverage_matrix) {
                 renderYamlCoverageMatrix(data.coverage_matrix);
             }
+        } else {
+            showProjectMismatchModal(data.error || '專案不對，請重新輸入新檔案！');
         }
     } catch (err) {
         console.error('Error fetching YAML compare data:', err);
@@ -4067,6 +4072,13 @@ function renderFavaPreviewTable(rows) {
             </tr>
         `;
     }).join('');
+}
+
+function showProjectMismatchModal(errMsg) {
+    const modal = document.getElementById('project-mismatch-modal');
+    const errEl = document.getElementById('mismatch-modal-error-text');
+    if (errEl) errEl.textContent = errMsg || '專案不對，請重新輸入新檔案！';
+    if (modal) modal.style.display = 'flex';
 }
 
 

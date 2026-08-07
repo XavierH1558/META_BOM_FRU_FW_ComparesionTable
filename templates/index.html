@@ -1028,6 +1028,29 @@
         </div>
     </div>
 
+    <!-- Project Mismatch Error Modal -->
+    <div class="modal-overlay" id="project-mismatch-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; align-items: center; justify-content: center; z-index: 10080; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);">
+        <div class="modal-card" style="max-width: 540px; width: 90%; background: #0f172a; border: 1px solid rgba(239, 68, 68, 0.5); border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(239, 68, 68, 0.35); padding: 1.8rem; text-align: center;">
+            <div style="font-size: 3.2rem; color: #ef4444; margin-bottom: 1rem; filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.6));">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 style="color: #f8fafc; font-weight: 700; font-size: 1.35rem; margin-bottom: 0.5rem;">❌ 專案不對！請重新輸入新檔案</h3>
+            <p style="color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.2rem;">
+                系統偵測到您所選擇/上傳的 Test Suite (YAML) 腳本檔與目前 active 專案不符合。
+            </p>
+            
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 1rem; color: #fca5a5; font-size: 0.88rem; text-align: left; margin-bottom: 1.5rem; word-break: break-all;" id="mismatch-modal-error-text">
+                專案不對，請重新輸入新檔案！
+            </div>
+
+            <div class="d-flex justify-content-center gap-3">
+                <button class="btn btn-danger px-4 py-2" id="btn-close-mismatch-modal" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none; font-weight: 600; border-radius: 10px; cursor: pointer; font-size: 0.95rem;">
+                    <i class="fa-solid fa-arrows-rotate"></i> 我知道了，重新輸入新檔案
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main JavaScript -->
     <script src="{{ url_for('static', filename='js/main.js') }}?v=20.4"></script>
 </body>
