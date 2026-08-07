@@ -2946,7 +2946,8 @@ def api_preview_fava_draft():
             is_l11 = False
             c_low = cat.lower()
             i_low = item_name.lower()
-            if any(k in c_low for k in ['rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', 'rack', '2nd', 'bbu', 'pmm', 'psu']) or any(k in i_low for k in ['rmc', 'nvswitch', 'aalc', 'wedge400', 'bbu', 'pmm', 'psu']):
+            l11_keys = ['rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', 'rack', '2nd', 'bbu', 'pmm', 'psu', 'l11']
+            if any(k in c_low for k in l11_keys) or any(k in i_low for k in l11_keys):
                 is_l11 = True
 
             matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)

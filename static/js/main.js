@@ -4210,16 +4210,19 @@ function renderFavaPreviewTable(rows) {
     tbody.innerHTML = rows.map((r, idx) => {
         const isHeaderRow = !r.item && r.category;
         const isSubRow = !r.item && !r.category;
+        const isL11Dimmed = r.is_l11 && !r.is_updated;
 
         const bgStyle = isHeaderRow 
             ? 'background: rgba(30, 41, 59, 0.7); font-weight: 700; color: #38bdf8;' 
-            : (r.is_updated ? 'background: rgba(56, 189, 248, 0.05);' : '');
+            : (r.is_updated ? 'background: rgba(56, 189, 248, 0.05);' : (isL11Dimmed ? 'background: rgba(15, 23, 42, 0.4);' : ''));
 
-        let draftBadge = `<span style="color: #64748b; font-family: monospace;">${escapeHtml(r.draft_version || '-')}</span>`;
+        let draftBadge = `<span style="color: ${isL11Dimmed ? '#475569' : '#64748b'}; font-family: monospace;">${escapeHtml(r.draft_version || '-')}</span>`;
         if (r.is_updated) {
             draftBadge = `<span style="color: #34d399; font-weight: 600; font-family: monospace;">${escapeHtml(r.draft_version)}</span>`;
         } else if (r.is_subrow_valid) {
             draftBadge = `<span style="color: #38bdf8; font-weight: 500; font-family: monospace;">${escapeHtml(r.draft_version)}</span>`;
+        } else if (isL11Dimmed && (r.draft_version === 'N/A (未測試)' || !r.draft_version)) {
+            draftBadge = `<span style="color: #475569; font-family: monospace; font-size: 0.8rem; font-style: italic;">N/A (L11 範疇)</span>`;
         }
 
         let remarkBadge = '-';
@@ -4227,22 +4230,25 @@ function renderFavaPreviewTable(rows) {
             if (r.remark.includes('MISMATCH')) {
                 remarkBadge = `<span class="badge bg-amber-subtle text-amber" style="padding: 2px 8px; border-radius: 4px; font-size: 0.78rem;">${escapeHtml(r.remark)}</span>`;
             } else if (r.remark.includes('L11 Scope')) {
-                remarkBadge = `<span class="badge bg-secondary-subtle text-muted" style="padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; opacity: 0.65;"><i class="fa-solid fa-clock-rotate-left"></i> ${escapeHtml(r.remark)}</span>`;
+                remarkBadge = `<span class="badge" style="padding: 2px 8px; border-radius: 4px; font-size: 0.76rem; background: rgba(51, 65, 85, 0.5); color: #64748b; border: 1px solid rgba(100, 116, 139, 0.3);"><i class="fa-solid fa-clock-rotate-left"></i> ${escapeHtml(r.remark)}</span>`;
             } else {
                 remarkBadge = `<span style="color: #94a3b8; font-size: 0.8rem;">${escapeHtml(r.remark)}</span>`;
             }
         }
 
         const isChecked = (r.is_updated || isHeaderRow || r.is_subrow_valid) && !r.is_l11;
+        const rowOpacity = isL11Dimmed ? 'opacity: 0.42; filter: grayscale(80%);' : '';
+        const categoryColor = isL11Dimmed ? '#64748b' : (isHeaderRow ? '#38bdf8' : '#cbd5e1');
+        const itemColor = isL11Dimmed ? '#64748b' : '#f8fafc';
 
         return `
-            <tr style="${bgStyle} border-bottom: 1px solid rgba(255,255,255,0.05); ${r.is_l11 && !r.is_updated ? 'opacity: 0.6;' : ''}">
+            <tr style="${bgStyle} border-bottom: 1px solid rgba(255,255,255,0.05); ${rowOpacity}">
                 <td style="padding: 8px 12px; text-align: center;">
                     <input type="checkbox" class="fava-row-checkbox" data-idx="${idx}" ${isChecked ? 'checked' : ''} onchange="updateFavaSelectedBadge()" style="cursor: pointer; width: 16px; height: 16px; accent-color: #38bdf8;">
                 </td>
-                <td style="padding: 8px 12px; color: ${isHeaderRow ? '#38bdf8' : '#cbd5e1'}; font-weight: ${isHeaderRow ? '700' : 'normal'};">${escapeHtml(r.category)}</td>
-                <td style="padding: 8px 12px; color: #f8fafc; font-weight: ${r.is_updated ? '600' : 'normal'};">${escapeHtml(r.item)}</td>
-                <td style="padding: 8px 12px; color: #94a3b8; font-family: monospace;">${escapeHtml(r.actual_version || '-')}</td>
+                <td style="padding: 8px 12px; color: ${categoryColor}; font-weight: ${isHeaderRow ? '700' : 'normal'};">${escapeHtml(r.category)}</td>
+                <td style="padding: 8px 12px; color: ${itemColor}; font-weight: ${r.is_updated ? '600' : 'normal'};">${escapeHtml(r.item)}</td>
+                <td style="padding: 8px 12px; color: #475569; font-family: monospace;">${escapeHtml(r.actual_version || '-')}</td>
                 <td style="padding: 8px 12px;">${draftBadge}</td>
                 <td style="padding: 8px 12px;">${remarkBadge}</td>
             </tr>
