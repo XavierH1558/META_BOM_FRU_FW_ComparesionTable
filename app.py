@@ -2737,6 +2737,20 @@ def find_best_yaml_match_for_fava(cat, item_name, extracted_items):
     cat_str = str(cat or '').strip()
     item_str = str(item_name or '').strip()
 
+    c_low = cat_str.lower()
+    i_low = item_str.lower()
+
+    # Strict L11 Exclusion: RMC, NVSwitch, BBU, PSU, etc. belong to L11 stage only.
+    # Do NOT match any L10 YAML items for L11 components!
+    if 'l10' not in i_low:
+        l11_keys = [
+            'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd', 
+            'bbu', 'pmm', 'psu', 'l11', 'switch', 'minipack', 'mgmt switch',
+            'aei', 'delta', 'panasonic', 'fixture', 'cbu'
+        ]
+        if any(k in c_low for k in l11_keys) or any(k in i_low for k in l11_keys):
+            return None
+
     def norm(s):
         return re.sub(r'[^a-zA-Z0-9]', '', str(s or '').lower())
 
@@ -2760,9 +2774,11 @@ def find_best_yaml_match_for_fava(cat, item_name, extracted_items):
 
         score = 0
 
-        # Tier 1: Exact or direct combo match (Category + Item)
-        if combo_norm and (combo_norm == sub_norm or combo_norm == comp_norm or combo_norm in y_all or y_all in combo_norm):
+        # Tier 1: Exact item match (e.g. VBIOS (GPU) == VBIOS (GPU) or ERoT BMC == ERoT BMC)
+        if item_norm and (item_norm == sub_norm or item_norm == comp_norm):
             score = 100
+        elif combo_norm and (combo_norm == sub_norm or combo_norm == comp_norm or combo_norm in y_all or y_all in combo_norm):
+            score = 98
         # Tier 2: Category & Item Token Match (e.g. SCM + CPLD in "SCM CPLD", BSM + OpenBMC in "BSM OpenBMC")
         elif cat_norm and item_norm:
             cat_match = (cat_norm in y_all) or (cat_norm[:3] in y_all if len(cat_norm) >= 3 else False) or (y_all.startswith(cat_norm))
@@ -2773,9 +2789,7 @@ def find_best_yaml_match_for_fava(cat, item_name, extracted_items):
                 score = 70
         # Tier 3: Item token match (e.g. PM9D3A)
         elif item_norm:
-            if item_norm == sub_norm or item_norm == comp_norm:
-                score = 75
-            elif len(item_norm) >= 4 and (item_norm in y_all or y_all in item_norm):
+            if len(item_norm) >= 4 and (item_norm in y_all or y_all in item_norm):
                 score = 65
             elif any(len(t) >= 4 and t in y_all for t in item_tokens):
                 score = 60
@@ -2839,83 +2853,48 @@ def api_export_fava_draft():
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
     bkc_p = resolve_file_path('bkc', bkc_file or default_bkc, project_id)
 
-    # 1. Run YAML vs BKC comparison
     comp_res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
     extracted_items = comp_res.get('items', [])
 
-    # 2. Check for reference template file
     template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
-    
-    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-    
-    if os.path.exists(template_path):
-        wb = openpyxl.load_workbook(template_path)
-        sheet_name = 'FAVA L10 FW Control Table-draft'
-        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
-    else:
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "FAVA L10 FW Control Table-draft"
-        ws.append(['Category', 'Item', 'Actual Version', 'Draft Version', 'Remark'])
-        fill_hdr = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-        font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        for c in range(1, 6):
-            cell = ws.cell(row=1, column=c)
-            cell.fill = fill_hdr
-            cell.font = font_hdr
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+    from openpyxl import load_workbook
+    wb = load_workbook(template_path)
+    ws = wb['FAVA L10 FW Control Table-draft']
 
-    ws.views.sheetView[0].showGridLines = True
-    fill_diff = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+    current_category = ""
+    for row_idx in range(2, ws.max_row + 1):
+        cat = str(ws.cell(row=row_idx, column=1).value or '').strip()
+        item_name = str(ws.cell(row=row_idx, column=2).value or '').strip()
+        if cat: current_category = cat
 
-    # Update template rows with extracted Draft Versions from YAML
-    for r in range(2, ws.max_row + 1):
-        c_cat = ws.cell(row=r, column=1).value
-        c_item = ws.cell(row=r, column=2).value
-        if c_item or c_cat:
-            matched_item = find_best_yaml_match_for_fava(c_cat, c_item, extracted_items)
+        matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
+        if matched_item:
+            extracted_ver = matched_item.get('yaml_version') or ''
+            if extracted_ver:
+                ws.cell(row=row_idx, column=4, value=str(extracted_ver))
+            status = matched_item.get('status', 'MATCH')
+            if status == 'MISMATCH':
+                ws.cell(row=row_idx, column=5, value=f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})")
+            elif status == 'MATCH':
+                ws.cell(row=row_idx, column=5, value=f"Verified in YAML ({matched_item.get('station', 'YAML')})")
 
-            if matched_item:
-                extracted_ver = matched_item.get('yaml_version') or ''
-                ws.cell(row=r, column=4).value = str(extracted_ver)
-                
-                status = matched_item.get('status', 'MATCH')
-                if status == 'MISMATCH':
-                    ws.cell(row=r, column=5).value = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
-                    ws.cell(row=r, column=4).fill = fill_diff
-                    ws.cell(row=r, column=5).fill = fill_diff
-                elif status == 'MATCH':
-                    ws.cell(row=r, column=5).value = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
+    output_stream = io.BytesIO()
+    wb.save(output_stream)
+    output_stream.seek(0)
 
-    # Filter by selected indices if specified
-    if selected_indices is not None:
-        for r in range(ws.max_row, 1, -1):
-            row_idx_0 = r - 2  # 0-based index matching preview rows
-            if row_idx_0 not in selected_indices:
-                ws.delete_rows(r)
-
-    col_widths = {1: 22, 2: 30, 3: 25, 4: 35, 5: 35}
-    for col_idx, width in col_widths.items():
-        col_letter = openpyxl.utils.get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = width
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f"FAVA_L10_FW_Control_Table_Draft_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"IGS-Clemente FAVA FW Control Table Tracker-draft.xlsx"
     return send_file(
-        output,
-        download_name=filename,
+        output_stream,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        download_name=filename
     )
 
 
 @app.route('/api/preview-fava-draft', methods=['GET'])
 def api_preview_fava_draft():
-    """Return JSON preview data & TSV formatted text of 'FAVA L10 FW Control Table-draft' for copy-pasting."""
-    project_id = request.args.get('project', 'clemente')
+    """Return live preview rows for FAVA L10 FW Control Table Modal."""
+    project_id = request.args.get('project', 'sanmiguel')
     bkc_file = request.args.get('bkc_file')
     bkc_sheet = request.args.get('bkc_sheet')
     y1 = request.args.get('yaml_1')
@@ -2935,6 +2914,7 @@ def api_preview_fava_draft():
     preview_rows = []
     if os.path.exists(template_path):
         b_rows, sheets, _ = read_file_safe(template_path, sheet_name='FAVA L10 FW Control Table-draft')
+        current_category = ""
         for r_idx, r in enumerate(b_rows):
             if r_idx == 0: continue
             cat = str(r[0] or '').strip() if len(r) > 0 else ''
@@ -2943,12 +2923,25 @@ def api_preview_fava_draft():
             draft_ver = str(r[3] or '').strip() if len(r) > 3 else ''
             remark = str(r[4] or '').strip() if len(r) > 4 else ''
 
+            if cat:
+                current_category = cat
+
+            effective_cat = cat or current_category
+
             is_l11 = False
-            c_low = cat.lower()
+            c_low = effective_cat.lower()
             i_low = item_name.lower()
-            l11_keys = ['rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', 'rack', '2nd', 'bbu', 'pmm', 'psu', 'l11']
+            l11_keys = [
+                'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd', 
+                'bbu', 'pmm', 'psu', 'l11', 'switch', 'minipack', 'mgmt switch',
+                'aei', 'delta', 'panasonic', 'fixture', 'cbu'
+            ]
             if any(k in c_low for k in l11_keys) or any(k in i_low for k in l11_keys):
                 is_l11 = True
+
+            # Exception: L10 NVPD is L10 stage!
+            if 'l10 nvpd' in i_low or 'l10' in i_low:
+                is_l11 = False
 
             matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
             if matched_item:
