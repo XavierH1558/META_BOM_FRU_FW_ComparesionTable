@@ -9,6 +9,20 @@ import yaml
 from flask import Flask, render_template, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
+def safe_filename(filename):
+    """Sanitize filename while preserving Unicode/Chinese characters and spaces."""
+    if not filename:
+        return 'unnamed'
+    # Normalize slashes and pick basename
+    filename = filename.replace('\\', '/').split('/')[-1]
+    # Remove control chars and null bytes
+    filename = re.sub(r'[\x00-\x1f\x7f]', '', filename)
+    # Remove unsafe OS path chars: ? : * % " < > |
+    filename = re.sub(r'[?:*%\x22<>|]', '_', filename)
+    filename = filename.strip(' .')
+    return filename or 'unnamed'
+
+
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,10 +30,6 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(os.path.join(DATA_DIR, 'bkc'), exist_ok=True)
-os.makedirs(os.path.join(DATA_DIR, 'fru'), exist_ok=True)
-os.makedirs(os.path.join(DATA_DIR, 'matrix'), exist_ok=True)
-os.makedirs(os.path.join(DATA_DIR, 'yaml'), exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -174,7 +184,7 @@ def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
         if not os.path.exists(d): continue
         for root, _, files in os.walk(d):
             for f in files:
-                if f.endswith(valid_exts) and not f.startswith(('._', '~$')):
+                if f.lower().endswith(valid_exts) and not f.startswith(('._', '~$')):
                     full_p = os.path.join(root, f)
                     if full_p in seen: continue
                     seen.add(full_p)
@@ -189,8 +199,8 @@ def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
                         'filename': f,
                         'display_name': display_name,
                         'path': full_p,
-                        'is_excel': f.endswith(('.xlsx', '.xls')),
-                        'is_yaml': f.endswith(('.yaml', '.yml')),
+                        'is_excel': f.lower().endswith(('.xlsx', '.xls')),
+                        'is_yaml': f.lower().endswith(('.yaml', '.yml')),
                         'is_valid_bkc': is_valid_bkc,
                         'mtime': mtime
                     })
@@ -364,8 +374,8 @@ def upload_file():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No selected file'}), 400
 
-    if file and file.filename.endswith(('.xlsx', '.xls', '.csv', '.yaml', '.yml')):
-        filename = secure_filename(file.filename)
+    if file and file.filename.lower().endswith(('.xlsx', '.xls', '.csv', '.yaml', '.yml')):
+        filename = safe_filename(file.filename)
         proj_upload = get_project_upload_folder(project_id)
         save_path = os.path.join(proj_upload, filename)
         file.save(save_path)
@@ -1983,12 +1993,14 @@ def upload_yaml():
     files = request.files.getlist('files') or [request.files['file']]
     uploaded_files = []
     
+    project_id = request.form.get('project') or request.args.get('project') or 'sanmiguel'
+    proj_upload = get_project_upload_folder(project_id)
     for file in files:
         if file and file.filename:
-            filename = secure_filename(file.filename)
-            if not filename.endswith('.yaml') and not filename.endswith('.yml'):
+            filename = safe_filename(file.filename)
+            if not filename.lower().endswith(('.yaml', '.yml')):
                 continue
-            path = os.path.join(DIR_ROOTS['yaml'], filename)
+            path = os.path.join(proj_upload, filename)
             file.save(path)
             uploaded_files.append({
                 'filename': filename,
@@ -2299,7 +2311,7 @@ def api_release_summary():
         bkc_s = request.args.get('bkc_sheet')
         y_res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_f, bkc_sheet_name=bkc_s, project_id=project_id)
         
-        md.append(f"### ⚡ Test Suite (YAML) Compliance Report")
+        md.append(f"# 🧪 Test Suite (YAML) Compliance Summary")
         md.append(f"- **BKC Reference File**: `{y_res['summary']['bkc_file']}` (Sheet: `{y_res['summary']['bkc_sheet']}`)")
         md.append(f"- **Overall Compliance Rate**: **{y_res['summary']['compliance_rate']}%** ({y_res['summary']['matched_count']}/{y_res['summary']['total_yaml_checks']} items compliant)")
         md.append(f"- **Mismatches / Violations**: {y_res['summary']['mismatch_count']} items")
@@ -2541,7 +2553,7 @@ def api_export_excel():
 @app.route('/api/export-fava-draft', methods=['GET'])
 def api_export_fava_draft():
     """Export YAML test suite comparison in 'FAVA L10 FW Control Table-draft' format."""
-    project_id = request.args.get('project', 'clemente')
+    project_id = request.args.get('project', 'sanmiguel')
     bkc_file = request.args.get('bkc_file')
     bkc_sheet = request.args.get('bkc_sheet')
     y1 = request.args.get('yaml_1')

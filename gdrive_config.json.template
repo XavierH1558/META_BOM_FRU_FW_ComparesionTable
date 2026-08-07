@@ -1,11 +1,23 @@
 {
   "enabled": true,
-  "credentials_file": "service_account.json",
+  "auth_mode": "oauth",
+  "credentials_file": "credentials.json",
   "schedule_mode": "twice_daily",
   "sync_hours": "9,18",
-  "folders": {
-    "bkc": "YOUR_BKC_FOLDER_ID",
-    "fru": "YOUR_FRU_FOLDER_ID",
-    "matrix": "YOUR_BUILD_MATRIX_FOLDER_ID"
+  "projects": {
+    "sanmiguel": {
+      "label": "SanMiguel (VR200)",
+      "bkc": "YOUR_SANMIGUEL_BKC_FOLDER_ID",
+      "fru": "YOUR_SANMIGUEL_FRU_FOLDER_ID",
+      "matrix": "YOUR_SANMIGUEL_BUILD_MATRIX_FOLDER_ID",
+      "yaml": "YOUR_SANMIGUEL_YAML_FOLDER_ID"
+    },
+    "clemente": {
+      "label": "Clemente (GB300)",
+      "bkc": "YOUR_CLEMENTE_BKC_FOLDER_ID",
+      "fru": "YOUR_CLEMENTE_FRU_FOLDER_ID",
+      "matrix": "YOUR_CLEMENTE_BUILD_MATRIX_FOLDER_ID",
+      "yaml": "YOUR_CLEMENTE_YAML_FOLDER_ID"
+    }
   }
 }

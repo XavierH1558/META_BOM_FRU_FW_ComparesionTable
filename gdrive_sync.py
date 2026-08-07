@@ -17,11 +17,7 @@ CONFIG_PATH = os.path.join(BASE_DIR, 'gdrive_config.json')
 TEMPLATE_PATH = os.path.join(BASE_DIR, 'gdrive_config.json.template')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
-FOLDER_TARGET_MAP = {
-    'bkc': os.path.join(DATA_DIR, 'bkc'),
-    'fru': os.path.join(DATA_DIR, 'fru'),
-    'matrix': os.path.join(DATA_DIR, 'matrix')
-}
+
 
 def load_config():
     """Load configuration from gdrive_config.json or template."""
@@ -166,12 +162,12 @@ def fetch_all_files_recursive(service, parent_folder_id):
 
     return all_files, error_msg
 
-def sync_folder(service, folder_id, local_dir):
+def sync_folder(service, folder_id, local_dir, tab_key='bkc'):
     """
     Sync files from a Google Shared Folder ID (and its subfolders) to local_dir.
-    Only downloads new or updated .xlsx, .xls, .csv files or Google Sheets.
+    Only downloads new or updated .xlsx, .xls, .csv, or .yaml files (or Google Sheets).
     """
-    if not folder_id or folder_id.startswith('YOUR_'):
+    if not folder_id or str(folder_id).strip().startswith(('YOUR_', '請在此填寫')):
         return {'status': 'skipped', 'reason': 'Folder ID not configured', 'downloaded': []}
 
     os.makedirs(local_dir, exist_ok=True)
@@ -182,18 +178,20 @@ def sync_folder(service, folder_id, local_dir):
 
     downloaded = []
 
+    valid_exts = ('.xlsx', '.xls', '.csv', '.yaml', '.yml') if tab_key == 'yaml' else ('.xlsx', '.xls', '.csv')
+
     for f in files:
         file_name = f['name']
         mime_type = f.get('mimeType', '')
         is_g_sheet = (mime_type == 'application/vnd.google-apps.spreadsheet')
 
-        # Filter for Excel / CSV files or Google Sheets
+        # Filter for allowed file extensions or Google Sheets
         if not is_g_sheet:
-            if not file_name.lower().endswith(('.xlsx', '.xls', '.csv')) or file_name.startswith(('._', '~$')):
+            if not file_name.lower().endswith(valid_exts) or file_name.startswith(('._', '~$')):
                 continue
 
         # If it's a Google Sheet without .xlsx extension, append .xlsx locally
-        target_name = file_name if file_name.lower().endswith(('.xlsx', '.xls', '.csv')) else f"{file_name}.xlsx"
+        target_name = file_name if file_name.lower().endswith(valid_exts) else f"{file_name}.xlsx"
 
         file_id = f['id']
         remote_mtime = parse_iso_time(f.get('modifiedTime', ''))
@@ -225,7 +223,7 @@ def sync_folder(service, folder_id, local_dir):
 def sync_all_gdrive_folders():
     """
     Master sync function called by Flask or CLI.
-    Iterates over all configured folders and downloads latest files.
+    Iterates over all configured folders across projects and downloads latest files.
     """
     config = load_config()
     if not config:
@@ -240,16 +238,20 @@ def sync_all_gdrive_folders():
         print(f"[GDrive Sync Error] Auth failed: {e}")
         return {'status': 'auth_error', 'message': str(e)}
 
-    folders_config = config.get('folders', {})
     summary = {}
 
-    for tab_key, local_dir in FOLDER_TARGET_MAP.items():
-        folder_id = folders_config.get(tab_key, '').strip()
-        if folder_id:
-            res = sync_folder(service, folder_id, local_dir)
-            summary[tab_key] = res
-        else:
-            summary[tab_key] = {'status': 'skipped', 'reason': 'No folder ID configured'}
+    # Multi-project synchronization
+    projects_config = config.get('projects', {})
+    if projects_config and isinstance(projects_config, dict):
+        for proj_id, proj_info in projects_config.items():
+            if not isinstance(proj_info, dict):
+                continue
+            for tab_key in ['bkc', 'fru', 'matrix', 'yaml']:
+                folder_id = str(proj_info.get(tab_key, '') or '').strip()
+                if folder_id and not folder_id.startswith(('YOUR_', '請在此填寫')):
+                    local_dir = os.path.join(DATA_DIR, proj_id, tab_key)
+                    res = sync_folder(service, folder_id, local_dir, tab_key=tab_key)
+                    summary[f"{proj_id}_{tab_key}"] = res
 
     return {'status': 'complete', 'summary': summary}
 

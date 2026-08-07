@@ -53,17 +53,30 @@
 ```json
 {
   "enabled": true,
-  "credentials_file": "service_account.json",
-  "sync_interval_minutes": 30,
-  "folders": {
-    "bkc": "BKC專屬子資料夾ID",
-    "fru": "FRU_Spec專屬子資料夾ID",
-    "matrix": "Build_Matrix專屬子資料夾ID"
+  "auth_mode": "oauth",
+  "credentials_file": "credentials.json",
+  "schedule_mode": "twice_daily",
+  "sync_hours": "9,18",
+  "projects": {
+    "sanmiguel": {
+      "label": "SanMiguel (VR200)",
+      "bkc": "SanMiguel_BKC資料夾ID",
+      "fru": "SanMiguel_FRU資料夾ID",
+      "matrix": "SanMiguel_Matrix資料夾ID",
+      "yaml": "SanMiguel_YAML資料夾ID"
+    },
+    "clemente": {
+      "label": "Clemente (GB300)",
+      "bkc": "Clemente_BKC資料夾ID",
+      "fru": "Clemente_FRU資料夾ID",
+      "matrix": "Clemente_Matrix資料夾ID",
+      "yaml": "Clemente_YAML資料夾ID"
+    }
   }
 }
 ```
 
-> **提示**：若某個類別不需要自動同步，將 ID 留空 `""` 即可。
+> **提示**：若某個專案或類別不需要自動同步，將 ID 留空 `""` 或維持預設即可。
 
 ---
 
