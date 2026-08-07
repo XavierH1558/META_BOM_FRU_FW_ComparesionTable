@@ -1927,6 +1927,7 @@ def get_yaml_compare():
                 'compliance_rate': 0.0,
                 'stations_count': 0,
                 'bkc_file': os.path.basename(bkc_p) if bkc_p else 'None',
+                'bkc_path': bkc_p,
                 'bkc_sheet': active_bkc_sheet,
                 'available_yaml_files': available_yaml,
                 'available_bkc_files': available_bkc,
@@ -1951,11 +1952,13 @@ def get_yaml_compare():
                 resolved_files.append(f)
     yaml_files = resolved_files
 
-    res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
+    res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=active_bkc_sheet, project_id=project_id)
     
     res['summary']['available_yaml_files'] = available_yaml
     res['summary']['available_bkc_files'] = available_bkc
     res['summary']['bkc_sheets'] = b_sheets
+    res['summary']['bkc_path'] = bkc_p
+    res['summary']['bkc_sheet'] = active_bkc_sheet
     
     return jsonify({
         'success': True,

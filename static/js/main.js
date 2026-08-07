@@ -356,11 +356,12 @@ async function switchProject(projectId) {
     appState.yamlCompare = null;
     appState.selectedFiles = { bkc: null, fru_single: null, fru_dvt: null, fru_pvt: null, matrix: null, yaml_1: null, yaml_2: null, yaml_3: null };
 
-    // Reset file select dropdown values in DOM to prevent cross-project path leakage
+    // Reset file and sheet select dropdown values in DOM to prevent cross-project path leakage
     [
-        'bkc-file-select', 'fru-single-file-select', 'fru-dvt-file-select', 'fru-pvt-file-select',
-        'matrix-file-select', 'matrix-base-file-select', 'matrix-target-file-select',
-        'yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-bkc-file-select'
+        'bkc-file-select', 'bkc-sheet-select',
+        'fru-single-file-select', 'fru-single-sheet-select', 'fru-dvt-file-select', 'fru-pvt-file-select', 'fru-base-sheet-select', 'fru-target-sheet-select',
+        'matrix-file-select', 'matrix-sheet-select', 'matrix-base-file-select', 'matrix-target-file-select', 'matrix-base-sheet-select', 'matrix-target-sheet-select',
+        'yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-bkc-file-select', 'yaml-bkc-sheet-select'
     ].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
@@ -3301,7 +3302,7 @@ async function fetchYamlData() {
                 populateYamlFileSelect('yaml-diff-target-select', availYaml, availYaml.length > 1 ? availYaml[1]?.path : availYaml[0]?.path);
             }
             if (availBkc.length > 0) {
-                populateFileSelect('yaml-bkc-file-select', availBkc, summary.bkc_file);
+                populateFileSelect('yaml-bkc-file-select', availBkc, summary.bkc_path || summary.bkc_file);
             }
             if (availSheets.length > 0) {
                 populateSheetSelect(null, 'yaml-bkc-sheet-select', availSheets, summary.bkc_sheet);
