@@ -3468,7 +3468,10 @@ function renderYamlTable(page) {
         const groups = new Map();
 
         filtered.forEach(it => {
-            const key = (it.sub_component || it.component || it.step_location || 'Unknown').trim().toLowerCase();
+            const catKey = (it.bkc_category || 'General').trim().toLowerCase();
+            const grpKey = (it.bkc_group || 'General').trim().toLowerCase();
+            const subKey = (it.sub_component || it.component || it.step_location || 'Unknown').trim().toLowerCase();
+            const key = `${catKey}|${grpKey}|${subKey}`;
             if (!groups.has(key)) {
                 groups.set(key, {
                     component: it.sub_component || it.component,

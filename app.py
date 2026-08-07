@@ -1484,56 +1484,79 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
         grp_norm = normalize_str(b_item.get('group', ''))
         b_sub_norm = normalize_str(b_item.get('sub_component', ''))
 
+        # Exact match
         if sub_norm and sub_norm == b_sub_norm:
+            # But check if ERoT mismatch exists
+            is_y_erot = 'erot' in sub_norm or 'erot' in y_norm or 'erot' in step_norm
+            is_b_erot = 'erot' in b_sub_norm or 'erot' in grp_norm
+            if is_y_erot != is_b_erot:
+                return 0
             return 100
-        if y_norm and y_norm == b_sub_norm:
-            return 95
+
+        # Strict ERoT check: ERoT items should ONLY match ERoT BKC items
+        is_y_erot = 'erot' in sub_norm or 'erot' in y_norm or 'erot' in step_norm
+        is_b_erot = 'erot' in b_sub_norm or 'erot' in grp_norm or 'erot' in cat_norm
+        if is_y_erot and not is_b_erot:
+            return 0
+        if not is_y_erot and is_b_erot:
+            return 0
 
         score = 0
 
         # 1. BMC Component Matching
         if 'bmc' in sub_norm or 'bmc' in y_norm or 'bmc' in step_norm:
-            if 'openbmc' in b_sub_norm:
-                if 'ct' in sub_norm or 'ct' in step_norm or 'computetray' in cat_norm:
-                    score += 85
-                else:
-                    score += 70
-            elif 'bmc' in b_sub_norm:
-                if 'nvswitch' in grp_norm or 'nv' in grp_norm:
-                    if 'nv' in step_norm or 'nv' in sub_norm:
+            if 'openbmc' in b_sub_norm or 'bmc' in b_sub_norm:
+                if 'erot' not in b_sub_norm and 'erot' not in grp_norm:
+                    if 'ct' in sub_norm or 'ct' in step_norm or 'computetray' in cat_norm or 'bsm' in grp_norm:
                         score += 90
                     else:
-                        score += 40
-                else:
-                    score += 65
+                        score += 70
 
-        # 2. CPLD Component Matching
+        # 2. CPLD Component Matching with strict location token matching
         elif 'cpld' in sub_norm or 'cpld' in y_norm or 'cpld' in step_norm:
             if 'cpld' in b_sub_norm or 'cpld' in grp_norm or 'fpga' in b_sub_norm:
-                loc_tokens = ['interposer', 'scm', 'hdd', 'hmc', 'rmc', 'fio', 'nvswitch', 'cff']
+                loc_tokens = ['interposer', 'scm', 'hdd', 'hmc', 'rmc', 'fio', 'nvswitch', 'cff', 'e1s']
                 y_locs = [loc for loc in loc_tokens if loc in step_norm or loc in sub_norm or loc in y_norm]
                 b_locs = [loc for loc in loc_tokens if loc in b_sub_norm or loc in grp_norm or loc in cat_norm]
                 
+                if 'hmc' in sub_norm or 'hgxfwcpld' in sub_norm or 'hmc' in step_norm:
+                    if 'hmc' in b_sub_norm or 'hmc' in grp_norm:
+                        return 95
+                    else:
+                        return 0
+
                 if y_locs:
                     common_locs = set(y_locs).intersection(set(b_locs))
                     if common_locs:
-                        score += 85
+                        score += 90
                     else:
-                        score = 0
+                        return 0
                 else:
+                    if 'hmc' in b_sub_norm or 'hmc' in grp_norm:
+                        return 0
                     score += 50
 
-        # 3. SBIOS / BIOS Matching
+        # 3. VR Matching (PDB_P12V_N1_VR, PDB_P12V_N2_VR)
+        elif 'vr' in sub_norm or 'vr' in y_norm or 'vr' in step_norm:
+            if 'vr' in b_sub_norm or 'vr' in grp_norm:
+                if ('n1' in sub_norm or 'n1' in y_norm) and ('n1' in b_sub_norm or 'n1' in grp_norm):
+                    score += 95
+                elif ('n2' in sub_norm or 'n2' in y_norm) and ('n2' in b_sub_norm or 'n2' in grp_norm):
+                    score += 95
+                else:
+                    score += 60
+
+        # 4. SBIOS / BIOS Matching
         elif any(k in sub_norm or k in step_norm for k in ['sbios', 'bios']):
             if any(k in b_sub_norm or k in grp_norm for k in ['sbios', 'bios']):
                 score += 80
 
-        # 4. OS / Kernel Matching
+        # 5. OS / Kernel Matching
         elif 'os' in sub_norm or 'kernel' in sub_norm:
             if 'os' in b_sub_norm or 'kernel' in b_sub_norm:
                 score += 80
 
-        # 5. Generic substring containment
+        # 6. Generic substring containment
         else:
             if len(sub_norm) >= 3 and (sub_norm in b_sub_norm or b_sub_norm in sub_norm):
                 score += 60
@@ -1556,10 +1579,29 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 matched_bkc = b_item
                 matched_idx = idx
 
+        def is_version_compliant(bkc_v, y_v):
+            if not bkc_v or not y_v:
+                return False
+            bv = str(bkc_v).strip().lower()
+            yv = str(y_v).strip().lower()
+            if bv == yv:
+                return True
+            if 'read-out' in bv or 'readout' in bv or 'read out' in bv:
+                return True
+            bv_clean = re.sub(r'[^a-zA-Z0-9]', '', bv)
+            yv_clean = re.sub(r'[^a-zA-Z0-9]', '', yv)
+            if bv_clean == yv_clean:
+                return True
+            if len(yv_clean) >= 4 and yv_clean in bv_clean:
+                return True
+            if len(bv_clean) >= 4 and bv_clean in yv_clean:
+                return True
+            return compare_versions(bkc_v, y_v) == 'same'
+
         if best_score >= 50 and matched_bkc:
             matched_bkc_indices.add(matched_idx)
             bkc_ver = matched_bkc.get('version', '')
-            ver_match = (compare_versions(bkc_ver, y_ver) == 'same') or (y_ver.lower() == bkc_ver.lower())
+            ver_match = is_version_compliant(bkc_ver, y_ver)
             
             status = 'MATCH' if ver_match else 'MISMATCH'
             status_label = '🟢 吻合 (Follow BKC)' if ver_match else '🔴 不符合 BKC'
