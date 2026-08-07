@@ -410,6 +410,8 @@ function addAndSelectOption(selectElement, filePath) {
 
         if (val === cleanTarget || (valBase && targetBase && valBase === targetBase) || txt === cleanTarget || txt.includes(targetBase)) {
             selectElement.selectedIndex = i;
+            selectElement.options[i].selected = true;
+            selectElement.value = opt.value;
             return true;
         }
     }
@@ -419,7 +421,45 @@ function addAndSelectOption(selectElement, filePath) {
     newOpt.textContent = `[Uploaded] ${targetBase}`;
     newOpt.selected = true;
     selectElement.appendChild(newOpt);
+    selectElement.value = filePath;
     return true;
+}
+
+function assignUploadedYamlPathsToSlots(uploadedPaths) {
+    if (!uploadedPaths || uploadedPaths.length === 0) return;
+
+    const s1 = document.getElementById('yaml-file-select-1');
+    const s2 = document.getElementById('yaml-file-select-2');
+    const s3 = document.getElementById('yaml-file-select-3');
+
+    const assigned = [null, null, null];
+    const unassigned = [];
+
+    uploadedPaths.forEach(path => {
+        const lower = path.toLowerCase();
+        if (lower.includes('station1') || lower.includes('station_1') || lower.includes('st1') || lower.includes('fvt') || lower.includes('fdt')) {
+            if (!assigned[0]) assigned[0] = path;
+            else unassigned.push(path);
+        } else if (lower.includes('station2') || lower.includes('station_2') || lower.includes('st2') || lower.includes('runin') || lower.includes('fro')) {
+            if (!assigned[1]) assigned[1] = path;
+            else unassigned.push(path);
+        } else if (lower.includes('station3') || lower.includes('station_3') || lower.includes('st3') || lower.includes('ort') || lower.includes('fft')) {
+            if (!assigned[2]) assigned[2] = path;
+            else unassigned.push(path);
+        } else {
+            unassigned.push(path);
+        }
+    });
+
+    for (let i = 0; i < 3; i++) {
+        if (!assigned[i] && unassigned.length > 0) {
+            assigned[i] = unassigned.shift();
+        }
+    }
+
+    if (assigned[0] && s1) addAndSelectOption(s1, assigned[0]);
+    if (assigned[1] && s2) addAndSelectOption(s2, assigned[1]);
+    if (assigned[2] && s3) addAndSelectOption(s3, assigned[2]);
 }
 
 function initYamlManualUploads() {
@@ -461,16 +501,15 @@ function initYamlManualUploads() {
 
                         showSuccessToast(
                             `✅ 已成功載入 Station ${slotNum} 腳本 (${file.name})`,
-                            '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
+                            '檔案已設定完畢，請確認 BKC 表單與腳本後點擊「開始 BKC 比對分析」按鈕啟動比對。'
                         );
-                        await fetchYamlData();
                     } else {
                         showProjectMismatchModal(data.error || '專案不對，請重新輸入新檔案！');
                         input.value = '';
                     }
                 } catch (err) {
                     console.error(`Upload error for Station ${slotNum}:`, err);
-                    alert(`上傳發生錯誤: ${err.message}`);
+                    showProjectMismatchModal(`❌ 上傳連線發生錯誤: ${err.message}\n\n請確認後端伺服器 (Flask App Server) 是否正在正常運行。`);
                 } finally {
                     await hideLoading(400);
                 }
@@ -573,23 +612,68 @@ function initEventListeners() {
         }
     });
 
+async function copyTextToClipboard(text) {
+    if (!text) return false;
+
+    // 1. Try Modern Navigator Clipboard API (works on HTTPS or localhost)
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (err) {
+            console.warn('[copyTextToClipboard] navigator.clipboard failed, attempting fallback...', err);
+        }
+    }
+
+    // 2. Universal Fallback using invisible textarea & document.execCommand('copy') (works on HTTP IP address)
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '-9999px';
+        textArea.style.left = '-9999px';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+    } catch (err) {
+        console.error('[copyTextToClipboard] Fallback execCommand copy failed:', err);
+        return false;
+    }
+}
+
     // Modal Copy to Clipboard Button
     const btnCopyFavaTsv = document.getElementById('btn-copy-fava-tsv');
     if (btnCopyFavaTsv) {
         btnCopyFavaTsv.addEventListener('click', async () => {
-            if (!currentFavaTsvText) {
-                alert('目前無可複製之表格內容！');
+            const checkedBoxes = Array.from(document.querySelectorAll('.fava-row-checkbox:checked'));
+            if (checkedBoxes.length === 0) {
+                showProjectMismatchModal('⚠️ 目前未勾選任何項目！請先在表格中勾選欲複製的項目。');
                 return;
             }
-            try {
-                await navigator.clipboard.writeText(currentFavaTsvText);
+
+            const tsvLines = ["Category\tItem\tActual Version\tDraft Version\tRemark"];
+            checkedBoxes.forEach(cb => {
+                const idx = parseInt(cb.dataset.idx, 10);
+                const r = currentFavaRows[idx];
+                if (r) {
+                    tsvLines.push(`${r.category || ''}\t${r.item || ''}\t${r.actual_version || ''}\t${r.draft_version || ''}\t${r.remark || ''}`);
+                }
+            });
+
+            const tsvText = tsvLines.join('\n');
+            const success = await copyTextToClipboard(tsvText);
+            if (success) {
                 showSuccessToast(
-                    '📋 已成功複製 FAVA L10 表格至剪貼簿！',
+                    `📋 已成功複製勾選的 ${checkedBoxes.length} 列表格至剪貼簿！`,
                     '請切換至線上 Excel 或 Google Sheets，點擊對應儲存格按 Ctrl+V (或 Cmd+V) 即可直接貼上。'
                 );
-            } catch (err) {
-                console.error('Failed to copy to clipboard:', err);
-                alert('複製失敗，請手動選取表格複製。');
+            } else {
+                showProjectMismatchModal('❌ 剪貼簿寫入失敗，請確認瀏覽器並未封鎖剪貼簿功能。');
             }
         });
     }
@@ -598,13 +682,21 @@ function initEventListeners() {
     const btnDownloadFavaXlsx = document.getElementById('btn-download-fava-xlsx');
     if (btnDownloadFavaXlsx) {
         btnDownloadFavaXlsx.addEventListener('click', () => {
+            const checkedBoxes = Array.from(document.querySelectorAll('.fava-row-checkbox:checked'));
+            if (checkedBoxes.length === 0) {
+                showProjectMismatchModal('⚠️ 目前未勾選任何項目！請先在表格中勾選欲下載的項目。');
+                return;
+            }
+
+            const indices = checkedBoxes.map(cb => cb.dataset.idx).join(',');
+
             const y1 = document.getElementById('yaml-file-select-1')?.value || '';
             const y2 = document.getElementById('yaml-file-select-2')?.value || '';
             const y3 = document.getElementById('yaml-file-select-3')?.value || '';
             const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
             const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
 
-            let url = `/api/export-fava-draft?project=${encodeURIComponent(currentProject)}`;
+            let url = `/api/export-fava-draft?project=${encodeURIComponent(currentProject)}&indices=${encodeURIComponent(indices)}`;
             if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
             if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
             if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
@@ -633,12 +725,6 @@ function initEventListeners() {
     if (ySearchI) ySearchI.addEventListener('input', () => renderYamlTable());
     if (yMergeDup) yMergeDup.addEventListener('change', () => renderYamlTable());
 
-    ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-bkc-file-select', 'yaml-bkc-sheet-select'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('change', () => fetchYamlData());
-        }
-    });
 
 function getSummaryApiUrl(targetTab) {
     let url = `/api/release-summary?tab=${targetTab}&project=${encodeURIComponent(currentProject)}`;
@@ -1345,8 +1431,6 @@ function initUploadModal() {
                         const btnYamlTab = document.querySelector('.tab-btn[data-tab="tab-yaml"]');
                         if (btnYamlTab) btnYamlTab.click();
 
-                        await fetchYamlData();
-
                         const targetVal = data.filename || data.path;
                         let targetSel = null;
                         if (s1 && (!s1.value || s1.value === '')) targetSel = s1;
@@ -1355,7 +1439,6 @@ function initUploadModal() {
                         else targetSel = s1;
 
                         selectOptionByValueOrFilename(targetSel, targetVal);
-                        await fetchYamlData();
                     } else {
                         fetchAllData();
                     }
@@ -1449,14 +1532,13 @@ function initYamlDragAndDrop() {
                     if (data.success) {
                         const bkcSelect = document.getElementById('yaml-bkc-file-select');
                         if (bkcSelect) addAndSelectOption(bkcSelect, data.filename || data.path);
-                        showSuccessToast(`✅ 已成功上傳 BKC 對照檔 ${excelFiles[0].name}`, '已切換 BKC 對照檔並重新比對');
-                        await fetchYamlData();
+                        showSuccessToast(`✅ 已成功上傳 BKC 對照檔 ${excelFiles[0].name}`, '已切換 BKC 對照檔，請點擊「開始 BKC 比對分析」按鈕啟動比對');
                     } else {
                         showProjectMismatchModal(data.error || 'BKC 對照檔上傳失敗，請確認檔案格式與專案！');
                     }
                 } catch (err) {
                     console.error('BKC slot drag drop error:', err);
-                    alert(`BKC 上傳失敗: ${err.message}`);
+                    showProjectMismatchModal(`❌ BKC 上傳連線失敗: ${err.message}\n\n請確認後端伺服器 (Flask App Server) 是否正在正常運行。`);
                 } finally {
                     hideLoading(400);
                 }
@@ -1490,21 +1572,17 @@ function initYamlDragAndDrop() {
                 }
 
                 if (uploadedPaths.length > 0) {
-                    uploadedPaths.forEach((path, idx) => {
-                        const targetSlotNum = slotNum + idx;
-                        if (targetSlotNum <= 3) {
-                            const select = document.getElementById(`yaml-file-select-${targetSlotNum}`);
-                            if (select) {
-                                addAndSelectOption(select, path);
-                            }
-                        }
-                    });
+                    if (uploadedPaths.length === 1) {
+                        const select = document.getElementById(`yaml-file-select-${slotNum}`);
+                        if (select) addAndSelectOption(select, uploadedPaths[0]);
+                    } else {
+                        assignUploadedYamlPathsToSlots(uploadedPaths);
+                    }
 
                     showSuccessToast(
                         `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
-                        '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
+                        '檔案已設定完畢，請確認 BKC 表單與腳本後點擊「開始 BKC 比對分析」按鈕啟動比對。'
                     );
-                    await fetchYamlData();
                 }
 
                 if (lastError) {
@@ -1512,7 +1590,7 @@ function initYamlDragAndDrop() {
                 }
             } catch (err) {
                 console.error(`YAML slot ${slotNum} drag drop upload error:`, err);
-                alert(`上傳發生錯誤: ${err.message}`);
+                showProjectMismatchModal(`❌ 上傳連線發生錯誤: ${err.message}\n\n請確認後端伺服器 (Flask App Server) 是否正在正常運行。`);
             } finally {
                 hideLoading(400);
             }
@@ -1543,19 +1621,12 @@ function initYamlDragAndDrop() {
             }
 
             if (uploadedPaths.length > 0) {
-                const s1 = document.getElementById('yaml-file-select-1');
-                const s2 = document.getElementById('yaml-file-select-2');
-                const s3 = document.getElementById('yaml-file-select-3');
-
-                if (uploadedPaths[0] && s1) addAndSelectOption(s1, uploadedPaths[0]);
-                if (uploadedPaths[1] && s2) addAndSelectOption(s2, uploadedPaths[1]);
-                if (uploadedPaths[2] && s3) addAndSelectOption(s3, uploadedPaths[2]);
+                assignUploadedYamlPathsToSlots(uploadedPaths);
 
                 showSuccessToast(
                     `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
-                    '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
+                    '檔案已設定完畢，請確認 BKC 表單與腳本後點擊「開始 BKC 比對分析」按鈕啟動比對。'
                 );
-                await fetchYamlData();
             }
 
             if (lastError) {
@@ -1563,7 +1634,7 @@ function initYamlDragAndDrop() {
             }
         } catch (err) {
             console.error('YAML drag drop upload error:', err);
-            alert(`上傳發生錯誤: ${err.message}`);
+            showProjectMismatchModal(`❌ 上傳連線發生錯誤: ${err.message}\n\n請確認後端伺服器 (Flask App Server) 是否正在正常運行。`);
         } finally {
             hideLoading(400);
         }
@@ -4057,36 +4128,118 @@ async function openFavaPreviewModal() {
     }
 }
 
+let currentFavaRows = [];
+
+function updateFavaSelectedBadge() {
+    const checkboxes = document.querySelectorAll('.fava-row-checkbox');
+    const checkedCount = document.querySelectorAll('.fava-row-checkbox:checked').length;
+    const selectedBadge = document.getElementById('fava-selected-badge');
+    if (selectedBadge) {
+        selectedBadge.innerHTML = `<i class="fa-solid fa-square-check"></i> 已勾選: ${checkedCount} 列`;
+    }
+    const selectAllCb = document.getElementById('fava-select-all-checkbox');
+    if (selectAllCb) {
+        selectAllCb.checked = (checkboxes.length > 0 && checkedCount === checkboxes.length);
+    }
+}
+
+function initFavaModalSelectionControls() {
+    const btnSelectUpdated = document.getElementById('btn-fava-select-updated');
+    const btnSelectAll = document.getElementById('btn-fava-select-all');
+    const btnDeselectAll = document.getElementById('btn-fava-deselect-all');
+    const selectAllCb = document.getElementById('fava-select-all-checkbox');
+
+    if (btnSelectUpdated) {
+        btnSelectUpdated.onclick = () => {
+            document.querySelectorAll('.fava-row-checkbox').forEach(cb => {
+                const idx = parseInt(cb.dataset.idx, 10);
+                const row = currentFavaRows[idx];
+                cb.checked = !!(row && (row.is_updated || row.is_subrow_valid));
+            });
+            updateFavaSelectedBadge();
+        };
+    }
+
+    if (btnSelectAll) {
+        btnSelectAll.onclick = () => {
+            document.querySelectorAll('.fava-row-checkbox').forEach(cb => cb.checked = true);
+            updateFavaSelectedBadge();
+        };
+    }
+
+    if (btnDeselectAll) {
+        btnDeselectAll.onclick = () => {
+            document.querySelectorAll('.fava-row-checkbox').forEach(cb => cb.checked = false);
+            updateFavaSelectedBadge();
+        };
+    }
+
+    if (selectAllCb) {
+        selectAllCb.onchange = () => {
+            const isChecked = selectAllCb.checked;
+            document.querySelectorAll('.fava-row-checkbox').forEach(cb => cb.checked = isChecked);
+            updateFavaSelectedBadge();
+        };
+    }
+}
+
 function renderFavaPreviewTable(rows) {
+    currentFavaRows = rows || [];
     const tbody = document.getElementById('fava-modal-tbody');
     if (!tbody) return;
 
     if (!rows || rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-muted">無預覽資料</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">無預覽資料</td></tr>`;
+        updateFavaSelectedBadge();
         return;
     }
 
+    // Pre-pass to mark active sub-rows (e.g. PCI Vendor/Device IDs under active SSDs)
+    let currentParentActive = false;
+    currentFavaRows.forEach(r => {
+        const isHeader = !r.item && r.category;
+        const isSubRow = !r.item && !r.category && r.draft_version && r.draft_version !== 'N/A (未測試)';
+        if (r.item) {
+            currentParentActive = !!(r.is_updated || (r.draft_version && r.draft_version !== 'N/A (未測試)'));
+        }
+        if (isSubRow && currentParentActive) {
+            r.is_subrow_valid = true;
+        }
+    });
+
     tbody.innerHTML = rows.map((r, idx) => {
         const isHeaderRow = !r.item && r.category;
+        const isSubRow = !r.item && !r.category;
+
         const bgStyle = isHeaderRow 
             ? 'background: rgba(30, 41, 59, 0.7); font-weight: 700; color: #38bdf8;' 
             : (r.is_updated ? 'background: rgba(56, 189, 248, 0.05);' : '');
 
-        const draftBadge = r.is_updated 
-            ? `<span style="color: #34d399; font-weight: 600; font-family: monospace;">${escapeHtml(r.draft_version)}</span>` 
-            : `<span style="color: #64748b; font-family: monospace;">${escapeHtml(r.draft_version || '-')}</span>`;
+        let draftBadge = `<span style="color: #64748b; font-family: monospace;">${escapeHtml(r.draft_version || '-')}</span>`;
+        if (r.is_updated) {
+            draftBadge = `<span style="color: #34d399; font-weight: 600; font-family: monospace;">${escapeHtml(r.draft_version)}</span>`;
+        } else if (r.is_subrow_valid) {
+            draftBadge = `<span style="color: #38bdf8; font-weight: 500; font-family: monospace;">${escapeHtml(r.draft_version)}</span>`;
+        }
 
         let remarkBadge = '-';
         if (r.remark) {
             if (r.remark.includes('MISMATCH')) {
                 remarkBadge = `<span class="badge bg-amber-subtle text-amber" style="padding: 2px 8px; border-radius: 4px; font-size: 0.78rem;">${escapeHtml(r.remark)}</span>`;
+            } else if (r.remark.includes('L11 Scope')) {
+                remarkBadge = `<span class="badge bg-secondary-subtle text-muted" style="padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; opacity: 0.65;"><i class="fa-solid fa-clock-rotate-left"></i> ${escapeHtml(r.remark)}</span>`;
             } else {
                 remarkBadge = `<span style="color: #94a3b8; font-size: 0.8rem;">${escapeHtml(r.remark)}</span>`;
             }
         }
 
+        const isChecked = (r.is_updated || isHeaderRow || r.is_subrow_valid) && !r.is_l11;
+
         return `
-            <tr style="${bgStyle} border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <tr style="${bgStyle} border-bottom: 1px solid rgba(255,255,255,0.05); ${r.is_l11 && !r.is_updated ? 'opacity: 0.6;' : ''}">
+                <td style="padding: 8px 12px; text-align: center;">
+                    <input type="checkbox" class="fava-row-checkbox" data-idx="${idx}" ${isChecked ? 'checked' : ''} onchange="updateFavaSelectedBadge()" style="cursor: pointer; width: 16px; height: 16px; accent-color: #38bdf8;">
+                </td>
                 <td style="padding: 8px 12px; color: ${isHeaderRow ? '#38bdf8' : '#cbd5e1'}; font-weight: ${isHeaderRow ? '700' : 'normal'};">${escapeHtml(r.category)}</td>
                 <td style="padding: 8px 12px; color: #f8fafc; font-weight: ${r.is_updated ? '600' : 'normal'};">${escapeHtml(r.item)}</td>
                 <td style="padding: 8px 12px; color: #94a3b8; font-family: monospace;">${escapeHtml(r.actual_version || '-')}</td>
@@ -4095,6 +4248,9 @@ function renderFavaPreviewTable(rows) {
             </tr>
         `;
     }).join('');
+
+    initFavaModalSelectionControls();
+    updateFavaSelectedBadge();
 }
 
 async function showProjectMismatchModal(errMsg) {

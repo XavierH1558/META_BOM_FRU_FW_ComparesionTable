@@ -2943,6 +2943,12 @@ def api_preview_fava_draft():
             draft_ver = str(r[3] or '').strip() if len(r) > 3 else ''
             remark = str(r[4] or '').strip() if len(r) > 4 else ''
 
+            is_l11 = False
+            c_low = cat.lower()
+            i_low = item_name.lower()
+            if any(k in c_low for k in ['rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', 'rack', '2nd', 'bbu', 'pmm', 'psu']) or any(k in i_low for k in ['rmc', 'nvswitch', 'aalc', 'wedge400', 'bbu', 'pmm', 'psu']):
+                is_l11 = True
+
             matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
             if matched_item:
                 extracted_ver = matched_item.get('yaml_version') or ''
@@ -2952,6 +2958,8 @@ def api_preview_fava_draft():
                     remark = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
                 elif status == 'MATCH':
                     remark = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
+            elif is_l11:
+                remark = "L11 Scope (非 L10 測試範疇)"
 
             if item_name or cat or draft_ver:
                 preview_rows.append({
@@ -2961,6 +2969,7 @@ def api_preview_fava_draft():
                     'draft_version': draft_ver,
                     'remark': remark,
                     'is_updated': bool(matched_item),
+                    'is_l11': is_l11,
                     'status': matched_item.get('status', 'NONE') if matched_item else 'NONE'
                 })
 
