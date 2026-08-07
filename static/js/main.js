@@ -461,8 +461,9 @@ function initYamlManualUploads() {
 
                         showSuccessToast(
                             `✅ 已成功載入 Station ${slotNum} 腳本 (${file.name})`,
-                            '檔案已設定完畢！確定所需工站腳本皆已選擇後，請點擊「⚡ 開始 / 執行 BKC 合規比對」進行分析。'
+                            '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
                         );
+                        await fetchYamlData();
                     } else {
                         alert(`上傳失敗: ${data.error || '未知錯誤'}`);
                     }
@@ -588,6 +589,13 @@ function initEventListeners() {
     if (yStatusF) yStatusF.addEventListener('change', () => renderYamlTable());
     if (ySearchI) ySearchI.addEventListener('input', () => renderYamlTable());
     if (yMergeDup) yMergeDup.addEventListener('change', () => renderYamlTable());
+
+    ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-bkc-file-select', 'yaml-bkc-sheet-select'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', () => fetchYamlData());
+        }
+    });
 
 function getSummaryApiUrl(targetTab) {
     let url = `/api/release-summary?tab=${targetTab}&project=${encodeURIComponent(currentProject)}`;
@@ -3321,9 +3329,7 @@ async function fetchYamlData() {
     } catch (err) {
         console.error('Error fetching YAML compare data:', err);
     } finally {
-        if (hasActiveYaml) {
-            await hideLoading(700);
-        }
+        await hideLoading(400);
     }
 }
 
