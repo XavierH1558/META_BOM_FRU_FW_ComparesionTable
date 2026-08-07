@@ -1451,9 +1451,12 @@ function initYamlDragAndDrop() {
                         if (bkcSelect) addAndSelectOption(bkcSelect, data.filename || data.path);
                         showSuccessToast(`✅ 已成功上傳 BKC 對照檔 ${excelFiles[0].name}`, '已切換 BKC 對照檔並重新比對');
                         await fetchYamlData();
+                    } else {
+                        showProjectMismatchModal(data.error || 'BKC 對照檔上傳失敗，請確認檔案格式與專案！');
                     }
                 } catch (err) {
                     console.error('BKC slot drag drop error:', err);
+                    alert(`BKC 上傳失敗: ${err.message}`);
                 } finally {
                     hideLoading(400);
                 }
@@ -1471,6 +1474,7 @@ function initYamlDragAndDrop() {
 
             try {
                 const uploadedPaths = [];
+                let lastError = null;
                 for (const file of files) {
                     const formData = new FormData();
                     formData.append('file', file);
@@ -1480,26 +1484,35 @@ function initYamlDragAndDrop() {
                     const data = await res.json();
                     if (data.success) {
                         uploadedPaths.push(data.filename || data.path);
+                    } else {
+                        lastError = data.error || '檔案校驗未通過';
                     }
                 }
 
-                uploadedPaths.forEach((path, idx) => {
-                    const targetSlotNum = slotNum + idx;
-                    if (targetSlotNum <= 3) {
-                        const select = document.getElementById(`yaml-file-select-${targetSlotNum}`);
-                        if (select) {
-                            addAndSelectOption(select, path);
+                if (uploadedPaths.length > 0) {
+                    uploadedPaths.forEach((path, idx) => {
+                        const targetSlotNum = slotNum + idx;
+                        if (targetSlotNum <= 3) {
+                            const select = document.getElementById(`yaml-file-select-${targetSlotNum}`);
+                            if (select) {
+                                addAndSelectOption(select, path);
+                            }
                         }
-                    }
-                });
+                    });
 
-                showSuccessToast(
-                    `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
-                    '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
-                );
-                await fetchYamlData();
+                    showSuccessToast(
+                        `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
+                        '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
+                    );
+                    await fetchYamlData();
+                }
+
+                if (lastError) {
+                    showProjectMismatchModal(lastError);
+                }
             } catch (err) {
                 console.error(`YAML slot ${slotNum} drag drop upload error:`, err);
+                alert(`上傳發生錯誤: ${err.message}`);
             } finally {
                 hideLoading(400);
             }
@@ -1514,6 +1527,7 @@ function initYamlDragAndDrop() {
 
         try {
             const uploadedPaths = [];
+            let lastError = null;
             for (const file of files.slice(0, 3)) {
                 const formData = new FormData();
                 formData.append('file', file);
@@ -1523,24 +1537,33 @@ function initYamlDragAndDrop() {
                 const data = await res.json();
                 if (data.success) {
                     uploadedPaths.push(data.filename || data.path);
+                } else {
+                    lastError = data.error || '檔案校驗未通過';
                 }
             }
 
-            const s1 = document.getElementById('yaml-file-select-1');
-            const s2 = document.getElementById('yaml-file-select-2');
-            const s3 = document.getElementById('yaml-file-select-3');
+            if (uploadedPaths.length > 0) {
+                const s1 = document.getElementById('yaml-file-select-1');
+                const s2 = document.getElementById('yaml-file-select-2');
+                const s3 = document.getElementById('yaml-file-select-3');
 
-            if (uploadedPaths[0] && s1) addAndSelectOption(s1, uploadedPaths[0]);
-            if (uploadedPaths[1] && s2) addAndSelectOption(s2, uploadedPaths[1]);
-            if (uploadedPaths[2] && s3) addAndSelectOption(s3, uploadedPaths[2]);
+                if (uploadedPaths[0] && s1) addAndSelectOption(s1, uploadedPaths[0]);
+                if (uploadedPaths[1] && s2) addAndSelectOption(s2, uploadedPaths[1]);
+                if (uploadedPaths[2] && s3) addAndSelectOption(s3, uploadedPaths[2]);
 
-            showSuccessToast(
-                `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
-                '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
-            );
-            await fetchYamlData();
+                showSuccessToast(
+                    `✅ 已成功載入 ${uploadedPaths.length} 個 YAML 測試腳本！`,
+                    '檔案已設定完畢，系統正自動進行 BKC 合規比對分析...'
+                );
+                await fetchYamlData();
+            }
+
+            if (lastError) {
+                showProjectMismatchModal(lastError);
+            }
         } catch (err) {
             console.error('YAML drag drop upload error:', err);
+            alert(`上傳發生錯誤: ${err.message}`);
         } finally {
             hideLoading(400);
         }
@@ -4083,9 +4106,6 @@ async function showProjectMismatchModal(errMsg) {
     if (modal) {
         modal.style.display = 'flex';
     }
-    setTimeout(() => {
-        alert(`❌ 專案不對，請重新輸入新檔案！\n\n${text}`);
-    }, 100);
 }
 
 
