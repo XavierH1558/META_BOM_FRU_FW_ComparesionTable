@@ -219,22 +219,38 @@ def validate_yaml_project(file_path, project_id):
         return True, ""
     fname = os.path.basename(file_path).lower()
     
+    # 1. Filename checks
     if project_id == 'clemente':
-        if any(k in fname for k in ['sanmiguel', 'vr200', 'maxwell_earth', 'l10_station1_fvt', 'l10_station2_runin', 'l10_station3_ort']):
+        if any(k in fname for k in ['sanmiguel', 'vr200', 'maxwell', 'earth', 'l10_station1_fvt', 'l10_station2_runin', 'l10_station3_ort']):
             return False, f"專案不對，請重新輸入新檔案！您選擇/上傳的腳本 '{os.path.basename(file_path)}' 屬於 SanMiguel (VR200) 專案，但當前 active 專案為 Clemente (GB300)。"
     elif project_id == 'sanmiguel':
         if any(k in fname for k in ['clemente', 'gb300', 'maxq', 'clemente_ct_maxq_mp_fdt', 'clemente_ct_maxq_mp_fft', 'clemente_ct_maxq_mp_fro']):
             return False, f"專案不對，請重新輸入新檔案！您選擇/上傳的腳本 '{os.path.basename(file_path)}' 屬於 Clemente (GB300) 專案，但當前 active 專案為 SanMiguel (VR200)。"
             
+    # 2. Deep content checks (first 50,000 characters)
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read(30000).lower()
+            content = f.read(50000).lower()
+            
         if project_id == 'clemente':
-            if 'flash-sanmiguel' in content or 'sanmiguel-v' in content:
-                return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內的指令與韌體版本屬於 SanMiguel (VR200) 專案。"
+            sanmiguel_indicators = [
+                'sanmiguel', 'vr200', 'flash-sanmiguel', 'maxwell', 'earth',
+                'station 1 (fvt)', 'station 2 (runin)', 'station 3 (ort)',
+                'functional verification test (fvt)'
+            ]
+            for ind in sanmiguel_indicators:
+                if ind in content:
+                    return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內包含 SanMiguel (VR200) 專案特徵 '{ind}'，但當前 active 專案為 Clemente (GB300)。"
+                    
         elif project_id == 'sanmiguel':
-            if 'flash-clemente' in content or 'clemente-v' in content:
-                return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內的指令與韌體版本屬於 Clemente (GB300) 專案。"
+            clemente_indicators = [
+                'clemente', 'gb300', 'flash-clemente', 'clemente_ct',
+                'station 1 (fdt)', 'station 2 (fro)', 'station 3 (fft)',
+                'clementesbios', 'clementehmc', 'clementebmc'
+            ]
+            for ind in clemente_indicators:
+                if ind in content:
+                    return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內包含 Clemente (GB300) 專案特徵 '{ind}'，但當前 active 專案為 SanMiguel (VR200)。"
     except Exception:
         pass
         

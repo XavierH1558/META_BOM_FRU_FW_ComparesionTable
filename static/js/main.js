@@ -4074,11 +4074,18 @@ function renderFavaPreviewTable(rows) {
     }).join('');
 }
 
-function showProjectMismatchModal(errMsg) {
+async function showProjectMismatchModal(errMsg) {
+    const text = errMsg || '專案不對，請重新輸入新檔案！';
+    await hideLoading(0);
     const modal = document.getElementById('project-mismatch-modal');
     const errEl = document.getElementById('mismatch-modal-error-text');
-    if (errEl) errEl.textContent = errMsg || '專案不對，請重新輸入新檔案！';
-    if (modal) modal.style.display = 'flex';
+    if (errEl) errEl.textContent = text;
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+    setTimeout(() => {
+        alert(`❌ 專案不對，請重新輸入新檔案！\n\n${text}`);
+    }, 100);
 }
 
 
