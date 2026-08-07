@@ -1423,15 +1423,41 @@ def parse_single_yaml_file(path, default_station_label="Station"):
             if isinstance(ssd_info, dict):
                 for ssd_pn, info in ssd_info.items():
                     if isinstance(info, dict) and info.get('fw_version'):
+                        vendor = str(info.get('vendor') or '').strip()
+                        fw_file = str(info.get('fw_file') or '').strip()
+                        fw_ver = clean_val(info.get('fw_version'))
+
+                        model_name = ""
+                        pn_upper = str(ssd_pn).upper()
+                        file_upper = fw_file.upper()
+
+                        if '7450' in file_upper or 'MTFDKBT' in pn_upper:
+                            model_name = "Micron 7450"
+                        elif '7550' in file_upper or 'MTFDLBU' in pn_upper:
+                            model_name = "Micron 7550"
+                        elif 'KXDZ' in pn_upper or 'KIOXIA' in file_upper or '1PFE' in file_upper or 'XD7P' in file_upper:
+                            model_name = "KIOXIA XD7P"
+                        elif 'WUS6A' in pn_upper or 'SN861' in file_upper or 'WUS6A7676PJP8X7' in pn_upper:
+                            model_name = "WD SN861 -WUS6A7676PJP8X7"
+                        elif 'MZTL' in pn_upper or 'MZTL61T9HFJA' in pn_upper:
+                            model_name = "Samsung PM9D3A 9.5mmT"
+                        elif 'MZOL' in pn_upper or 'MZOL67T6HBLC' in pn_upper:
+                            model_name = "Samsung PM9D3A 25mmT"
+                        elif 'PM9D3A' in file_upper or 'PM9D3A' in pn_upper:
+                            model_name = "Samsung PM9D3A"
+
+                        c_label = f"SSD {vendor.upper()} {model_name or ssd_pn}".strip()
+                        sub_c = f"{vendor} {model_name} {ssd_pn} {fw_file}".strip()
+
                         extracted_items.append({
                             'station': station_label,
                             'file_name': base_name,
                             'step_location': str(step_name),
-                            'component': f"SSD ({ssd_pn})",
-                            'sub_component': str(ssd_pn),
-                            'yaml_version': clean_val(info.get('fw_version')),
-                            'command': '',
-                            'discussion_note': f"SSD firmware check for part {ssd_pn}"
+                            'component': c_label,
+                            'sub_component': sub_c,
+                            'yaml_version': fw_ver,
+                            'command': fw_file,
+                            'discussion_note': f"SSD firmware check for part {ssd_pn} ({vendor})"
                         })
             
             # 3. vr_info dictionary (e.g. ClementeVRFlash)
@@ -1451,33 +1477,111 @@ def parse_single_yaml_file(path, default_station_label="Station"):
                                 'discussion_note': f"VR Controller check for {vr_name} ({vendor})"
                             })
             
-            # 4. mellanox dictionary (e.g. ClementeNICFlash)
+            # 4. mellanox dictionary (e.g. ClementeNICFlash~FENIC, ClementeNICFlash~BENIC)
             mlx = args.get('mellanox')
             if isinstance(mlx, dict) and mlx.get('fw_version'):
                 kw = args.get('keyword') or 'Mellanox NIC'
+                step_lower = str(step_name).lower()
+                fw_file_lower = str(mlx.get('fw_file') or '').lower()
+
+                nic_type = "Mellanox NIC"
+                if 'fenic' in step_lower or 'fe_nic' in fw_file_lower or 'cx7' in fw_file_lower:
+                    nic_type = "OCP CX7 FE NIC"
+                elif 'benic' in step_lower or 'be_nic' in fw_file_lower or 'cx8' in fw_file_lower:
+                    nic_type = "CX8 BE NIC"
+
                 extracted_items.append({
                     'station': station_label,
                     'file_name': base_name,
                     'step_location': str(step_name),
-                    'component': f"NIC ({kw})",
-                    'sub_component': f"Mellanox {kw}",
+                    'component': nic_type,
+                    'sub_component': nic_type,
                     'yaml_version': clean_val(mlx.get('fw_version')),
                     'command': str(mlx.get('fw_tool') or ''),
                     'discussion_note': f"Mellanox NIC firmware check ({kw})"
                 })
             
-            # 5. Direct fw_version / version in args
+            # 5. NVPD / Diag Check step (e.g. NVDiagCheck~PD_60002-rev3~Field_IST)
+            partner_tools = args.get('Partner_tools') or args.get('partner_tools')
+            pkg_loc = str(args.get('package_loc') or args.get('pkg_loc') or '').lower()
+            step_lower = str(step_name).lower()
+
+            if partner_tools or ('nvpd' in pkg_loc or 'nvpd' in step_lower or 'nvdiagcheck' in step_lower):
+                nvpd_type = "L10 NVPD"
+                if 'l11' in pkg_loc or 'l11' in step_lower:
+                    nvpd_type = "L11 NVPD"
+                elif 'nvswitch' in pkg_loc or 'nvswitch' in step_lower:
+                    nvpd_type = "Nvswitch NVPD"
+
+                ver_val = partner_tools or args.get('pkg_folder_name') or args.get('test_recipe') or ''
+                if ver_val:
+                    extracted_items.append({
+                        'station': station_label,
+                        'file_name': base_name,
+                        'step_location': str(step_name),
+                        'component': f"Mfg ({nvpd_type})",
+                        'sub_component': nvpd_type,
+                        'yaml_version': clean_val(ver_val),
+                        'command': str(args.get('sku_file') or args.get('test_recipe') or ''),
+                        'discussion_note': f"NVPD Diag check step '{step_name}'"
+                    })
+
+            # 6. Tool install / RPM package steps (e.g. InstallRPMPackage~cuda_580.105.08, InstallRPMPackage~ib_stress)
+            cmd_str = str(step.get('cmd') or args.get('cmd') or '').strip()
+            step_lower = str(step_name).lower()
+
+            if ('installrpm' in step_lower or 'rpm' in step_lower or 'cuda' in step_lower or 'ib_stress' in step_lower) and cmd_str:
+                tool_type = ""
+                ver_val = ""
+
+                if 'cuda' in step_lower or 'cuda' in cmd_str.lower():
+                    tool_type = "CUDA Tool"
+                    m = re.search(r'cuda[_-]([\d\.]+_\d+|\d+[\.\d]+)', cmd_str, re.IGNORECASE)
+                    if not m:
+                        m = re.search(r'cuda[_-]([\w\.\-]+)', step_name, re.IGNORECASE)
+                    ver_val = m.group(1) if m else step_name.replace('InstallRPMPackage~', '')
+
+                elif 'ib_stress' in step_lower or 'ib' in step_lower or 'nvqual' in step_lower:
+                    tool_type = "Network NVQUAL Tool"
+                    m = re.search(r'clemente_ib_stress_rpm_([\w\.]+)', cmd_str, re.IGNORECASE)
+                    if not m:
+                        m = re.search(r'([\w\.\-]+(?:\.tar\.gz|\.rpm|\.tgz))', cmd_str, re.IGNORECASE)
+                    ver_val = m.group(1) if m else "Installed"
+
+                if tool_type and ver_val:
+                    extracted_items.append({
+                        'station': station_label,
+                        'file_name': base_name,
+                        'step_location': str(step_name),
+                        'component': f"NV Driver & Tool ({tool_type})",
+                        'sub_component': tool_type,
+                        'yaml_version': clean_val(ver_val),
+                        'command': cmd_str,
+                        'discussion_note': f"RPM tool install step '{step_name}'"
+                    })
+
+            # 7. Direct fw_version / version in args (e.g. CPLDFlash~hdd0, ClementeHMCFlash~Update_GPU0)
             fw_ver = args.get('fw_version') or args.get('fw_ver') or args.get('version')
             if fw_ver and not isinstance(fw_ver, dict):
-                fru = args.get('fru') or ''
-                comp = args.get('component') or ''
-                c_label = f"{fru.upper()} {comp.upper()}".strip() if (fru or comp) else str(step_name)
+                fru = str(args.get('fru') or '').strip()
+                comp = str(args.get('component') or '').strip()
+                
+                if (fru.lower() in ['hdd0', 'hdd1', 'hdd', 'e1s', 'e1.s', 'e1sbp']) and comp.lower() == 'cpld':
+                    c_label = "E1.S BP CPLD"
+                    sub_c = "E1.S BP CPLD"
+                elif 'gpu' in comp.lower() or 'update_gpu' in step_lower or 'hmcflash' in step_lower:
+                    c_label = "VBIOS (GPU)"
+                    sub_c = "VBIOS (GPU)"
+                else:
+                    c_label = f"{fru.upper()} {comp.upper()}".strip() if (fru or comp) else str(step_name)
+                    sub_c = f"{fru} {comp}".strip() or c_label
+
                 extracted_items.append({
                     'station': station_label,
                     'file_name': base_name,
                     'step_location': str(step_name),
                     'component': c_label,
-                    'sub_component': f"{fru} {comp}".strip() or c_label,
+                    'sub_component': sub_c,
                     'yaml_version': clean_val(fw_ver),
                     'command': str(args.get('fw_file') or args.get('cmd') or ''),
                     'discussion_note': f"Firmware check step '{step_name}'"
@@ -2625,15 +2729,110 @@ def api_export_excel():
     )
 
 
-@app.route('/api/export-fava-draft', methods=['GET'])
+def find_best_yaml_match_for_fava(cat, item_name, extracted_items):
+    """Smartly match a FAVA table row (Category + Item name) against extracted YAML items."""
+    if not item_name and not cat:
+        return None
+
+    cat_str = str(cat or '').strip()
+    item_str = str(item_name or '').strip()
+
+    def norm(s):
+        return re.sub(r'[^a-zA-Z0-9]', '', str(s or '').lower())
+
+    cat_norm = norm(cat_str)
+    item_norm = norm(item_str)
+    combo_norm = norm(f"{cat_str} {item_str}")
+    item_tokens = [norm(t) for t in item_str.split() if len(norm(t)) >= 3]
+
+    best_match = None
+    best_score = -1
+
+    for y_it in extracted_items:
+        comp = y_it.get('component') or ''
+        sub = y_it.get('sub_component') or ''
+        step = y_it.get('step_location') or ''
+
+        comp_norm = norm(comp)
+        sub_norm = norm(sub)
+        step_norm = norm(step)
+        y_all = f"{comp_norm} {sub_norm} {step_norm}"
+
+        score = 0
+
+        # Tier 1: Exact or direct combo match (Category + Item)
+        if combo_norm and (combo_norm == sub_norm or combo_norm == comp_norm or combo_norm in y_all or y_all in combo_norm):
+            score = 100
+        # Tier 2: Category & Item Token Match (e.g. SCM + CPLD in "SCM CPLD", BSM + OpenBMC in "BSM OpenBMC")
+        elif cat_norm and item_norm:
+            cat_match = (cat_norm in y_all) or (cat_norm[:3] in y_all if len(cat_norm) >= 3 else False) or (y_all.startswith(cat_norm))
+            item_match = (item_norm in y_all) or (y_all in item_norm) or any(t in y_all for t in item_tokens if len(t) >= 4)
+            if cat_match and item_match:
+                score = 85
+            elif item_match and not cat_norm:
+                score = 70
+        # Tier 3: Item token match (e.g. PM9D3A)
+        elif item_norm:
+            if item_norm == sub_norm or item_norm == comp_norm:
+                score = 75
+            elif len(item_norm) >= 4 and (item_norm in y_all or y_all in item_norm):
+                score = 65
+            elif any(len(t) >= 4 and t in y_all for t in item_tokens):
+                score = 60
+
+        # Keyword heuristics for common hardware components
+        if 'openbmc' in item_norm or 'openbmc' in cat_norm:
+            if 'openbmc' in y_all or 'bmc' in y_all:
+                score = max(score, 90)
+
+        if 'cpld' in item_norm:
+            if 'cpld' in y_all:
+                if cat_norm and cat_norm in y_all:
+                    score = max(score, 95)
+
+        if 'fru' in item_norm:
+            if 'fru' in y_all:
+                if cat_norm and cat_norm in y_all:
+                    score = max(score, 95)
+
+        if 'spiflash' in item_norm or 'spi' in item_norm:
+            if 'spi' in y_all or 'flash' in y_all:
+                if cat_norm and cat_norm in y_all:
+                    score = max(score, 90)
+
+        if score > best_score and score >= 50:
+            best_score = score
+            best_match = y_it
+
+    return best_match
+
+
+@app.route('/api/export-fava-draft', methods=['GET', 'POST'])
 def api_export_fava_draft():
     """Export YAML test suite comparison in 'FAVA L10 FW Control Table-draft' format."""
-    project_id = request.args.get('project', 'sanmiguel')
-    bkc_file = request.args.get('bkc_file')
-    bkc_sheet = request.args.get('bkc_sheet')
-    y1 = request.args.get('yaml_1')
-    y2 = request.args.get('yaml_2')
-    y3 = request.args.get('yaml_3')
+    if request.method == 'POST':
+        req_data = request.json or {}
+        project_id = req_data.get('project', 'sanmiguel')
+        bkc_file = req_data.get('bkc_file')
+        bkc_sheet = req_data.get('bkc_sheet')
+        y1 = req_data.get('yaml_1')
+        y2 = req_data.get('yaml_2')
+        y3 = req_data.get('yaml_3')
+        indices_val = req_data.get('selected_indices')
+        if isinstance(indices_val, list):
+            selected_indices = set(int(i) for i in indices_val)
+        else:
+            selected_indices = None
+    else:
+        project_id = request.args.get('project', 'sanmiguel')
+        bkc_file = request.args.get('bkc_file')
+        bkc_sheet = request.args.get('bkc_sheet')
+        y1 = request.args.get('yaml_1')
+        y2 = request.args.get('yaml_2')
+        y3 = request.args.get('yaml_3')
+        indices_str = request.args.get('indices', '')
+        selected_indices = set([int(i) for i in indices_str.split(',') if i.isdigit()]) if indices_str else None
+
     yaml_files = [f for f in [y1, y2, y3] if f]
 
     proj_cfg = get_project_config(project_id)
@@ -2643,14 +2842,6 @@ def api_export_fava_draft():
     # 1. Run YAML vs BKC comparison
     comp_res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
     extracted_items = comp_res.get('items', [])
-
-    # Map extracted items by component/sub_component name (normalized)
-    yaml_extracted_map = {}
-    for item in extracted_items:
-        comp_name = item.get('sub_component') or item.get('component') or ''
-        norm_key = re.sub(r'[^a-zA-Z0-9]', '', comp_name.lower())
-        if norm_key:
-            yaml_extracted_map[norm_key] = item
 
     # 2. Check for reference template file
     template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
@@ -2679,20 +2870,10 @@ def api_export_fava_draft():
 
     # Update template rows with extracted Draft Versions from YAML
     for r in range(2, ws.max_row + 1):
+        c_cat = ws.cell(row=r, column=1).value
         c_item = ws.cell(row=r, column=2).value
-        if c_item:
-            item_str = str(c_item).strip()
-            norm_k = re.sub(r'[^a-zA-Z0-9]', '', item_str.lower())
-            
-            # Find best match in extracted YAML items
-            matched_item = None
-            if norm_k in yaml_extracted_map:
-                matched_item = yaml_extracted_map[norm_k]
-            else:
-                for y_k, y_it in yaml_extracted_map.items():
-                    if len(y_k) >= 3 and (y_k in norm_k or norm_k in y_k):
-                        matched_item = y_it
-                        break
+        if c_item or c_cat:
+            matched_item = find_best_yaml_match_for_fava(c_cat, c_item, extracted_items)
 
             if matched_item:
                 extracted_ver = matched_item.get('yaml_version') or ''
@@ -2705,6 +2886,13 @@ def api_export_fava_draft():
                     ws.cell(row=r, column=5).fill = fill_diff
                 elif status == 'MATCH':
                     ws.cell(row=r, column=5).value = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
+
+    # Filter by selected indices if specified
+    if selected_indices is not None:
+        for r in range(ws.max_row, 1, -1):
+            row_idx_0 = r - 2  # 0-based index matching preview rows
+            if row_idx_0 not in selected_indices:
+                ws.delete_rows(r)
 
     col_widths = {1: 22, 2: 30, 3: 25, 4: 35, 5: 35}
     for col_idx, width in col_widths.items():
@@ -2742,13 +2930,6 @@ def api_preview_fava_draft():
     comp_res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
     extracted_items = comp_res.get('items', [])
 
-    yaml_map = {}
-    for item in extracted_items:
-        comp_name = item.get('sub_component') or item.get('component') or ''
-        norm_key = re.sub(r'[^a-zA-Z0-9]', '', comp_name.lower())
-        if norm_key:
-            yaml_map[norm_key] = item
-
     template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
     
     preview_rows = []
@@ -2762,23 +2943,15 @@ def api_preview_fava_draft():
             draft_ver = str(r[3] or '').strip() if len(r) > 3 else ''
             remark = str(r[4] or '').strip() if len(r) > 4 else ''
 
-            matched_item = None
-            if item_name:
-                norm_k = re.sub(r'[^a-zA-Z0-9]', '', item_name.lower())
-                matched_item = yaml_map.get(norm_k)
-                if not matched_item:
-                    for y_k, y_it in yaml_map.items():
-                        if len(y_k) >= 3 and (y_k in norm_k or norm_k in y_k):
-                            matched_item = y_it
-                            break
-                if matched_item:
-                    extracted_ver = matched_item.get('yaml_version') or ''
-                    if extracted_ver: draft_ver = str(extracted_ver)
-                    status = matched_item.get('status', 'MATCH')
-                    if status == 'MISMATCH':
-                        remark = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
-                    elif status == 'MATCH':
-                        remark = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
+            matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
+            if matched_item:
+                extracted_ver = matched_item.get('yaml_version') or ''
+                if extracted_ver: draft_ver = str(extracted_ver)
+                status = matched_item.get('status', 'MATCH')
+                if status == 'MISMATCH':
+                    remark = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
+                elif status == 'MATCH':
+                    remark = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
 
             if item_name or cat or draft_ver:
                 preview_rows.append({
