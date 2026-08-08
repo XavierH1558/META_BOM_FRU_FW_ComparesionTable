@@ -1501,30 +1501,41 @@ def parse_single_yaml_file(path, default_station_label="Station"):
                     'discussion_note': f"Mellanox NIC firmware check ({kw})"
                 })
             
-            # 5. NVPD / Diag Check step (e.g. NVDiagCheck~PD_60002-rev3~Field_IST)
+            # 5. NVPD / Diag Check step (e.g. NVDiagCheck, ClementePartnerDiag~switch, ClementePartnerDiag~CT)
             partner_tools = args.get('Partner_tools') or args.get('partner_tools')
             pkg_loc = str(args.get('package_loc') or args.get('pkg_loc') or '').lower()
             step_lower = str(step_name).lower()
+            pt_lower = str(partner_tools or '').lower()
+            job_type = str(args.get('job_type') or '').lower()
 
-            if partner_tools or ('nvpd' in pkg_loc or 'nvpd' in step_lower or 'nvdiagcheck' in step_lower):
-                nvpd_type = "L10 NVPD"
-                if 'l11' in pkg_loc or 'l11' in step_lower:
-                    nvpd_type = "L11 NVPD"
-                elif 'nvswitch' in pkg_loc or 'nvswitch' in step_lower:
-                    nvpd_type = "Nvswitch NVPD"
+            if partner_tools or ('nvpd' in pkg_loc or 'nvpd' in step_lower or 'nvdiagcheck' in step_lower or 'partnerdiag' in step_lower):
+                raw_val = partner_tools or args.get('pkg_folder_name') or args.get('test_recipe') or ''
+                ver_val = os.path.basename(str(raw_val)) if raw_val else ''
+                if ver_val.endswith('.tgz') or ver_val.endswith('.tar.gz') or ver_val.endswith('.zip') or ver_val.endswith('.rpm'):
+                    ver_val = ver_val.rsplit('.', 1)[0]
+                    if ver_val.endswith('.tar'): ver_val = ver_val.rsplit('.', 1)[0]
 
-                ver_val = partner_tools or args.get('pkg_folder_name') or args.get('test_recipe') or ''
                 if ver_val:
-                    extracted_items.append({
-                        'station': station_label,
-                        'file_name': base_name,
-                        'step_location': str(step_name),
-                        'component': f"Mfg ({nvpd_type})",
-                        'sub_component': nvpd_type,
-                        'yaml_version': clean_val(ver_val),
-                        'command': str(args.get('sku_file') or args.get('test_recipe') or ''),
-                        'discussion_note': f"NVPD Diag check step '{step_name}'"
-                    })
+                    nvpd_types = []
+                    if 'switch' in step_lower or job_type == 'netblade' or 'nvswitch' in pt_lower or 'nvswitch' in pkg_loc:
+                        nvpd_types.append("Nvswitch NVPD")
+                        nvpd_types.append("L11 NVPD")
+                    elif 'l11' in pt_lower or 'l11' in pkg_loc or 'l11' in step_lower or 'compute' in job_type or '~ct' in step_lower:
+                        nvpd_types.append("L11 NVPD")
+                    else:
+                        nvpd_types.append("L10 NVPD")
+
+                    for nv_t in nvpd_types:
+                        extracted_items.append({
+                            'station': station_label,
+                            'file_name': base_name,
+                            'step_location': str(step_name),
+                            'component': f"Mfg ({nv_t})",
+                            'sub_component': nv_t,
+                            'yaml_version': clean_val(ver_val),
+                            'command': str(args.get('test_recipe') or partner_tools or ''),
+                            'discussion_note': f"NVPD Diag check step '{step_name}' ({nv_t})"
+                        })
 
             # 6. Tool install / RPM package steps (e.g. InstallRPMPackage~cuda_580.105.08, InstallRPMPackage~ib_stress)
             cmd_str = str(step.get('cmd') or args.get('cmd') or '').strip()
@@ -1559,6 +1570,125 @@ def parse_single_yaml_file(path, default_station_label="Station"):
                         'command': cmd_str,
                         'discussion_note': f"RPM tool install step '{step_name}'"
                     })
+
+            # 6.4 ClementeGB300VersionCheck / check_list steps (Compute Tray: HMC, SBIOS, ERoT, FPGA, VBIOS, PCIeSwitch)
+            check_list = args.get('check_list')
+            if isinstance(check_list, dict):
+                for k, v in check_list.items():
+                    k_up = str(k).upper()
+                    v_str = clean_val(v)
+                    if not v_str: continue
+
+                    target_comp = ""
+                    if 'BMC' in k_up and 'EROT' not in k_up:
+                        target_comp = "HMC"
+                    elif 'CPLD' in k_up and 'EROT' not in k_up:
+                        target_comp = "HMC CPLD"
+                    elif 'CPU' in k_up and 'EROT' not in k_up:
+                        target_comp = "SBIOS"
+                    elif 'EROT_BMC' in k_up or ('EROT' in k_up and 'BMC' in k_up):
+                        target_comp = "ERoT BMC"
+                    elif 'EROT_CPU' in k_up or ('EROT' in k_up and 'CPU' in k_up):
+                        target_comp = "ERoT CPU"
+                    elif 'EROT_FPGA' in k_up or ('EROT' in k_up and 'FPGA' in k_up):
+                        target_comp = "ERoT FPGA"
+                    elif 'FPGA' in k_up and 'EROT' not in k_up:
+                        target_comp = "FPGA"
+                    elif 'GPU' in k_up:
+                        target_comp = "VBIOS (GPU)"
+                    elif 'PCIESWITCHCONFIG' in k_up or 'PCIE' in k_up:
+                        target_comp = "PCIeSwitchConfig (Read)"
+                    else:
+                        target_comp = str(k)
+
+                    extracted_items.append({
+                        'station': station_label,
+                        'file_name': base_name,
+                        'step_location': str(step_name),
+                        'component': target_comp,
+                        'sub_component': target_comp,
+                        'yaml_version': v_str,
+                        'command': '',
+                        'discussion_note': f"GB300 version check '{k}' ({target_comp})"
+                    })
+
+            # 6.45 SwitchTray step parsing (NVSwitch / Netblade firmware updates & validation)
+            if 'switchtray' in step_lower:
+                if 'firmware_update' in step_lower:
+                    comp_name = str(args.get('component') or step_name.rsplit('~', 1)[-1]).strip()
+                    ver_val = clean_val(args.get('fw_version'))
+                    if comp_name and ver_val:
+                        extracted_items.append({
+                            'station': station_label,
+                            'file_name': base_name,
+                            'step_location': str(step_name),
+                            'component': f"NVSwitch {comp_name}",
+                            'sub_component': comp_name,
+                            'yaml_version': ver_val,
+                            'command': str(args.get('fw_file') or ''),
+                            'discussion_note': f"SwitchTray firmware update step for '{comp_name}'"
+                        })
+                elif 'validate_system' in step_lower:
+                    sys_img = args.get('system_image')
+                    if sys_img:
+                        extracted_items.append({
+                            'station': station_label,
+                            'file_name': base_name,
+                            'step_location': str(step_name),
+                            'component': "NVSwitch NVOS",
+                            'sub_component': "NVOS",
+                            'yaml_version': clean_val(sys_img),
+                            'command': '',
+                            'discussion_note': f"SwitchTray validate system image '{sys_img}'"
+                        })
+
+                    fw_dict = args.get('firmware')
+                    if isinstance(fw_dict, dict):
+                        for fk, fv in fw_dict.items():
+                            if fv:
+                                extracted_items.append({
+                                    'station': station_label,
+                                    'file_name': base_name,
+                                    'step_location': str(step_name),
+                                    'component': f"NVSwitch {fk}",
+                                    'sub_component': str(fk),
+                                    'yaml_version': clean_val(fv),
+                                    'command': '',
+                                    'discussion_note': f"SwitchTray validate system firmware '{fk}'"
+                                })
+
+            # 6.5 Module Info for Power & Rack Modules (CBU, PMM, PSU)
+            mod_info = args.get('module_info')
+            if isinstance(mod_info, dict):
+                dev_type = str(args.get('device_type', '') or step_name).upper()
+                for vendor, v_info in mod_info.items():
+                    if isinstance(v_info, dict):
+                        v_ver = v_info.get('fw_version') or v_info.get('version')
+                        if v_ver:
+                            v_clean = str(vendor or '').strip()
+                            if v_clean.upper() == 'ARTESYN':
+                                v_clean = 'AEI'
+
+                            sub_c = f"{v_clean} {dev_type}"
+                            if 'CBU' in dev_type and 'PMM' not in str(step_name).upper():
+                                sub_c = f"{v_clean} CBU"
+                            elif 'CBU' in dev_type and 'PMM' in str(step_name).upper():
+                                sub_c = f"{v_clean} CBU PMM"
+                            elif 'PMM' in dev_type or 'PMM' in str(step_name).upper():
+                                sub_c = f"{v_clean} PMM"
+                            elif 'PSU' in dev_type or 'PSU' in str(step_name).upper():
+                                sub_c = f"{v_clean} PSU"
+                            
+                            extracted_items.append({
+                                'station': station_label,
+                                'file_name': base_name,
+                                'step_location': str(step_name),
+                                'component': sub_c,
+                                'sub_component': sub_c,
+                                'yaml_version': clean_val(v_ver),
+                                'command': str(v_info.get('fw_file') or args.get('flash_tool') or ''),
+                                'discussion_note': f"Power module check ({sub_c})"
+                            })
 
             # 7. Direct fw_version / version in args (e.g. CPLDFlash~hdd0, ClementeHMCFlash~Update_GPU0)
             fw_ver = args.get('fw_version') or args.get('fw_ver') or args.get('version')
@@ -2729,90 +2859,171 @@ def api_export_excel():
     )
 
 
-def find_best_yaml_match_for_fava(cat, item_name, extracted_items):
-    """Smartly match a FAVA table row (Category + Item name) against extracted YAML items."""
+def find_best_yaml_match_for_fava(cat, item_name, extracted_items, stage='L10'):
+    """Smartly and precisely match a FAVA table row (Category + Item name) against extracted YAML items."""
     if not item_name and not cat:
         return None
 
-    cat_str = str(cat or '').strip()
-    item_str = str(item_name or '').strip()
+    cat_str = str(cat or '').strip().lower()
+    item_str = str(item_name or '').strip().lower()
+    stage_str = str(stage or 'L10').strip().upper()
 
-    c_low = cat_str.lower()
-    i_low = item_str.lower()
-
-    # Strict L11 Exclusion: RMC, NVSwitch, BBU, PSU, etc. belong to L11 stage only.
-    # Do NOT match any L10 YAML items for L11 components!
-    if 'l10' not in i_low:
+    if stage_str == 'L10' and 'l10' not in item_str and 'pcieswitch' not in item_str:
         l11_keys = [
             'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd', 
-            'bbu', 'pmm', 'psu', 'l11', 'switch', 'minipack', 'mgmt switch',
+            'bbu', 'pmm', 'psu', 'l11', 'minipack', 'mgmt switch',
             'aei', 'delta', 'panasonic', 'fixture', 'cbu'
         ]
-        if any(k in c_low for k in l11_keys) or any(k in i_low for k in l11_keys):
+        if any(k in cat_str for k in l11_keys) or any(k in item_str for k in l11_keys):
             return None
-
-    def norm(s):
-        return re.sub(r'[^a-zA-Z0-9]', '', str(s or '').lower())
-
-    cat_norm = norm(cat_str)
-    item_norm = norm(item_str)
-    combo_norm = norm(f"{cat_str} {item_str}")
-    item_tokens = [norm(t) for t in item_str.split() if len(norm(t)) >= 3]
 
     best_match = None
     best_score = -1
 
     for y_it in extracted_items:
-        comp = y_it.get('component') or ''
-        sub = y_it.get('sub_component') or ''
-        step = y_it.get('step_location') or ''
-
-        comp_norm = norm(comp)
-        sub_norm = norm(sub)
-        step_norm = norm(step)
-        y_all = f"{comp_norm} {sub_norm} {step_norm}"
+        comp = str(y_it.get('component') or '').lower()
+        sub = str(y_it.get('sub_component') or '').lower()
+        step = str(y_it.get('step_location') or '').lower()
+        fru = str(y_it.get('fru') or '').lower()
+        station = str(y_it.get('station') or '').lower()
 
         score = 0
 
-        # Tier 1: Exact item match (e.g. VBIOS (GPU) == VBIOS (GPU) or ERoT BMC == ERoT BMC)
-        if item_norm and (item_norm == sub_norm or item_norm == comp_norm):
-            score = 100
-        elif combo_norm and (combo_norm == sub_norm or combo_norm == comp_norm or combo_norm in y_all or y_all in combo_norm):
-            score = 98
-        # Tier 2: Category & Item Token Match (e.g. SCM + CPLD in "SCM CPLD", BSM + OpenBMC in "BSM OpenBMC")
-        elif cat_norm and item_norm:
-            cat_match = (cat_norm in y_all) or (cat_norm[:3] in y_all if len(cat_norm) >= 3 else False) or (y_all.startswith(cat_norm))
-            item_match = (item_norm in y_all) or (y_all in item_norm) or any(t in y_all for t in item_tokens if len(t) >= 4)
-            if cat_match and item_match:
-                score = 85
-            elif item_match and not cat_norm:
-                score = 70
-        # Tier 3: Item token match (e.g. PM9D3A)
-        elif item_norm:
-            if len(item_norm) >= 4 and (item_norm in y_all or y_all in item_norm):
-                score = 65
-            elif any(len(t) >= 4 and t in y_all for t in item_tokens):
-                score = 60
+        # 1. System / Kernel / OS / Compute Tray Version Checks
+        if 'erot bmc' in item_str:
+            if 'erot bmc' in comp or 'erot bmc' in sub: score = 100
+        elif 'erot cpu' in item_str:
+            if 'erot cpu' in comp or 'erot cpu' in sub: score = 100
+        elif 'erot fpga' in item_str:
+            if 'erot fpga' in comp or 'erot fpga' in sub: score = 100
+        elif 'hmc cpld' in item_str:
+            if 'hmc cpld' in comp or 'hmc cpld' in sub: score = 100
+        elif 'hmc' in item_str and 'cpld' not in item_str and 'erot' not in item_str:
+            if comp == 'hmc' or sub == 'hmc': score = 100
+        elif 'inforom' in item_str:
+            if 'inforom' in comp or 'inforom' in sub: score = 100
+        elif 'vbios' in item_str or ('gpu' in item_str and 'inforom' not in item_str):
+            if 'vbios' in comp or 'gpu' in comp or 'vbios' in sub or 'gpu' in sub:
+                if 'versioncheck' in step: score = 100
+                elif 'update_gpu' in step or 'vbios' in step: score = 95
+                elif 'vbios' in comp or 'vbios' in sub: score = 90
+                else: score = 80
+        elif 'erot' in item_str:
+            if 'erot' in comp or 'erot' in sub: score = 100
+        elif 'sbios' in item_str or ('bios' in item_str and 'vbios' not in item_str):
+            if 'sbios' in comp or 'sbios' in sub or 'bios' in comp or 'bios' in sub: score = 100
+        elif 'fpga' in item_str and 'erot' not in item_str and 'cpld' not in item_str:
+            if comp == 'fpga' or sub == 'fpga': score = 100
+        elif 'pcieswitchconfig' in item_str or 'pcieswitch' in item_str:
+            if 'pcieswitchconfig' in comp or 'pcieswitchconfig' in sub or 'pcie' in comp: score = 100
+        elif cat_str == 'system' or 'kernel' in item_str or ('os' in item_str and 'nvos' not in item_str):
+            if 'fbkernel' in sub or 'kernel' in sub or 'kernel' in comp or 'fbkernel' in step:
+                if 'fb kernel' in item_str or 'fbkernel' in item_str:
+                    score = 100
+            elif 'os' in item_str and ('os' in sub or 'os' in comp or 'os' in step):
+                if 'interposer' not in sub and 'interposer' not in step:
+                    score = 100
 
-        # Keyword heuristics for common hardware components
-        if 'openbmc' in item_norm or 'openbmc' in cat_norm:
-            if 'openbmc' in y_all or 'bmc' in y_all:
-                score = max(score, 90)
+        # 2. PDB VR
+        elif 'pdb' in cat_str or 'vr' in item_str:
+            if 'vr' in item_str and ('vr' in sub or 'vr' in comp or 'vr' in step):
+                if ('n1' in item_str and 'n1' in sub) or ('n2' in item_str and 'n2' in sub):
+                    score = 100
 
-        if 'cpld' in item_norm:
-            if 'cpld' in y_all:
-                if cat_norm and cat_norm in y_all:
-                    score = max(score, 95)
+        # 3. SCM CPLD
+        elif cat_str == 'scm' and 'cpld' in item_str:
+            if fru == 'scm' or 'scm' in comp or 'scm' in step or 'scm' in sub:
+                if 'cpld' in comp or 'cpld' in sub or 'cpld' in step:
+                    score = 100
 
-        if 'fru' in item_norm:
-            if 'fru' in y_all:
-                if cat_norm and cat_norm in y_all:
-                    score = max(score, 95)
+        # 4. E1.S BP CPLD
+        elif ('e1.s bp' in cat_str or 'hdd' in cat_str) and 'cpld' in item_str:
+            if fru in ['hdd0', 'hdd1', 'hdd'] or 'hdd' in comp or 'hdd' in step or 'bp' in comp:
+                if 'cpld' in comp or 'cpld' in sub or 'cpld' in step:
+                    score = 100
 
-        if 'spiflash' in item_norm or 'spi' in item_norm:
-            if 'spi' in y_all or 'flash' in y_all:
-                if cat_norm and cat_norm in y_all:
-                    score = max(score, 90)
+        # 5. Interposer CPLD
+        elif cat_str == 'interposer' and 'cpld' in item_str:
+            if fru == 'interposer' or 'interposer' in comp or 'interposer' in step or 'interposer' in sub:
+                if 'cpld' in comp or 'cpld' in sub or 'cpld' in step:
+                    score = 100
+
+        # 6. BSM OpenBMC
+        elif cat_str == 'bsm' and ('openbmc' in item_str or 'bmc' in item_str):
+            if fru in ['bmc', 'bsm'] or 'bmc' in comp or 'ct_bmc' in comp or 'bmc' in sub:
+                score = 100
+
+        # 7. SCM-TPM
+        elif 'tpm' in item_str:
+            if 'tpm' in sub or 'tpm' in comp or 'tpm' in step:
+                score = 100
+
+        # 8. NICs
+        elif 'fe nic' in cat_str or 'fe nic' in item_str or 'cx7' in cat_str or 'cx7' in item_str:
+            if 'fenic' in sub or 'fenic' in comp or 'cx7' in sub or 'fenic' in step or 'cx7' in step:
+                score = 100
+        elif 'be nic' in cat_str or 'be nic' in item_str or 'cx8' in cat_str or 'cx8' in item_str:
+            if 'benic' in sub or 'benic' in comp or 'cx8' in sub or 'benic' in step or 'cx8' in step:
+                score = 100
+
+        # 9. SSDs
+        elif 'drive' in cat_str or 'storage' in cat_str or any(m in item_str for m in ['samsung', 'micron', 'kioxia', 'wd']):
+            item_clean = item_str.replace('boot drive e1.s', '').replace('storage e1.s', '').strip()
+            if item_clean and (item_clean in sub or item_clean in comp or sub in item_clean):
+                score = 100
+            elif 'samsung' in item_str and 'samsung' in sub: score = 90
+            elif 'micron' in item_str and 'micron' in sub: score = 90
+            elif 'kioxia' in item_str and 'kioxia' in sub: score = 90
+            elif 'wd' in item_str and 'wd' in sub: score = 90
+
+        elif 'nvpd' in item_str:
+            if 'nvswitch' in item_str:
+                if 'nvswitch nvpd' in sub or 'switch' in step or 'netblade' in sub: score = 100
+            elif 'l11' in item_str:
+                if 'l11 nvpd' in sub or 'partnerdiag' in step or 'partner' in step: score = 100
+            elif 'l10' in item_str:
+                if 'l10 nvpd' in sub or 'nvdiagcheck' in step: score = 100
+
+        elif cat_str == 'nvswitch' or 'nvswitch' in cat_str:
+            if 'nvos' in item_str:
+                if 'nvos' in sub or 'nvos' in comp or 'nvos' in step: score = 100
+            elif 'erot' in item_str:
+                if 'erot' in sub or 'erot' in comp: score = 100
+            elif 'bmc' in item_str and 'erot' not in item_str:
+                if 'bmc' in sub or 'bmc' in comp: score = 100
+            elif 'sbios' in item_str or 'bios' in item_str:
+                if 'bios' in sub or 'bios' in comp: score = 100
+            elif 'fpga' in item_str and 'erot' not in item_str:
+                if 'fpga' in sub or 'fpga' in comp: score = 100
+            elif 'cpld1' in item_str:
+                if 'cpld1' in sub or 'cpld1' in comp: score = 100
+            elif 'cpld2' in item_str:
+                if 'cpld2' in sub or 'cpld2' in comp: score = 100
+            elif 'cpld3' in item_str:
+                if 'cpld3' in sub or 'cpld3' in comp: score = 100
+            elif 'cpld4' in item_str:
+                if 'cpld4' in sub or 'cpld4' in comp: score = 100
+
+        # 10. L11 Power / RMC / CBU / PMM / PSU Component Matching
+        elif stage_str == 'L11':
+            if 'cbu' in item_str:
+                if 'pmm' not in item_str and 'pmm' in step:
+                    continue
+                if 'pmm' in item_str and 'pmm' not in step:
+                    continue
+                if 'cbu' in sub or 'cbu' in step:
+                    if 'delta' in item_str and ('delta' in sub or 'delta' in step): score = 100
+                    elif ('aei' in item_str or 'artesyn' in item_str) and ('aei' in sub or 'artesyn' in sub or 'aei' in step or 'artesyn' in step): score = 100
+                    elif 'pmm' not in item_str and 'pmm' not in sub: score = 90
+            elif 'rmc' in cat_str or 'rmc' in item_str:
+                if 'cpld' in item_str and 'cpld' in sub and ('rmc' in step or fru == 'rmc'): score = 100
+                elif 'bmc' in item_str and ('bmc' in sub or 'bmc' in step or fru == 'bmc'): score = 100
+            elif 'pmm' in item_str:
+                if ('aei' in item_str or 'artesyn' in item_str) and ('aei' in sub or 'artesyn' in sub) and 'pmm' in sub: score = 100
+                elif 'delta' in item_str and 'delta' in sub and 'pmm' in sub: score = 100
+            elif 'psu' in item_str:
+                if ('aei' in item_str or 'artesyn' in item_str) and ('aei' in sub or 'artesyn' in sub) and 'psu' in sub: score = 100
+                elif 'delta' in item_str and 'delta' in sub and 'psu' in sub: score = 100
 
         if score > best_score and score >= 50:
             best_score = score
@@ -2829,9 +3040,8 @@ def api_export_fava_draft():
         project_id = req_data.get('project', 'sanmiguel')
         bkc_file = req_data.get('bkc_file')
         bkc_sheet = req_data.get('bkc_sheet')
-        y1 = req_data.get('yaml_1')
-        y2 = req_data.get('yaml_2')
-        y3 = req_data.get('yaml_3')
+        y_params = [req_data.get(f'yaml_{i}') for i in range(1, 11)]
+        stage_exp = (req_data.get('stage') or 'L10').upper()
         indices_val = req_data.get('selected_indices')
         if isinstance(indices_val, list):
             selected_indices = set(int(i) for i in indices_val)
@@ -2839,15 +3049,31 @@ def api_export_fava_draft():
             selected_indices = None
     else:
         project_id = request.args.get('project', 'sanmiguel')
+        stage_exp = request.args.get('stage', 'L10').upper()
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
-        y1 = request.args.get('yaml_1')
-        y2 = request.args.get('yaml_2')
-        y3 = request.args.get('yaml_3')
+        y_params = [request.args.get(f'yaml_{i}') for i in range(1, 11)]
         indices_str = request.args.get('indices', '')
         selected_indices = set([int(i) for i in indices_str.split(',') if i.isdigit()]) if indices_str else None
 
-    yaml_files = [f for f in [y1, y2, y3] if f]
+    yaml_files = [f for f in y_params if f]
+
+    # Validate Stage Filename Rules (L10 must contain FDT/FRO/FFT; L11 cannot contain FDT/FRO/FFT)
+    invalid_files = []
+    for yf in yaml_files:
+        b_name = os.path.basename(yf).lower()
+        is_l10_file = any(k in b_name for k in ['fdt', 'fro', 'fft'])
+        if stage_exp == 'L10' and not is_l10_file:
+            invalid_files.append(os.path.basename(yf))
+        elif stage_exp == 'L11' and is_l10_file:
+            invalid_files.append(os.path.basename(yf))
+
+    if invalid_files:
+        if stage_exp == 'L10':
+            err_msg = f"❌ L10 Stage 僅接受檔名包含 FDT, FRO, 或 FFT 之測試腳本。不符合規範檔案：{', '.join(invalid_files)}"
+        else:
+            err_msg = f"❌ L11 Stage 不可使用包含 FDT, FRO, 或 FFT 之 L10 測試腳本。不符合規範檔案：{', '.join(invalid_files)}"
+        return err_msg, 400
 
     proj_cfg = get_project_config(project_id)
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
@@ -2859,30 +3085,78 @@ def api_export_fava_draft():
     template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
     from openpyxl import load_workbook
     wb = load_workbook(template_path)
-    ws = wb['FAVA L10 FW Control Table-draft']
+    target_sheet_name = 'FAVA L11 FW Control Table-draft' if stage_exp == 'L11' else 'FAVA L10 FW Control Table-draft'
+    ws = wb[target_sheet_name]
 
     current_category = ""
+    cat_counts_exp = {}
     for row_idx in range(2, ws.max_row + 1):
-        cat = str(ws.cell(row=row_idx, column=1).value or '').strip()
-        item_name = str(ws.cell(row=row_idx, column=2).value or '').strip()
-        if cat: current_category = cat
+        cat = " ".join(str(ws.cell(row=row_idx, column=1).value or '').split())
+        item_name = " ".join(str(ws.cell(row=row_idx, column=2).value or '').split())
+        ws.cell(row=row_idx, column=1, value=cat)
+        ws.cell(row=row_idx, column=2, value=item_name)
+        act_v = str(ws.cell(row=row_idx, column=3).value or '').strip()
+        d_v = str(ws.cell(row=row_idx, column=4).value or '').strip()
+        if not cat and not item_name and not act_v and not d_v:
+            continue
 
-        matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
+        if cat:
+            current_category = cat
+            c_up = cat.upper()
+            cat_counts_exp[c_up] = cat_counts_exp.get(c_up, 0) + 1
+
+        eff_cat = cat or current_category
+        eff_up = eff_cat.upper()
+
+        is_l11_exp = False
+        c_low = eff_cat.lower()
+        i_low = item_name.lower()
+
+        if stage_exp == 'L10':
+            if 'l11' in i_low or 'l11' in c_low or 'pcieswitchconfig' in i_low or 'pciesswitchconfig' in i_low:
+                is_l11_exp = True
+            elif any(k in c_low for k in ['rack', 'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd', 'fan bd', 'rear io', 'led bd', 'fan', 'rear', 'led']):
+                is_l11_exp = True
+            elif any(k in i_low for k in ['rmc', 'nvswitch', 'aalc', 'wedge400', 'bbu', 'pmm', 'psu', 'cbu', 'minipack', 'mgmt switch', 'switch', 'fixture', 'aei', 'delta', 'panasonic', 'bft', 'fan', 'rear', 'led']):
+                is_l11_exp = True
+
+            if eff_up in ['SCM', 'BSM'] and cat_counts_exp.get(eff_up, 0) >= 2:
+                is_l11_exp = True
+
+            if 'l10' in i_low or 'l10' in c_low:
+                is_l11_exp = False
+
+        matched_item = None
+        if not is_l11_exp:
+            if item_name.strip().upper() == 'FRU':
+                latest_fru = get_latest_fru_version(project_id)
+                ws.cell(row=row_idx, column=4, value=str(latest_fru))
+                ws.cell(row=row_idx, column=5, value=f"Verified in FRU Spec ({latest_fru})")
+            else:
+                matched_item = find_best_yaml_match_for_fava(eff_cat, item_name, extracted_items, stage=stage_exp)
+
         if matched_item:
             extracted_ver = matched_item.get('yaml_version') or ''
             if extracted_ver:
                 ws.cell(row=row_idx, column=4, value=str(extracted_ver))
             status = matched_item.get('status', 'MATCH')
-            if status == 'MISMATCH':
-                ws.cell(row=row_idx, column=5, value=f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})")
-            elif status == 'MATCH':
+            bkc_v = str(matched_item.get('bkc_version') or '').strip()
+            if status == 'MISMATCH' and bkc_v and bkc_v != 'None':
+                ws.cell(row=row_idx, column=5, value=f"MISMATCH: YAML ({extracted_ver}) vs BKC ({bkc_v})")
+            else:
                 ws.cell(row=row_idx, column=5, value=f"Verified in YAML ({matched_item.get('station', 'YAML')})")
+        elif is_l11_exp:
+            ws.cell(row=row_idx, column=4, value="Yaml檔案未找到")
+            ws.cell(row=row_idx, column=5, value="L11 Scope (非 L10 測試範疇)")
+        elif not matched_item and item_name:
+            ws.cell(row=row_idx, column=4, value="Yaml檔案未找到")
+            ws.cell(row=row_idx, column=5, value="Yaml檔案未找到")
 
     output_stream = io.BytesIO()
     wb.save(output_stream)
     output_stream.seek(0)
 
-    filename = f"IGS-Clemente FAVA FW Control Table Tracker-draft.xlsx"
+    filename = f"FAVA_{stage_exp}_FW_Control_Table_Draft.xlsx"
     return send_file(
         output_stream,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -2891,16 +3165,71 @@ def api_export_fava_draft():
     )
 
 
+def get_latest_fru_version(project_id='clemente'):
+    fru_dir = os.path.join(DATA_DIR, project_id, 'fru')
+    if not os.path.exists(fru_dir):
+        return '0.05A'
+    
+    xlsx_files = [f for f in os.listdir(fru_dir) if f.endswith('.xlsx')]
+    if not xlsx_files:
+        return '0.05A'
+    
+    xlsx_files.sort(reverse=True)
+    latest_file = os.path.join(fru_dir, xlsx_files[0])
+    try:
+        wb = load_workbook(latest_file, data_only=True)
+        for sname in wb.sheetnames:
+            if 'VERSION' in sname.upper():
+                ws = wb[sname]
+                last_ver = None
+                for r in range(1, ws.max_row + 1):
+                    val = ws.cell(row=r, column=2).value or ws.cell(row=r, column=1).value
+                    if val and str(val).strip().lower() != 'fru version':
+                        last_ver = str(val).strip()
+                if last_ver:
+                    return last_ver
+    except Exception as e:
+        print(f"Error reading FRU file: {e}")
+    return '0.05A'
+
+
+SSD_STATIC_SPECS = {
+    'samsung pm9d3a 9.5mmt': {'vid': '144Dh', 'did': 'A80E'},
+    'samsung pm9d3a 25mmt': {'vid': '144Dh', 'did': 'A80E'},
+    'micron 7450': {'vid': '1344', 'did': '51C3'},
+    'kioxia  xd7p': {'vid': '1E0F', 'did': '001C'},
+    'kioxia xd7p': {'vid': '1E0F', 'did': '001C'},
+    'micron 7550': {'vid': '1344', 'did': '51BC'},
+    'wd sn861 -wus6a7676pjp8x7': {'vid': '1B96', 'did': '2750'},
+    'wd sn861': {'vid': '1B96', 'did': '2750'},
+}
+
 @app.route('/api/preview-fava-draft', methods=['GET'])
 def api_preview_fava_draft():
-    """Return live preview rows for FAVA L10 FW Control Table Modal."""
+    """Return live preview rows for FAVA FW Control Table Modal (Supports L10 & L11 stage modes)."""
     project_id = request.args.get('project', 'sanmiguel')
+    stage = request.args.get('stage', 'L10').upper()
     bkc_file = request.args.get('bkc_file')
     bkc_sheet = request.args.get('bkc_sheet')
-    y1 = request.args.get('yaml_1')
-    y2 = request.args.get('yaml_2')
-    y3 = request.args.get('yaml_3')
-    yaml_files = [f for f in [y1, y2, y3] if f]
+    y_params = [request.args.get(f'yaml_{i}') for i in range(1, 11)]
+    yaml_files = [f for f in y_params if f]
+
+    # Validate Stage Filename Rules (L10 must contain FDT/FRO/FFT; L11 cannot contain FDT/FRO/FFT)
+    invalid_files = []
+    for yf in yaml_files:
+        b_name = os.path.basename(yf).lower()
+        is_l10_file = any(k in b_name for k in ['fdt', 'fro', 'fft'])
+        if stage == 'L10' and not is_l10_file:
+            invalid_files.append(os.path.basename(yf))
+        elif stage == 'L11' and is_l10_file:
+            invalid_files.append(os.path.basename(yf))
+
+    if invalid_files:
+        if stage == 'L10':
+            err_msg = f"❌ L10 Stage 僅接受檔名包含 FDT, FRO, 或 FFT 之測試腳本。以下檔案不符合規範：{', '.join(invalid_files)}"
+        else:
+            err_msg = f"❌ L11 Stage 不可使用包含 FDT, FRO, 或 FFT 之 L10 測試腳本。以下檔案不符合規範：{', '.join(invalid_files)}"
+        return jsonify({"success": False, "error": err_msg}), 400
 
     proj_cfg = get_project_config(project_id)
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
@@ -2908,58 +3237,118 @@ def api_preview_fava_draft():
 
     comp_res = compare_yaml_with_bkc(yaml_files, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet, project_id=project_id)
     extracted_items = comp_res.get('items', [])
+    latest_fru_ver = get_latest_fru_version(project_id)
 
     template_path = os.path.join(DATA_DIR, 'clemente', 'bkc', 'IGS-Clemente FAVA FW Control Table Tracker.xlsx')
     
     preview_rows = []
     if os.path.exists(template_path):
-        b_rows, sheets, _ = read_file_safe(template_path, sheet_name='FAVA L10 FW Control Table-draft')
+        target_sheet = 'FAVA L11 FW Control Table-draft' if stage == 'L11' else 'FAVA L10 FW Control Table-draft'
+        b_rows, sheets, _ = read_file_safe(template_path, sheet_name=target_sheet)
         current_category = ""
+        cat_counts = {}
+        last_ssd_model = ""
+
         for r_idx, r in enumerate(b_rows):
             if r_idx == 0: continue
-            cat = str(r[0] or '').strip() if len(r) > 0 else ''
-            item_name = str(r[1] or '').strip() if len(r) > 1 else ''
+            cat = " ".join(str(r[0] or '').split()) if len(r) > 0 else ''
+            item_name = " ".join(str(r[1] or '').split()) if len(r) > 1 else ''
             act_ver = str(r[2] or '').strip() if len(r) > 2 else ''
             draft_ver = str(r[3] or '').strip() if len(r) > 3 else ''
+            if draft_ver.endswith('.0') and draft_ver.replace('.0', '').isdigit():
+                draft_ver = draft_ver[:-2]
             remark = str(r[4] or '').strip() if len(r) > 4 else ''
+
+            if not cat and not item_name and not act_ver and not draft_ver:
+                continue
 
             if cat:
                 current_category = cat
+                c_up = cat.upper()
+                cat_counts[c_up] = cat_counts.get(c_up, 0) + 1
+
+            if item_name:
+                item_low = item_name.lower().strip()
+                if any(m in item_low for m in ['samsung', 'micron', 'kioxia', 'wd sn861']):
+                    last_ssd_model = item_low
 
             effective_cat = cat or current_category
+            eff_up = effective_cat.upper()
 
             is_l11 = False
             c_low = effective_cat.lower()
             i_low = item_name.lower()
 
-            if 'l11' in i_low or 'l11' in c_low or 'pcieswitchconfig' in i_low or 'pciesswitchconfig' in i_low:
-                is_l11 = True
-            elif any(k in c_low for k in ['rack', 'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd']):
-                is_l11 = True
-            elif any(k in i_low for k in ['rmc', 'nvswitch', 'aalc', 'wedge400', 'bbu', 'pmm', 'psu', 'cbu', 'minipack', 'mgmt switch', 'switch', 'fixture', 'aei', 'delta', 'panasonic', 'bft']):
-                is_l11 = True
+            if stage == 'L10':
+                if 'pcieswitch' not in i_low:
+                    if 'l11' in i_low or 'l11' in c_low:
+                        is_l11 = True
+                    elif any(k in c_low for k in ['rack', 'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd', 'fan bd', 'rear io', 'led bd', 'fan', 'rear', 'led']):
+                        is_l11 = True
+                    elif any(k in i_low for k in ['rmc', 'nvswitch', 'aalc', 'wedge400', 'bbu', 'pmm', 'psu', 'cbu', 'minipack', 'mgmt switch', 'fixture', 'aei', 'delta', 'panasonic', 'bft', 'fan', 'rear', 'led']):
+                        is_l11 = True
 
-            if 'l10' in i_low or 'l10' in c_low:
-                is_l11 = False
+                    # 2nd occurrence of SCM/BSM
+                    if eff_up in ['SCM', 'BSM'] and cat_counts.get(eff_up, 0) >= 2:
+                        is_l11 = True
 
-            matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
+                if 'l10' in i_low or 'l10' in c_low or 'pcieswitch' in i_low:
+                    is_l11 = False
+
+            matched_item = None
+            if not is_l11 and item_name:
+                if item_name.strip().upper() == 'FRU':
+                    draft_ver = latest_fru_ver
+                    remark = f"Verified in FRU Spec ({latest_fru_ver})"
+                else:
+                    matched_item = find_best_yaml_match_for_fava(effective_cat, item_name, extracted_items, stage=stage)
+
             if matched_item:
                 extracted_ver = matched_item.get('yaml_version') or ''
                 if extracted_ver: draft_ver = str(extracted_ver)
                 status = matched_item.get('status', 'MATCH')
-                if status == 'MISMATCH':
-                    remark = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({matched_item.get('bkc_version')})"
-                elif status == 'MATCH':
+                bkc_v = str(matched_item.get('bkc_version') or '').strip()
+                if status == 'MISMATCH' and bkc_v and bkc_v != 'None':
+                    remark = f"MISMATCH: YAML ({extracted_ver}) vs BKC ({bkc_v})"
+                else:
                     remark = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
-            elif is_l11:
+
+            display_item = item_name
+            # Explicit VID/DID sub-row handling under SSDs (L10 Stage only)
+            if stage == 'L10' and not cat and not item_name and last_ssd_model and c_low in ['boot drive e1.s', 'storage e1.s']:
+                matched_spec_key = None
+                for key in SSD_STATIC_SPECS:
+                    if key in last_ssd_model:
+                        matched_spec_key = key
+                        break
+                
+                spec_info = SSD_STATIC_SPECS.get(matched_spec_key, {})
+
+                if len(preview_rows) > 0:
+                    prev_item = preview_rows[-1].get('item', '')
+                    if 'Vendor ID' not in prev_item and prev_item != '':
+                        display_item = "↳ Vendor ID (VID)"
+                        draft_ver = spec_info.get('vid') or draft_ver or '144Dh'
+                        remark = "Static Spec (VID)"
+                    elif 'Device ID' not in prev_item and prev_item != '':
+                        display_item = "↳ Device ID (DID)"
+                        draft_ver = spec_info.get('did') or draft_ver or 'A80E'
+                        remark = "Static Spec (DID)"
+
+            if is_l11:
+                draft_ver = "Yaml檔案未找到"
                 remark = "L11 Scope (非 L10 測試範疇)"
             else:
-                remark = "-"
+                if not matched_item and item_name:
+                    draft_ver = "Yaml檔案未找到"
+                    remark = "Yaml檔案未找到"
+                elif not remark:
+                    remark = "-"
 
             if item_name or cat or draft_ver:
                 preview_rows.append({
                     'category': cat,
-                    'item': item_name,
+                    'item': display_item,
                     'actual_version': act_ver,
                     'draft_version': draft_ver,
                     'remark': remark,
@@ -2971,7 +3360,12 @@ def api_preview_fava_draft():
     # Prepare TSV string (Tab-separated values) for direct pasting into Excel/Google Sheets
     tsv_lines = ["Category\tItem\tActual Version\tDraft Version\tRemark"]
     for r in preview_rows:
-        tsv_lines.append(f"{r['category']}\t{r['item']}\t{r['actual_version']}\t{r['draft_version']}\t{r['remark']}")
+        c_cat = str(r['category'] or '').replace('\n', ' ').strip()
+        c_item = str(r['item'] or '').replace('\n', ' ').strip()
+        c_act = str(r['actual_version'] or '').replace('\n', ' ').strip()
+        c_draft = str(r['draft_version'] or '').replace('\r\n', ' / ').replace('\n', ' / ').strip()
+        c_rem = str(r['remark'] or '').replace('\n', ' ').strip()
+        tsv_lines.append(f"{c_cat}\t{c_item}\t{c_act}\t{c_draft}\t{c_rem}")
     tsv_text = "\n".join(tsv_lines)
 
     return jsonify({
