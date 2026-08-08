@@ -2931,16 +2931,15 @@ def api_preview_fava_draft():
             is_l11 = False
             c_low = effective_cat.lower()
             i_low = item_name.lower()
-            l11_keys = [
-                'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd', 
-                'bbu', 'pmm', 'psu', 'l11', 'switch', 'minipack', 'mgmt switch',
-                'aei', 'delta', 'panasonic', 'fixture', 'cbu'
-            ]
-            if any(k in c_low for k in l11_keys) or any(k in i_low for k in l11_keys):
+
+            if 'l11' in i_low or 'l11' in c_low or 'pcieswitchconfig' in i_low or 'pciesswitchconfig' in i_low:
+                is_l11 = True
+            elif any(k in c_low for k in ['rack', 'rmc', 'nvswitch', 'powerrack', 'aalc', 'wedge400', '2nd']):
+                is_l11 = True
+            elif any(k in i_low for k in ['rmc', 'nvswitch', 'aalc', 'wedge400', 'bbu', 'pmm', 'psu', 'cbu', 'minipack', 'mgmt switch', 'switch', 'fixture', 'aei', 'delta', 'panasonic', 'bft']):
                 is_l11 = True
 
-            # Exception: L10 NVPD is L10 stage!
-            if 'l10 nvpd' in i_low or 'l10' in i_low:
+            if 'l10' in i_low or 'l10' in c_low:
                 is_l11 = False
 
             matched_item = find_best_yaml_match_for_fava(cat, item_name, extracted_items)
@@ -2954,6 +2953,8 @@ def api_preview_fava_draft():
                     remark = f"Verified in YAML ({matched_item.get('station', 'YAML')})"
             elif is_l11:
                 remark = "L11 Scope (非 L10 測試範疇)"
+            else:
+                remark = "-"
 
             if item_name or cat or draft_ver:
                 preview_rows.append({
