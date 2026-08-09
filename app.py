@@ -138,8 +138,8 @@ ACTIVE_PATHS = {
 }
 
 def get_project_config(project_id):
-    """Return config for the given project id, defaulting to sanmiguel."""
-    return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS['sanmiguel'])
+    """Return config for the given project id, defaulting to clemente (GB300)."""
+    return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS['clemente'])
 
 def get_project_upload_folder(project_id):
     folder = os.path.join(UPLOAD_FOLDER, project_id)
@@ -787,6 +787,21 @@ def parse_fru_sheet_smart(rows):
 
     return modules, ordered_keys, data_dict
 
+def filter_valid_fru_sheets(sheets):
+    if not sheets:
+        return []
+    valid = []
+    ignored_keywords = [
+        'changehistory', 'change history', 'panel change', 'mp(panel change)',
+        'version', 'history', 'changelog', 'change log', 'cover', 'readme', 'notes', 'note'
+    ]
+    for s in sheets:
+        s_clean = str(s or '').strip().lower()
+        if not any(kw in s_clean for kw in ignored_keywords):
+            valid.append(s)
+    return valid if valid else sheets
+
+
 @app.route('/api/fru')
 def get_fru():
     project_id = request.args.get('project', 'sanmiguel')
@@ -795,11 +810,19 @@ def get_fru():
 
     req_path = request.args.get('file_path', None)
     path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('fru', default_fru_dvt, project_id)
-    requested_sheet = request.args.get('sheet', 'FRU-A')
+    requested_sheet = request.args.get('sheet', None)
 
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
     if err:
         return jsonify({'success': False, 'error': err}), 400
+
+    valid_sheets = filter_valid_fru_sheets(sheets)
+    active_s = requested_sheet if (requested_sheet and requested_sheet in valid_sheets) else (valid_sheets[0] if valid_sheets else (sheets[0] if sheets else None))
+
+    if active_s and active_s != requested_sheet:
+        rows, _, err = read_file_safe(path, sheet_name=active_s)
+        if err:
+            return jsonify({'success': False, 'error': err}), 400
 
     modules, keys, data_dict = parse_fru_sheet_smart(rows)
 
@@ -826,8 +849,8 @@ def get_fru():
         'modules': modules,
         'total_configured_vals': total_configured_vals,
         'filename': os.path.basename(path),
-        'sheets': sheets,
-        'active_sheet': requested_sheet if (requested_sheet and requested_sheet in sheets) else (sheets[0] if sheets else None),
+        'sheets': valid_sheets,
+        'active_sheet': active_s,
         'active_file': path,
         'available_files': scan_files_in_dirs('fru', project_id)
     }
@@ -853,11 +876,29 @@ def get_fru_compare():
 
 
     requested_sheet = request.args.get('sheet', None)
-    base_sheet = request.args.get('base_sheet', requested_sheet or 'FRU-A')
-    target_sheet = request.args.get('target_sheet', requested_sheet or 'FRU-A')
+    base_sheet = request.args.get('base_sheet', requested_sheet)
+    target_sheet = request.args.get('target_sheet', requested_sheet)
 
     rows_dvt, sheets_dvt, err_dvt = read_file_safe(path_dvt, sheet_name=base_sheet)
     rows_pvt, sheets_pvt, err_pvt = read_file_safe(path_pvt, sheet_name=target_sheet)
+
+    if err_dvt or err_pvt:
+        return jsonify({
+            'success': False,
+            'error_dvt': err_dvt,
+            'error_pvt': err_pvt
+        }), 400
+
+    valid_sheets_dvt = filter_valid_fru_sheets(sheets_dvt)
+    valid_sheets_pvt = filter_valid_fru_sheets(sheets_pvt)
+
+    base_s = base_sheet if (base_sheet and base_sheet in valid_sheets_dvt) else (valid_sheets_dvt[0] if valid_sheets_dvt else (sheets_dvt[0] if sheets_dvt else None))
+    target_s = target_sheet if (target_sheet and target_sheet in valid_sheets_pvt) else (valid_sheets_pvt[0] if valid_sheets_pvt else (sheets_pvt[0] if sheets_pvt else None))
+
+    if base_s and base_s != base_sheet:
+        rows_dvt, _, err_dvt = read_file_safe(path_dvt, sheet_name=base_s)
+    if target_s and target_s != target_sheet:
+        rows_pvt, _, err_pvt = read_file_safe(path_pvt, sheet_name=target_s)
 
     if err_dvt or err_pvt:
         return jsonify({
@@ -932,11 +973,10 @@ def get_fru_compare():
         'pvt_filename': os.path.basename(path_pvt),
         'dvt_path': path_dvt,
         'pvt_path': path_pvt,
-        'sheets_base': sheets_dvt,
-
-        'sheets_target': sheets_pvt,
-        'base_sheet': base_sheet if (base_sheet and base_sheet in sheets_dvt) else (sheets_dvt[0] if sheets_dvt else None),
-        'target_sheet': target_sheet if (target_sheet and target_sheet in sheets_pvt) else (sheets_pvt[0] if sheets_pvt else None),
+        'sheets_base': valid_sheets_dvt,
+        'sheets_target': valid_sheets_pvt,
+        'base_sheet': base_s,
+        'target_sheet': target_s,
         'available_files': scan_files_in_dirs('fru', project_id)
     }
 
@@ -1695,11 +1735,21 @@ def parse_single_yaml_file(path, default_station_label="Station"):
             if fw_ver and not isinstance(fw_ver, dict):
                 fru = str(args.get('fru') or '').strip()
                 comp = str(args.get('component') or '').strip()
-                
+                step_lower = str(step_name).lower()
+
                 if (fru.lower() in ['hdd0', 'hdd1', 'hdd', 'e1s', 'e1.s', 'e1sbp']) and comp.lower() == 'cpld':
                     c_label = "E1.S BP CPLD"
                     sub_c = "E1.S BP CPLD"
-                elif 'gpu' in comp.lower() or 'update_gpu' in step_lower or 'hmcflash' in step_lower:
+                elif 'sbios' in step_lower or 'sbios' in comp.lower() or 'sbios' in fru.lower():
+                    c_label = "SBIOS"
+                    sub_c = "SBIOS"
+                elif any(k in step_lower or k in comp.lower() for k in ['pcieswitch', 'pcie_switch', 'pcieswtich']):
+                    c_label = "PCIe Switch FW"
+                    sub_c = "PCIe Switch FW"
+                elif 'force_update' in step_lower or 'os' in step_lower or 'kernel' in step_lower:
+                    c_label = "OS"
+                    sub_c = "OS"
+                elif 'gpu' in comp.lower() or 'update_gpu' in step_lower or 'vbios' in step_lower:
                     c_label = "VBIOS (GPU)"
                     sub_c = "VBIOS (GPU)"
                 else:
@@ -1903,17 +1953,36 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 matched_bkc = b_item
                 matched_idx = idx
 
+        def clean_version_num(v):
+            v_str = str(v or '').strip()
+            if v_str.endswith('.0') and v_str.replace('.0', '').isdigit():
+                v_str = v_str[:-2]
+            if v_str.isdigit():
+                v_str = str(int(v_str))
+            return v_str
+
         def is_version_compliant(bkc_v, y_v):
             if not bkc_v or not y_v:
                 return False
             bv = str(bkc_v).strip().lower()
             yv = str(y_v).strip().lower()
+
             if bv == yv:
                 return True
-            if 'read-out' in bv or 'readout' in bv or 'read out' in bv:
+            if 'read-out' in bv or 'readout' in bv or 'read out' in bv or bv in ['(empty)', '']:
                 return True
-            bv_clean = re.sub(r'[^a-zA-Z0-9]', '', bv)
-            yv_clean = re.sub(r'[^a-zA-Z0-9]', '', yv)
+
+            b_c = clean_version_num(bkc_v).lower()
+            y_c = clean_version_num(y_v).lower()
+            if b_c == y_c:
+                return True
+
+            # SBIOS CLE403 vs 00020300 alias check
+            if ('cle403' in b_c and ('00020300' in y_c or '20300' in y_c)) or (('00020300' in b_c or '20300' in b_c) and 'cle403' in y_c):
+                return True
+
+            bv_clean = re.sub(r'[^a-zA-Z0-9]', '', b_c)
+            yv_clean = re.sub(r'[^a-zA-Z0-9]', '', y_c)
             if bv_clean == yv_clean:
                 return True
             if len(yv_clean) >= 4 and yv_clean in bv_clean:
@@ -1925,6 +1994,8 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
         if best_score >= 50 and matched_bkc:
             matched_bkc_indices.add(matched_idx)
             bkc_ver = matched_bkc.get('version', '')
+            if not bkc_ver or bkc_ver == '(Empty)':
+                bkc_ver = 'Read-out Version'
             ver_match = is_version_compliant(bkc_ver, y_ver)
             
             status = 'MATCH' if ver_match else 'MISMATCH'

@@ -75,7 +75,7 @@ const appState = {
 // ============================================================
 // MULTI-PROJECT SUPPORT
 // ============================================================
-let currentProject = 'sanmiguel'; // default project
+let currentProject = 'clemente'; // default project set to Clemente (GB300)
 
 const PROJECT_META = {
     sanmiguel: {
@@ -3630,8 +3630,20 @@ function formatFavaCategoryAndItem(it) {
     let displayCat = grp !== 'N/A' && grp ? grp : (cat !== 'N/A' && cat ? cat : 'General');
     let displayItem = comp;
 
-    const compLow = comp.toLowerCase();
-    const subLow = sub.toLowerCase();
+    if (comp.toLowerCase() === 'mfg' || !comp) {
+        displayItem = (sub && sub.toLowerCase() !== 'mfg') ? sub : comp;
+    }
+
+    if (grp.toLowerCase() === 'mfg' || cat.toLowerCase() === 'mfg') {
+        if (cat && cat !== 'N/A' && cat !== 'GB300' && cat.toLowerCase() !== 'mfg') {
+            displayCat = `${cat} (Mfg)`;
+        } else {
+            displayCat = 'Mfg (產線治具/配件)';
+        }
+    }
+
+    const compLow = (comp || '').toLowerCase();
+    const subLow = (sub || '').toLowerCase();
 
     if (compLow.includes('ct_bmc') || subLow.includes('openbmc')) {
         displayCat = 'BSM';
@@ -3672,13 +3684,13 @@ function formatFavaCategoryAndItem(it) {
     }
 
     if (displayCat === 'Compute tray assy' || displayCat === 'GB300') {
-        if (sub && sub !== 'N/A') displayCat = sub;
+        if (sub && sub !== 'N/A' && sub.toLowerCase() !== 'mfg') displayCat = sub;
         else displayCat = 'Compute Tray';
     }
 
     return {
         category: displayCat,
-        item: displayItem
+        item: displayItem || sub || 'Component'
     };
 }
 
