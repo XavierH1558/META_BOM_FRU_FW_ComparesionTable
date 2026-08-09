@@ -246,6 +246,38 @@ function showViewAnimated(target) {
 
 
 
+// Robust Copy To Clipboard with Fallback (Supports HTTP / IP address access)
+function copyToClipboard(text) {
+    return new Promise((resolve, reject) => {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(resolve).catch(err => {
+                fallbackCopyText(text, resolve, reject);
+            });
+        } else {
+            fallbackCopyText(text, resolve, reject);
+        }
+    });
+}
+
+function fallbackCopyText(text, resolve, reject) {
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '-9999px';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) resolve();
+        else reject(new Error('execCommand copy failed'));
+    } catch (err) {
+        reject(err);
+    }
+}
+
 function initDebugDrawer() {
     const debugToggleBtn = document.getElementById('debug-toggle-btn');
     const debugDrawer = document.getElementById('debug-drawer');
@@ -276,10 +308,11 @@ function initDebugDrawer() {
     if (btnCopyDebug) {
         btnCopyDebug.addEventListener('click', () => {
             const formattedText = debugLogs.map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}${l.details ? ' | ' + (typeof l.details === 'object' ? JSON.stringify(l.details) : l.details) : ''}`).join('\n');
-            navigator.clipboard.writeText(formattedText || 'No logs recorded.').then(() => {
+            copyToClipboard(formattedText || 'No logs recorded.').then(() => {
                 alert('✅ 已成功複製完整的 Debug Log 訊息！請直接貼在對話框傳送給 AI 進行診斷。');
             }).catch(err => {
                 console.error('Clipboard copy failed:', err);
+                alert('❌ 複製失敗: ' + err.message);
             });
         });
     }
@@ -1686,7 +1719,7 @@ function populateFileSelect(selectId, files, activePath) {
 }
 
 
-function populateSheetSelect(boxId, selectId, sheets, activeSheet) {
+function populateSheetSelect(boxId, selectId, sheets, activeSheet, forceShow = true) {
     const box = boxId ? document.getElementById(boxId) : null;
     const select = document.getElementById(selectId);
 
@@ -1696,7 +1729,7 @@ function populateSheetSelect(boxId, selectId, sheets, activeSheet) {
         return;
     }
 
-    if (box) box.style.display = 'block';
+    if (box && forceShow) box.style.display = 'block';
     if (select) {
         select.innerHTML = '';
         sheets.forEach(s => {
@@ -1788,29 +1821,6 @@ function populateBkcCompareSelects(sheets, activeBase, activeTarget) {
         if (s === activeTarget) optT.selected = true;
         targetSel.appendChild(optT);
     });
-}
-
-function populateSheetSelect(boxId, selectId, sheets, activeSheet, forceShow = true) {
-    const box = document.getElementById(boxId);
-    const select = document.getElementById(selectId);
-
-    if (!sheets || sheets.length === 0) {
-        if (box) box.style.display = 'none';
-        return;
-    }
-
-    // Only show the parent box if forceShow is true (not used for compare controls)
-    if (box && forceShow) box.style.display = 'block';
-    if (select) {
-        select.innerHTML = '';
-        sheets.forEach(s => {
-            const opt = document.createElement('option');
-            opt.value = s;
-            opt.textContent = `Sheet: ${s}`;
-            if (s === activeSheet) opt.selected = true;
-            select.appendChild(opt);
-        });
-    }
 }
 
 function populateBkcCategorySelect(categories) {
@@ -3377,6 +3387,19 @@ async function fetchAndPopulateTimelines() {
     }
 }
 
+function expandYamlConfigPanel() {
+    const collapsibleBody = document.getElementById('yaml-collapsible-config-body');
+    const toggleIcon = document.getElementById('yaml-config-toggle-icon');
+    const toggleText = document.getElementById('yaml-config-toggle-text');
+    const btnToggleConfigPanel = document.getElementById('btn-toggle-yaml-config-panel');
+    if (collapsibleBody) {
+        collapsibleBody.style.display = 'block';
+        if (toggleIcon) toggleIcon.className = 'fa-solid fa-chevron-up';
+        if (toggleText) toggleText.textContent = '收合設定面板';
+        if (btnToggleConfigPanel) btnToggleConfigPanel.style.background = 'rgba(56, 189, 248, 0.1)';
+    }
+}
+
 // -------------------------------------------------------------
 // Test Suite (YAML) Comparison & Enhancements (1, 2, 3, 5)
 // -------------------------------------------------------------
@@ -3384,21 +3407,30 @@ async function fetchYamlData() {
     const y1Select = document.getElementById('yaml-file-select-1');
     const y2Select = document.getElementById('yaml-file-select-2');
     const y3Select = document.getElementById('yaml-file-select-3');
+    const y4Select = document.getElementById('yaml-file-select-4');
+    const y5Select = document.getElementById('yaml-file-select-5');
     const bkcFileSelect = document.getElementById('yaml-bkc-file-select');
     const bkcSheetSelect = document.getElementById('yaml-bkc-sheet-select');
 
     const y1 = y1Select ? y1Select.value : '';
     const y2 = y2Select ? y2Select.value : '';
     const y3 = y3Select ? y3Select.value : '';
+    const y4 = y4Select ? y4Select.value : '';
+    const y5 = y5Select ? y5Select.value : '';
     const bkcFile = bkcFileSelect ? bkcFileSelect.value : '';
     const bkcSheet = bkcSheetSelect ? bkcSheetSelect.value : '';
 
-    logDebug('info', `[fetchYamlData] Triggered with params:`, { y1, y2, y3, bkcFile, bkcSheet });
+    logDebug('info', `[fetchYamlData] Triggered with params:`, { y1, y2, y3, y4, y5, bkcFile, bkcSheet });
 
-    const hasActiveYaml = Boolean(y1 || y2 || y3);
+    const hasActiveYaml = Boolean(y1 || y2 || y3 || y4 || y5);
 
-    if (hasActiveYaml) {
-        showLoading('⚡ 載入與比對 Test Suite (YAML) 測試腳本中...', 'Extracting 1-3 station test steps & matching against BKC reference rules');
+    if (!hasActiveYaml) {
+        expandYamlConfigPanel();
+        if (typeof showToast === 'function') {
+            showToast('💡 請先於上方 Station 1 ~ 5 卡片選擇選單或上傳 .yaml 測試腳本檔！', 'info');
+        }
+    } else {
+        showLoading('⚡ 載入與比對 Test Suite (YAML) 測試腳本中...', 'Extracting 1-5 station test steps & matching against BKC reference rules');
     }
 
     try {
@@ -3407,6 +3439,8 @@ async function fetchYamlData() {
         if (y1) queryParts.push(`yaml_1=${encodeURIComponent(y1)}`);
         if (y2) queryParts.push(`yaml_2=${encodeURIComponent(y2)}`);
         if (y3) queryParts.push(`yaml_3=${encodeURIComponent(y3)}`);
+        if (y4) queryParts.push(`yaml_4=${encodeURIComponent(y4)}`);
+        if (y5) queryParts.push(`yaml_5=${encodeURIComponent(y5)}`);
         if (bkcFile) queryParts.push(`bkc_file=${encodeURIComponent(bkcFile)}`);
         if (bkcSheet) queryParts.push(`bkc_sheet=${encodeURIComponent(bkcSheet)}`);
         url += queryParts.join('&');
@@ -3476,6 +3510,8 @@ async function fetchYamlData() {
                 populateYamlFileSelect('yaml-file-select-1', availYaml, y1 || '', "(無 / None)");
                 populateYamlFileSelect('yaml-file-select-2', availYaml, y2 || '', "(無 / None)");
                 populateYamlFileSelect('yaml-file-select-3', availYaml, y3 || '', "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-4', availYaml, y4 || '', "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-5', availYaml, y5 || '', "(無 / None)");
                 
                 // Populate Diff Base and Target selects
                 populateYamlFileSelect('yaml-diff-base-select', availYaml, availYaml[0]?.path);
@@ -3501,6 +3537,7 @@ async function fetchYamlData() {
         }
     } catch (err) {
         console.error('Error fetching YAML compare data:', err);
+        logDebug('error', `[fetchYamlData] Exception: ${err.message}`, err.stack);
     } finally {
         await hideLoading(400);
     }
@@ -3555,64 +3592,170 @@ function populateYamlFileSelect(selectId, files, activePath, emptyOptionLabel = 
     }
 }
 
-
-
 function populateYamlStationFilter(items) {
     const select = document.getElementById('yaml-station-filter');
     if (!select) return;
     
     const stations = new Set();
-    items.forEach(it => {
+    (items || []).forEach(it => {
         if (it.station && it.station !== 'None') stations.add(it.station);
     });
     
     const currentVal = select.value || 'ALL';
     select.innerHTML = '<option value="ALL">全部工站 (All Stations)</option>';
     
+    let matchedCurrent = false;
     Array.from(stations).sort().forEach(st => {
         const opt = document.createElement('option');
         opt.value = st;
         opt.textContent = st;
-        if (st === currentVal) opt.selected = true;
+        if (st === currentVal) {
+            opt.selected = true;
+            matchedCurrent = true;
+        }
         select.appendChild(opt);
     });
+
+    if (!matchedCurrent) {
+        select.value = 'ALL';
+    }
 }
 
-async function saveYamlDisposition(itemKey, status, owner, note) {
-    try {
-        await fetch('/api/yaml-dispositions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                key: itemKey,
-                disposition_status: status,
-                owner: owner,
-                note: note,
-                project: currentProject
-            })
-        });
-    } catch (err) {
-        console.error('Failed to save disposition:', err);
+function formatFavaCategoryAndItem(it) {
+    const comp = String(it.component || '').trim();
+    const grp = String(it.bkc_group || '').trim();
+    const cat = String(it.bkc_category || '').trim();
+    const sub = String(it.sub_component || '').trim();
+
+    let displayCat = grp !== 'N/A' && grp ? grp : (cat !== 'N/A' && cat ? cat : 'General');
+    let displayItem = comp;
+
+    const compLow = comp.toLowerCase();
+    const subLow = sub.toLowerCase();
+
+    if (compLow.includes('ct_bmc') || subLow.includes('openbmc')) {
+        displayCat = 'BSM';
+        displayItem = 'OpenBMC';
+    } else if (compLow.includes('pdb_p12v_n1_vr') || subLow.includes('vr n1')) {
+        displayCat = 'PDB';
+        displayItem = 'PDB: VR N1 FW';
+    } else if (compLow.includes('pdb_p12v_n2_vr') || subLow.includes('vr n2')) {
+        displayCat = 'PDB';
+        displayItem = 'PDB: VR N2 FW';
+    } else if (compLow.includes('scm cpld')) {
+        displayCat = 'SCM';
+        displayItem = 'SCM CPLD';
+    } else if (compLow.includes('e1.s bp cpld')) {
+        displayCat = 'E1.S BP';
+        displayItem = 'E1.S BP CPLD';
+    } else if (compLow.includes('interposer cpld')) {
+        displayCat = 'Interposer';
+        displayItem = 'Interposer CPLD';
+    } else if (compLow.includes('vbios') || subLow.includes('vbios')) {
+        displayCat = 'GPU Board';
+        displayItem = 'VBIOS (GPU)';
+    } else if (compLow.includes('erot bmc')) {
+        displayCat = 'GPU Board';
+        displayItem = 'ERoT BMC';
+    } else if (compLow.includes('erot cpu')) {
+        displayCat = 'GPU Board';
+        displayItem = 'ERoT CPU';
+    } else if (compLow.includes('erot fpga')) {
+        displayCat = 'GPU Board';
+        displayItem = 'ERoT FPGA';
+    } else if (compLow.includes('hmc cpld')) {
+        displayCat = 'GPU Board';
+        displayItem = 'HMC CPLD';
+    } else if (compLow.includes('pcieswitch')) {
+        displayCat = 'PCIe Switch';
+        displayItem = 'PCIe Switch FW';
     }
+
+    if (displayCat === 'Compute tray assy' || displayCat === 'GB300') {
+        if (sub && sub !== 'N/A') displayCat = sub;
+        else displayCat = 'Compute Tray';
+    }
+
+    return {
+        category: displayCat,
+        item: displayItem
+    };
+}
+
+function formatBkcVersionDisplay(bkcVer, yamlVer) {
+    if (!bkcVer || bkcVer === 'N/A (未列出)' || bkcVer === '(Empty)' || bkcVer === '-') {
+        return `<span class="text-muted" style="font-size: 0.82rem;">${escapeHtml(bkcVer || '-')}</span>`;
+    }
+
+    const bkcStr = String(bkcVer).trim();
+    const match = bkcStr.match(/^([A-Za-z0-9_\-\s~]+?)\s+([0-9a-fA-F\.\-_]{4,})$/);
+
+    if (match) {
+        const primaryVer = match[0];
+        const readOutVal = match[2];
+        return `
+            <div style="font-weight: 600; color: #fbbf24;" class="font-mono">${escapeHtml(primaryVer)}</div>
+            <div style="font-size: 0.76rem; color: #94a3b8; margin-top: 2px;">
+                (Read-out: <code style="color: #38bdf8; background: rgba(56, 189, 248, 0.12); padding: 1px 5px; border-radius: 4px;">${escapeHtml(readOutVal)}</code>)
+            </div>
+        `;
+    }
+
+    return `<div style="font-weight: 600; color: #fbbf24;" class="font-mono">${escapeHtml(bkcStr)}</div>`;
 }
 
 function renderYamlTable(page) {
     const tbody = document.getElementById('yaml-tbody');
-    if (!tbody || !appState.yamlCompare || !appState.yamlCompare.items) return;
+    if (!tbody) {
+        logDebug('error', '[renderYamlTable] #yaml-tbody DOM element not found!');
+        return;
+    }
+    if (!appState.yamlCompare || !appState.yamlCompare.items) {
+        logDebug('warn', '[renderYamlTable] appState.yamlCompare is null or items is empty');
+        return;
+    }
 
     const PAGE_SIZE = 50;
     if (page !== undefined && page !== null) appState.yamlPage = page;
     if (appState.yamlPage === undefined) appState.yamlPage = 0;
 
     const items = appState.yamlCompare.items;
-    const stationFilter = document.getElementById('yaml-station-filter')?.value || 'ALL';
-    const statusFilter = document.getElementById('yaml-status-filter')?.value || 'ALL';
+    const rawStationFilter = document.getElementById('yaml-station-filter')?.value;
+    const stationFilter = (rawStationFilter && rawStationFilter !== '') ? rawStationFilter : 'ALL';
+    const rawStatusFilter = document.getElementById('yaml-status-filter')?.value;
+    const statusFilter = (rawStatusFilter && rawStatusFilter !== '') ? rawStatusFilter : 'ALL';
     const searchInput = document.getElementById('yaml-search-input')?.value || '';
     const q = searchInput.trim().toLowerCase();
 
-    const y1 = document.getElementById('yaml-file-select-1')?.value;
-    const y2 = document.getElementById('yaml-file-select-2')?.value;
-    const y3 = document.getElementById('yaml-file-select-3')?.value;
+    logDebug('info', `[renderYamlTable] Triggered: totalItems=${items.length}, stationFilter="${stationFilter}", statusFilter="${statusFilter}", query="${q}"`);
+
+    if (!items || items.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center py-5">
+                    <div class="empty-state-box p-4" style="border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 16px; background: rgba(15, 23, 42, 0.4); max-width: 520px; margin: 2rem auto; text-align: center;">
+                        <div class="empty-icon mb-2" style="font-size: 2.2rem; color: #38bdf8;">
+                            <i class="fa-solid fa-layer-group"></i>
+                        </div>
+                        <h4 style="color: #f8fafc; font-weight: 600; margin-bottom: 0.4rem; font-size: 1.05rem;">請選擇或拖拽工站測試腳本檔</h4>
+                        <p style="color: #94a3b8; font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.8rem;">
+                            請於上方 <strong style="color: #38bdf8;">Station 1 ~ 5 工站卡片</strong> 選擇選單或直接拖拽 <code style="color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px;">.yaml</code> 檔案，點擊「⚡ 開始 / 執行 BKC 合規比對」即可進行分析與對比。
+                        </p>
+                        <div class="d-flex justify-content-center gap-2 flex-wrap mb-2">
+                            <span class="badge bg-blue-subtle text-cyan px-3 py-1.5" style="border-radius: 12px; font-size: 0.78rem; border: 1px solid rgba(56, 189, 248, 0.25);">
+                                <i class="fa-solid fa-bolt"></i> 上方卡片支援單檔 / 跨工站批次拖拽
+                            </span>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-primary mt-2" onclick="expandYamlConfigPanel()" style="background: linear-gradient(135deg, #0284c7, #2563eb); border: none; border-radius: 8px; font-weight: 600; padding: 0.45rem 1.2rem; cursor: pointer;">
+                            <i class="fa-solid fa-folder-open"></i> 展開設定面板選取 / 上傳腳本
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+        renderYamlPagination(0, 0, PAGE_SIZE);
+        return;
+    }
 
     const filtered = items.filter(it => {
         if (stationFilter !== 'ALL' && it.station !== stationFilter) return false;
@@ -3623,34 +3766,6 @@ function renderYamlTable(page) {
         }
         return true;
     });
-
-    if (!y1 && !y2 && !y3) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center py-5">
-                    <div class="empty-state-box p-4" style="border: 2px dashed rgba(56, 189, 248, 0.35); border-radius: 16px; background: rgba(15, 23, 42, 0.6); max-width: 580px; margin: 1.5rem auto;">
-                        <div class="empty-icon mb-3" style="font-size: 2.8rem; color: #38bdf8; filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.5));">
-                            <i class="fa-solid fa-cloud-arrow-up"></i>
-                        </div>
-                        <h4 style="color: #f8fafc; font-weight: 700; margin-bottom: 0.5rem; font-size: 1.15rem;">拖曳或選取 Test Suite (YAML) 測試腳本檔</h4>
-                        <p style="color: #94a3b8; font-size: 0.88rem; line-height: 1.5; margin-bottom: 1.2rem;">
-                            請將 Station 1、Station 2 或 Station 3 之 <code style="color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px;">.yaml</code> 測試腳本拖拽至畫面上或使用選單選擇，確認無誤後點擊「⚡ 開始 / 執行 BKC 合規比對」進行分析。
-                        </p>
-                        <div class="d-flex justify-content-center gap-3 flex-wrap">
-                            <span class="badge bg-blue-subtle text-cyan px-3 py-2" style="border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(56, 189, 248, 0.3);">
-                                <i class="fa-solid fa-bolt"></i> 支援多工站跨版本比對
-                            </span>
-                            <span class="badge bg-purple-subtle text-purple px-3 py-2" style="border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(168, 85, 247, 0.3);">
-                                <i class="fa-solid fa-table-cells"></i> BKC 標準合規自動對比
-                            </span>
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        `;
-        renderYamlPagination(0, 0, PAGE_SIZE);
-        return;
-    }
 
     const mergeDuplicates = document.getElementById('yaml-merge-duplicates')?.checked ?? true;
     let displayItems = filtered;
@@ -3663,98 +3778,71 @@ function renderYamlTable(page) {
             const grpKey = (it.bkc_group || 'General').trim().toLowerCase();
             const subKey = (it.sub_component || it.component || it.step_location || 'Unknown').trim().toLowerCase();
             const key = `${catKey}|${grpKey}|${subKey}`;
+
             if (!groups.has(key)) {
                 groups.set(key, {
-                    component: it.sub_component || it.component,
-                    bkc_category: it.bkc_category,
-                    bkc_group: it.bkc_group,
+                    bkc_category: it.bkc_category || 'General',
+                    bkc_group: it.bkc_group || 'General',
                     bkc_version: it.bkc_version,
-                    stations: [],
-                    station_versions: {},
-                    step_locations: new Set(),
-                    commands: new Set(),
+                    component: it.component,
+                    sub_component: it.sub_component,
+                    items: [],
+                    statuses: new Set(),
+                    stations: new Set(),
+                    versions: new Set(),
                     notes: [],
-                    raw_items: []
+                    commands: new Set()
                 });
             }
-
             const grp = groups.get(key);
-            grp.raw_items.push(it);
-            if (it.station && it.station !== 'None') {
-                if (!grp.stations.includes(it.station)) {
-                    grp.stations.push(it.station);
-                }
-                grp.station_versions[it.station] = it.yaml_version || '-';
-            }
-            if (it.step_location && it.step_location !== 'N/A (未涵蓋)') {
-                grp.step_locations.add(it.step_location);
-            }
-            if (it.command) grp.commands.add(it.command);
+            grp.items.push(it);
+            grp.statuses.add(it.status);
+            if (it.station && it.station !== 'None') grp.stations.add(it.station);
+            if (it.yaml_version) grp.versions.add(it.yaml_version);
             if (it.discussion_note) grp.notes.push(it.discussion_note);
+            if (it.command) grp.commands.add(it.command);
         });
 
         displayItems = Array.from(groups.values()).map(grp => {
-            const stationsCount = grp.stations.length;
-            const uniqueVersions = new Set(Object.values(grp.station_versions).filter(v => v && v !== '-'));
-            const hasVersionDiffAcrossStations = (stationsCount > 1 && uniqueVersions.size > 1);
+            const firstItem = grp.items[0];
+            const uniqueStations = Array.from(grp.stations);
+            const uniqueVersions = Array.from(grp.versions);
 
             let aggStatus = 'MATCH';
-            let aggStatusLabel = `🟢 吻合 (${stationsCount} 站一致)`;
-
-            const hasMismatch = grp.raw_items.some(x => x.status === 'MISMATCH');
-            const hasMissingBkc = grp.raw_items.some(x => x.status === 'MISSING_IN_BKC');
-
-            if (hasVersionDiffAcrossStations) {
-                aggStatus = 'MISMATCH';
-                aggStatusLabel = '🔴 跨工站版本歧異 (Diff Across Stations)';
-            } else if (hasMismatch) {
+            let aggStatusLabel = '🟢 吻合 (Follow BKC)';
+            if (grp.statuses.has('MISMATCH')) {
                 aggStatus = 'MISMATCH';
                 aggStatusLabel = '🔴 不符合 BKC';
-            } else if (hasMissingBkc) {
+            } else if (grp.statuses.has('MISSING_IN_BKC')) {
                 aggStatus = 'MISSING_IN_BKC';
-                aggStatusLabel = '🟡 BKC 未定義';
+                aggStatusLabel = '🟡 BKC未定義';
+            } else if (grp.statuses.has('UNCHECKED_IN_YAML')) {
+                aggStatus = 'UNCHECKED_IN_YAML';
+                aggStatusLabel = '⚪ 腳本未測試';
             }
 
-            const stationBadges = grp.stations.map(st => {
-                let badgeStyle = 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);';
-                if (st.includes('Station 2') || st.includes('FRO')) {
-                    badgeStyle = 'background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4);';
-                } else if (st.includes('Station 3') || st.includes('FFT')) {
-                    badgeStyle = 'background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);';
-                }
-                return `<span class="badge py-1 px-2 me-1 mb-1" style="${badgeStyle} border-radius: 6px; font-size: 0.75rem;"><i class="fa-solid fa-vial"></i> ${escapeHtml(st)}</span>`;
-            }).join(' ');
+            const stationDisplayHtml = uniqueStations.length > 1
+                ? `<span class="badge-station badge-station-multi" title="${uniqueStations.join(', ')}"><i class="fa-solid fa-layer-group"></i> 跨 ${uniqueStations.length} 工站覆蓋</span>`
+                : (uniqueStations.length === 1 ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(uniqueStations[0])}</span>` : `<span class="text-muted" style="font-size:0.8rem;">-</span>`);
 
-            let yamlVersionHtml = '';
-            if (uniqueVersions.size <= 1) {
-                const singleVer = Array.from(uniqueVersions)[0] || Object.values(grp.station_versions)[0] || '-';
-                yamlVersionHtml = `<span class="font-mono text-cyan">${escapeHtml(singleVer)}</span>`;
-            } else {
-                yamlVersionHtml = grp.stations.map(st => `
-                    <div style="font-size: 0.75rem;" class="font-mono">
-                        <span style="color: #94a3b8;">${escapeHtml(st.split(' ')[0] || st)}:</span> 
-                        <span style="color: #fbbf24; font-weight:600;">${escapeHtml(grp.station_versions[st])}</span>
-                    </div>
-                `).join('');
-            }
+            const stepDisplayHtml = grp.items.length > 1
+                ? `<span class="step-location-pill" title="${grp.items.map(i=>i.step_location).join(', ')}"><i class="fa-solid fa-code-fork"></i> 涵蓋 ${grp.items.length} 步驟</span>`
+                : (firstItem.step_location !== 'N/A (未涵蓋)' ? `<span class="step-location-pill" title="${escapeHtml(firstItem.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(firstItem.step_location)}</span>` : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(firstItem.step_location)}</span>`);
 
-            const stepsArray = Array.from(grp.step_locations);
-            const stepList = stepsArray.slice(0, 2).map(s => 
-                `<span class="step-location-pill" style="margin-bottom: 2px; display: inline-block;" title="${escapeHtml(Array.from(grp.commands)[0] || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(s)}</span>`
-            ).join(' ');
-
-            const extraStepsCount = stepsArray.length > 2 ? `<span class="text-muted" style="font-size:0.75rem;"> (+${stepsArray.length - 2} 步驟)</span>` : '';
-
-            const firstItem = grp.raw_items[0];
+            const yamlVersionHtml = uniqueVersions.length > 1
+                ? `<span class="font-mono text-cyan" title="${uniqueVersions.join(', ')}">${uniqueVersions.join(' / ')}</span>`
+                : `<span class="font-mono text-cyan">${escapeHtml(uniqueVersions[0] || '-')}</span>`;
 
             return {
                 is_grouped: true,
-                station_display: stationBadges || '<span class="text-muted">-</span>',
-                step_display: (stepList + extraStepsCount) || '<span class="text-muted">-</span>',
+                station_display: stationDisplayHtml,
+                step_display: stepDisplayHtml,
                 component: grp.component,
+                sub_component: grp.sub_component,
                 bkc_category: grp.bkc_category,
                 bkc_group: grp.bkc_group,
                 yaml_version_display: yamlVersionHtml,
+                raw_yaml_version: Array.from(uniqueVersions)[0] || '',
                 bkc_version: grp.bkc_version,
                 status: aggStatus,
                 status_label: aggStatusLabel,
@@ -3768,7 +3856,10 @@ function renderYamlTable(page) {
         });
     }
 
+    logDebug('info', `[renderYamlTable] Result summary: rawItems=${items.length}, filteredItems=${filtered.length}, displayItems=${displayItems.length}, mergeDuplicates=${mergeDuplicates}`);
+
     if (displayItems.length === 0) {
+        logDebug('warn', '[renderYamlTable] displayItems is empty after filtering');
         tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted" style="font-size:1.05rem;">無符合篩選條件的 Test Suite (YAML) 比對資料</td></tr>`;
         renderYamlPagination(0, 0, PAGE_SIZE);
         return;
@@ -3783,76 +3874,85 @@ function renderYamlTable(page) {
     tbody.innerHTML = '';
     const fragment = document.createDocumentFragment();
 
-    pageItems.forEach(it => {
-        const tr = document.createElement('tr');
-        if (it.status === 'MISMATCH') tr.classList.add('tr-yaml-mismatch');
+    try {
+        pageItems.forEach((it, idx) => {
+            const tr = document.createElement('tr');
+            if (it.status === 'MISMATCH') tr.classList.add('tr-yaml-mismatch');
 
-        let badgeClass = 'yaml-match';
-        if (it.status === 'MISMATCH') badgeClass = 'yaml-mismatch';
-        else if (it.status === 'MISSING_IN_BKC') badgeClass = 'yaml-missing-bkc';
-        else if (it.status === 'UNCHECKED_IN_YAML') badgeClass = 'yaml-unchecked';
+            let badgeClass = 'yaml-match';
+            if (it.status === 'MISMATCH') badgeClass = 'yaml-mismatch';
+            else if (it.status === 'MISSING_IN_BKC') badgeClass = 'yaml-missing-bkc';
+            else if (it.status === 'UNCHECKED_IN_YAML') badgeClass = 'yaml-unchecked';
 
-        const stationDisplay = it.is_grouped
-            ? it.station_display
-            : ((it.station && it.station !== 'None')
-                ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>`
-                : `<span class="text-muted" style="font-size:0.8rem;">-</span>`);
+            const stationDisplay = it.is_grouped
+                ? it.station_display
+                : ((it.station && it.station !== 'None')
+                    ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>`
+                    : `<span class="text-muted" style="font-size:0.8rem;">-</span>`);
 
-        const stepDisplay = it.is_grouped
-            ? it.step_display
-            : ((it.step_location && it.step_location !== 'N/A (未涵蓋)')
-                ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(it.step_location)}</span>`
-                : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(it.step_location)}</span>`);
+            const stepDisplay = it.is_grouped
+                ? it.step_display
+                : ((it.step_location && it.step_location !== 'N/A (未涵蓋)')
+                    ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(it.step_location)}</span>`
+                    : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(it.step_location)}</span>`);
 
-        const yamlVersionDisplay = it.is_grouped
-            ? it.yaml_version_display
-            : `<span class="font-mono text-cyan">${escapeHtml(it.yaml_version || '-')}</span>`;
+            const yamlVersionDisplay = it.is_grouped
+                ? it.yaml_version_display
+                : `<span class="font-mono text-cyan">${escapeHtml(it.yaml_version || '-')}</span>`;
 
-        const dispStatus = it.disposition_status || 'Pending';
-        const dispOwner = it.disposition_owner || '';
-        let selectClass = 'status-pending';
-        if (dispStatus === 'To Update') selectClass = 'status-to-update';
-        else if (dispStatus === 'Waived') selectClass = 'status-waived';
-        else if (dispStatus === 'BKC Error') selectClass = 'status-bkc-error';
+            const bkcVersionCell = formatBkcVersionDisplay(it.bkc_version, it.raw_yaml_version || it.yaml_version);
 
-        const dispCol = `<div><select class="yaml-disp-select ${selectClass}" data-key="${escapeHtml(it.item_key)}"><option value="Pending" ${dispStatus==='Pending'?'selected':''}>⏳ 待與客戶確認</option><option value="To Update" ${dispStatus==='To Update'?'selected':''}>🛠️ 確認更新腳本</option><option value="Waived" ${dispStatus==='Waived'?'selected':''}>🤝 客戶同意特採</option><option value="BKC Error" ${dispStatus==='BKC Error'?'selected':''}>⚠️ BKC需更正</option></select><input type="text" class="yaml-owner-input" placeholder="指派 Owner" value="${escapeHtml(dispOwner)}" data-key="${escapeHtml(it.item_key)}" /></div>`;
+            const dispStatus = it.disposition_status || 'Pending';
+            const dispOwner = it.disposition_owner || '';
+            let selectClass = 'status-pending';
+            if (dispStatus === 'To Update') selectClass = 'status-to-update';
+            else if (dispStatus === 'Waived') selectClass = 'status-waived';
+            else if (dispStatus === 'BKC Error') selectClass = 'status-bkc-error';
 
-        const patchBtn = (it.status === 'MISMATCH')
-            ? `<br><button class="btn-patch-modal"><i class="fa-solid fa-wand-magic-sparkles"></i> 修復 Patch</button>`
-            : '';
+            const dispCol = `<div><select class="yaml-disp-select ${selectClass}" data-key="${escapeHtml(it.item_key)}"><option value="Pending" ${dispStatus==='Pending'?'selected':''}>⏳ 待與客戶確認</option><option value="To Update" ${dispStatus==='To Update'?'selected':''}>🛠️ 確認更新腳本</option><option value="Waived" ${dispStatus==='Waived'?'selected':''}>🤝 客戶同意特採</option><option value="BKC Error" ${dispStatus==='BKC Error'?'selected':''}>⚠️ BKC需更正</option></select><input type="text" class="yaml-owner-input" placeholder="指派 Owner" value="${escapeHtml(dispOwner)}" data-key="${escapeHtml(it.item_key)}" /></div>`;
 
-        tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-weight:600;color:var(--text-main);">${escapeHtml(it.component)}</div><div style="font-size:0.76rem;color:var(--text-muted);">${escapeHtml(it.bkc_group!=='N/A'?`${it.bkc_category} > ${it.bkc_group}`:'YAML Test Check')}</div></td><td>${yamlVersionDisplay}</td><td class="font-mono" style="color:#fbbf24;font-weight:600;">${escapeHtml(it.bkc_version||'-')}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${escapeHtml(it.discussion_note)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${escapeHtml(it.command)}</code></div>`:''}${patchBtn}</td>`;
+            const patchBtn = (it.status === 'MISMATCH')
+                ? `<br><button class="btn-patch-modal"><i class="fa-solid fa-wand-magic-sparkles"></i> 修復 Patch</button>`
+                : '';
 
-        const selectElem = tr.querySelector('.yaml-disp-select');
-        const ownerElem = tr.querySelector('.yaml-owner-input');
+            const favaMeta = formatFavaCategoryAndItem(it);
 
-        if (selectElem) {
-            selectElem.addEventListener('change', (e) => {
-                const newStatus = e.target.value;
-                const key = e.target.getAttribute('data-key');
-                saveYamlDisposition(key, newStatus, ownerElem?.value || '', '');
-                renderYamlTable();
-            });
-        }
-        if (ownerElem) {
-            ownerElem.addEventListener('change', (e) => {
-                const newOwner = e.target.value;
-                const key = e.target.getAttribute('data-key');
-                saveYamlDisposition(key, selectElem?.value || 'Pending', newOwner, '');
-            });
-        }
+            tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-size:0.75rem;color:#38bdf8;font-weight:600;margin-bottom:2px;"><i class="fa-solid fa-folder-tree"></i> ${escapeHtml(favaMeta.category)}</div><div style="font-weight:700;color:#f8fafc;font-size:0.92rem;">${escapeHtml(favaMeta.item)}</div></td><td>${yamlVersionDisplay}</td><td>${bkcVersionCell}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${escapeHtml(it.discussion_note)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${escapeHtml(it.command)}</code></div>`:''}${patchBtn}</td>`;
 
-        const btnPatch = tr.querySelector('.btn-patch-modal');
-        if (btnPatch) {
-            btnPatch.addEventListener('click', () => {
-                openYamlPatchModal(it.raw_item || it);
-            });
-        }
+            const selectElem = tr.querySelector('.yaml-disp-select');
+            const ownerElem = tr.querySelector('.yaml-owner-input');
 
-        fragment.appendChild(tr);
-    });
+            if (selectElem) {
+                selectElem.addEventListener('change', (e) => {
+                    const newStatus = e.target.value;
+                    const key = e.target.getAttribute('data-key');
+                    saveYamlDisposition(key, newStatus, ownerElem?.value || '', '');
+                    renderYamlTable();
+                });
+            }
+            if (ownerElem) {
+                ownerElem.addEventListener('change', (e) => {
+                    const newOwner = e.target.value;
+                    const key = e.target.getAttribute('data-key');
+                    saveYamlDisposition(key, selectElem?.value || 'Pending', newOwner, '');
+                });
+            }
 
-    tbody.appendChild(fragment);
+            const btnPatch = tr.querySelector('.btn-patch-modal');
+            if (btnPatch) {
+                btnPatch.addEventListener('click', () => {
+                    openYamlPatchModal(it.raw_item || it);
+                });
+            }
+
+            fragment.appendChild(tr);
+        });
+
+        tbody.appendChild(fragment);
+        logDebug('success', `[renderYamlTable] Successfully rendered ${pageItems.length} rows to #yaml-tbody (Page ${appState.yamlPage + 1}/${totalPages})`);
+    } catch (err) {
+        logDebug('error', `[renderYamlTable] Exception rendering table row: ${err.message}`, err.stack);
+    }
     renderYamlPagination(displayItems.length, appState.yamlPage, PAGE_SIZE);
 }
 
@@ -4070,27 +4170,270 @@ function renderYamlVersionDiffTable(items) {
 
 
 // ============================================================
-// FAVA L10 PREVIEW & COPY MODAL SYSTEM
+// FAVA PREVIEW & COPY MODAL SYSTEM (Supports L10 & L11 Stages)
 // ============================================================
 
 let currentFavaTsvText = '';
+let currentFavaStage = 'L10';
+
+// Initialize Stage Toggle & Clear Uploaded YAMLs Listeners
+document.addEventListener('DOMContentLoaded', () => {
+    const btnStageL10 = document.getElementById('btn-stage-l10');
+    const btnStageL11 = document.getElementById('btn-stage-l11');
+    const btnClearYamls = document.getElementById('btn-clear-uploaded-yamls');
+
+    function updateYamlSlotsVisibility() {
+        const slot4 = document.getElementById('slot-card-4');
+        const slot5 = document.getElementById('slot-card-5');
+        const slotsPanel = document.getElementById('yaml-station-slots-panel');
+
+        if (currentFavaStage === 'L10') {
+            if (slot4) slot4.style.display = 'none';
+            if (slot5) slot5.style.display = 'none';
+            const s4 = document.getElementById('yaml-file-select-4');
+            const s5 = document.getElementById('yaml-file-select-5');
+            if (s4) s4.value = '';
+            if (s5) s5.value = '';
+            if (slotsPanel) {
+                slotsPanel.classList.add('stage-l10');
+                slotsPanel.classList.remove('stage-l11');
+            }
+        } else {
+            if (slot4) slot4.style.display = 'flex';
+            if (slot5) slot5.style.display = 'flex';
+            if (slotsPanel) {
+                slotsPanel.classList.add('stage-l11');
+                slotsPanel.classList.remove('stage-l10');
+            }
+        }
+    }
+
+    const btnToggleConfigPanel = document.getElementById('btn-toggle-yaml-config-panel');
+    const collapsibleBody = document.getElementById('yaml-collapsible-config-body');
+    const toggleIcon = document.getElementById('yaml-config-toggle-icon');
+    const toggleText = document.getElementById('yaml-config-toggle-text');
+
+    if (btnToggleConfigPanel && collapsibleBody) {
+        btnToggleConfigPanel.addEventListener('click', () => {
+            const isHidden = collapsibleBody.style.display === 'none';
+            if (isHidden) {
+                collapsibleBody.style.display = 'block';
+                if (toggleIcon) toggleIcon.className = 'fa-solid fa-chevron-up';
+                if (toggleText) toggleText.textContent = '收合設定面板';
+                btnToggleConfigPanel.style.background = 'rgba(56, 189, 248, 0.1)';
+            } else {
+                collapsibleBody.style.display = 'none';
+                if (toggleIcon) toggleIcon.className = 'fa-solid fa-chevron-down';
+                if (toggleText) toggleText.textContent = '展開設定面板';
+                btnToggleConfigPanel.style.background = 'rgba(51, 65, 85, 0.6)';
+            }
+        });
+    }
+
+    if (btnStageL10) {
+        btnStageL10.addEventListener('click', () => {
+            currentFavaStage = 'L10';
+            btnStageL10.classList.add('active');
+            btnStageL10.style.background = '#0284c7';
+            btnStageL10.style.color = 'white';
+            if (btnStageL11) {
+                btnStageL11.classList.remove('active');
+                btnStageL11.style.background = 'rgba(51, 65, 85, 0.8)';
+                btnStageL11.style.color = '#94a3b8';
+            }
+            updateYamlSlotsVisibility();
+            showToast('已切換至 L10 測試階段對照模式 (僅顯示 3 工站)', 'info');
+            const modal = document.getElementById('fava-preview-modal');
+            if (modal && modal.style.display !== 'none') {
+                openFavaPreviewModal();
+            }
+        });
+    }
+
+    if (btnStageL11) {
+        btnStageL11.addEventListener('click', () => {
+            currentFavaStage = 'L11';
+            btnStageL11.classList.add('active');
+            btnStageL11.style.background = '#8b5cf6';
+            btnStageL11.style.color = 'white';
+            if (btnStageL10) {
+                btnStageL10.classList.remove('active');
+                btnStageL10.style.background = 'rgba(51, 65, 85, 0.8)';
+                btnStageL10.style.color = '#94a3b8';
+            }
+            updateYamlSlotsVisibility();
+            showToast('已切換至 L11 測試階段對照模式 (展開 5 工站對照)', 'info');
+            const modal = document.getElementById('fava-preview-modal');
+            if (modal && modal.style.display !== 'none') {
+                openFavaPreviewModal();
+            }
+        });
+    }
+
+    // Initialize initial slots visibility based on default stage
+    updateYamlSlotsVisibility();
+
+    if (btnClearYamls) {
+        btnClearYamls.addEventListener('click', () => {
+            ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-file-select-4', 'yaml-file-select-5'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            ['yaml-file-input-1', 'yaml-file-input-2', 'yaml-file-input-3', 'yaml-file-input-4', 'yaml-file-input-5'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            document.querySelectorAll('.station-slot-card').forEach(card => {
+                if (!card.classList.contains('slot-bkc')) {
+                    card.style.borderColor = 'rgba(56, 189, 248, 0.25)';
+                }
+            });
+
+            showToast('已成功清除所有選擇與上傳的 YAML 腳本檔案！', 'success');
+        });
+    }
+
+    // Attach real-time validation on file selection / upload in L10 / L11 modes
+    for (let i = 1; i <= 5; i++) {
+        const sEl = document.getElementById(`yaml-file-select-${i}`);
+        const iEl = document.getElementById(`yaml-file-input-${i}`);
+        const card = document.getElementById(`slot-card-${i}`);
+
+        if (card && iEl) {
+            ['dragenter', 'dragover'].forEach(eventName => {
+                card.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    card.style.borderColor = (i >= 4) ? '#c084fc' : '#38bdf8';
+                    card.style.boxShadow = (i >= 4) ? '0 0 15px rgba(168, 85, 247, 0.4)' : '0 0 15px rgba(56, 189, 248, 0.4)';
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                card.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    card.style.borderColor = '';
+                    card.style.boxShadow = '';
+                }, false);
+            });
+
+            card.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt?.files;
+                if (files && files.length > 0) {
+                    try {
+                        const container = new DataTransfer();
+                        container.items.add(files[0]);
+                        iEl.files = container.files;
+                        iEl.dispatchEvent(new Event('change'));
+                    } catch (err) {
+                        console.error('Error setting DataTransfer files:', err);
+                    }
+                }
+            }, false);
+        }
+
+        if (sEl) {
+            sEl.addEventListener('change', () => {
+                const check = validateStageYamlFiles();
+                if (!check.valid) {
+                    alert(check.error);
+                    sEl.value = '';
+                    if (typeof showToast === 'function') showToast('已自動清理不符階段規範之檔案', 'warning');
+                }
+            });
+        }
+        if (iEl) {
+            iEl.addEventListener('change', () => {
+                const check = validateStageYamlFiles();
+                if (!check.valid) {
+                    alert(check.error);
+                    iEl.value = '';
+                    if (typeof showToast === 'function') showToast('已自動清理不符階段規範之檔案', 'warning');
+                }
+            });
+        }
+    }
+});
+
+function validateStageYamlFiles() {
+    const invalidFiles = [];
+    ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-file-select-4', 'yaml-file-select-5'].forEach((id, idx) => {
+        const selectEl = document.getElementById(id);
+        const inputEl = document.getElementById(`yaml-file-input-${idx + 1}`);
+
+        let fName = selectEl?.value || inputEl?.files?.[0]?.name || '';
+        if (fName) {
+            const baseName = fName.split('/').pop().split('\\').pop();
+            const lowName = baseName.toLowerCase();
+            const isL10File = lowName.includes('fdt') || lowName.includes('fro') || lowName.includes('fft');
+
+            if (currentFavaStage === 'L10') {
+                if (!isL10File) {
+                    invalidFiles.push(baseName);
+                }
+            } else if (currentFavaStage === 'L11') {
+                if (isL10File) {
+                    invalidFiles.push(baseName);
+                }
+            }
+        }
+    });
+
+    if (invalidFiles.length > 0) {
+        if (currentFavaStage === 'L10') {
+            return {
+                valid: false,
+                invalidFiles: invalidFiles,
+                error: `❌ [L10 測試規範限制]\n\nL10 Stage 僅接受檔名包含 "FDT", "FRO", 或 "FFT"（大小寫皆可）之測試腳本！\n\n不符合規範之檔案：\n• ${invalidFiles.join('\n• ')}\n\n請更換正確腳本，或切換至 [ 🟣 L11 Stage ] 模式進行對照。`
+            };
+        } else {
+            return {
+                valid: false,
+                invalidFiles: invalidFiles,
+                error: `❌ [L11 測試規範限制]\n\nL11 Stage 不可使用包含 "FDT", "FRO", 或 "FFT" 之 L10 測試腳本！\n\n不符合規範之檔案：\n• ${invalidFiles.join('\n• ')}\n\n請更換 L11 測試腳本（如 Nettest, Netblade, RMM...）或切換至 [ 🔵 L10 Stage ] 模式進行對照。`
+            };
+        }
+    }
+    return { valid: true };
+}
 
 async function openFavaPreviewModal() {
+    const checkStage = validateStageYamlFiles();
+    if (!checkStage.valid) {
+        alert(checkStage.error);
+        if (typeof showToast === 'function') {
+            showToast(currentFavaStage === 'L10' ? 'L10 Stage 僅支援檔名包含 FDT, FRO, FFT 之檔案！' : 'L11 Stage 不可包含 FDT, FRO, FFT 之檔案！', 'danger');
+        }
+        return;
+    }
+
     const modal = document.getElementById('fava-preview-modal');
     const tbody = document.getElementById('fava-modal-tbody');
     const matchedBadge = document.getElementById('fava-matched-badge');
     const totalBadge = document.getElementById('fava-total-badge');
+    const modalTitle = document.getElementById('fava-modal-title');
+    const modalSubtitle = document.getElementById('fava-modal-subtitle');
 
     if (!modal) return;
     modal.style.display = 'flex';
 
+    if (modalTitle) {
+        modalTitle.innerHTML = `<i class="fa-solid fa-table-list"></i> FAVA ${currentFavaStage} FW Control Table 對照預覽與一鍵複製`;
+    }
+    if (modalSubtitle) {
+        modalSubtitle.textContent = `系統已自動對照並提取工站 YAML 數據至 ${currentFavaStage} 控制表草案。確認無誤後，點擊「一鍵複製」即可直接貼至線上 Google Sheets 或 Excel。`;
+    }
+
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center py-5">
+                <td colspan="6" class="text-center py-5">
                     <div class="table-loading-spinner mb-2"></div>
-                    <div style="color: #38bdf8; font-weight: 600; font-size: 1rem;">⚡ 正在生成 FAVA L10 Control Table 預覽數據...</div>
-                    <p class="text-muted" style="font-size: 0.85rem;">請稍候，系統正提取 1-3 工站測試腳本並自動帶入表格</p>
+                    <div style="color: #38bdf8; font-weight: 600; font-size: 1rem;">⚡ 正在生成 FAVA ${currentFavaStage} FW Control Table 預覽數據...</div>
+                    <p class="text-muted" style="font-size: 0.85rem;">請稍候，系統正提取工站測試腳本並自動帶入表格</p>
                 </td>
             </tr>
         `;
@@ -4099,13 +4442,17 @@ async function openFavaPreviewModal() {
     const y1 = document.getElementById('yaml-file-select-1')?.value || '';
     const y2 = document.getElementById('yaml-file-select-2')?.value || '';
     const y3 = document.getElementById('yaml-file-select-3')?.value || '';
+    const y4 = document.getElementById('yaml-file-select-4')?.value || '';
+    const y5 = document.getElementById('yaml-file-select-5')?.value || '';
     const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
     const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
 
-    let url = `/api/preview-fava-draft?project=${encodeURIComponent(currentProject)}`;
+    let url = `/api/preview-fava-draft?project=${encodeURIComponent(currentProject)}&stage=${encodeURIComponent(currentFavaStage)}`;
     if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
     if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
     if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+    if (y4) url += `&yaml_4=${encodeURIComponent(y4)}`;
+    if (y5) url += `&yaml_5=${encodeURIComponent(y5)}`;
     if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
     if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
 
@@ -4115,16 +4462,16 @@ async function openFavaPreviewModal() {
 
         if (data.success) {
             currentFavaTsvText = data.tsv_text || '';
-            if (matchedBadge) matchedBadge.innerHTML = `<i class="fa-solid fa-check"></i> 成功對照填入: ${data.updated_items || 0} 項組件`;
+            if (matchedBadge) matchedBadge.innerHTML = `<i class="fa-solid fa-check"></i> 成功對照填入: ${data.updated_items || 0} 項組件 (${currentFavaStage})`;
             if (totalBadge) totalBadge.innerHTML = `<i class="fa-solid fa-list"></i> 總項目數: ${data.total_items || 0} 列`;
 
             renderFavaPreviewTable(data.rows || []);
         } else {
-            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">載入失敗: ${escapeHtml(data.error || '未知錯誤')}</td></tr>`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">載入失敗: ${escapeHtml(data.error || '未知錯誤')}</td></tr>`;
         }
     } catch (err) {
         console.error('Error fetching FAVA draft preview:', err);
-        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">載入失敗: ${escapeHtml(err.message)}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">載入失敗: ${escapeHtml(err.message)}</td></tr>`;
     }
 }
 
@@ -4181,6 +4528,73 @@ function initFavaModalSelectionControls() {
             updateFavaSelectedBadge();
         };
     }
+
+    const btnCopyTsv = document.getElementById('btn-copy-fava-tsv');
+    if (btnCopyTsv) {
+        btnCopyTsv.onclick = () => {
+            const selectedIndices = [];
+            document.querySelectorAll('.fava-row-checkbox:checked').forEach(cb => {
+                selectedIndices.push(cb.dataset.idx);
+            });
+            if (selectedIndices.length === 0) {
+                alert('請至少勾選一列項目後再進行複製！');
+                return;
+            }
+
+            const tsvLines = [];
+            selectedIndices.forEach(idxStr => {
+                const idx = parseInt(idxStr, 10);
+                const r = currentFavaRows[idx];
+                if (r) {
+                    tsvLines.push(`${r.category || ''}\t${r.item || ''}\t${r.actual_version || ''}\t${r.draft_version || ''}\t${r.remark || ''}`);
+                }
+            });
+
+            const tsvText = tsvLines.join('\n');
+            copyToClipboard(tsvText).then(() => {
+                if (typeof showToast === 'function') {
+                    showToast(`✅ 已成功複製 ${selectedIndices.length} 列數據至剪貼簿！可直接於 Google Sheets / Excel 貼上`, 'success');
+                } else {
+                    alert(`✅ 已成功複製 ${selectedIndices.length} 列數據至剪貼簿！`);
+                }
+            }).catch(err => {
+                alert('❌ 複製失敗: ' + err.message);
+            });
+        };
+    }
+
+    const btnDownloadXlsx = document.getElementById('btn-download-fava-xlsx');
+    if (btnDownloadXlsx) {
+        btnDownloadXlsx.onclick = () => {
+            const selectedIndices = [];
+            document.querySelectorAll('.fava-row-checkbox:checked').forEach(cb => {
+                selectedIndices.push(cb.dataset.idx);
+            });
+            if (selectedIndices.length === 0) {
+                alert('請至少勾選一列項目後再進行下載！');
+                return;
+            }
+
+            const y1 = document.getElementById('yaml-file-select-1')?.value || '';
+            const y2 = document.getElementById('yaml-file-select-2')?.value || '';
+            const y3 = document.getElementById('yaml-file-select-3')?.value || '';
+            const y4 = document.getElementById('yaml-file-select-4')?.value || '';
+            const y5 = document.getElementById('yaml-file-select-5')?.value || '';
+            const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
+            const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
+
+            let exportUrl = `/api/export-fava-draft?project=${encodeURIComponent(currentProject)}&stage=${encodeURIComponent(currentFavaStage)}&indices=${selectedIndices.join(',')}`;
+            if (y1) exportUrl += `&yaml_1=${encodeURIComponent(y1)}`;
+            if (y2) exportUrl += `&yaml_2=${encodeURIComponent(y2)}`;
+            if (y3) exportUrl += `&yaml_3=${encodeURIComponent(y3)}`;
+            if (y4) exportUrl += `&yaml_4=${encodeURIComponent(y4)}`;
+            if (y5) exportUrl += `&yaml_5=${encodeURIComponent(y5)}`;
+            if (bkcF) exportUrl += `&bkc_file=${encodeURIComponent(bkcF)}`;
+            if (bkcS) exportUrl += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
+
+            window.location.href = exportUrl;
+        };
+    }
 }
 
 function renderFavaPreviewTable(rows) {
@@ -4198,9 +4612,9 @@ function renderFavaPreviewTable(rows) {
     let currentParentActive = false;
     currentFavaRows.forEach(r => {
         const isHeader = !r.item && r.category;
-        const isSubRow = !r.item && !r.category && r.draft_version && r.draft_version !== 'N/A (未測試)';
+        const isSubRow = !r.item && !r.category && r.draft_version && r.draft_version !== 'Yaml檔案未找到';
         if (r.item) {
-            currentParentActive = !!(r.is_updated || (r.draft_version && r.draft_version !== 'N/A (未測試)'));
+            currentParentActive = !!(r.is_updated || (r.draft_version && r.draft_version !== 'Yaml檔案未找到'));
         }
         if (isSubRow && currentParentActive) {
             r.is_subrow_valid = true;
