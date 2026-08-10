@@ -1,11 +1,16 @@
-Flask>=3.0.0
-gunicorn>=21.2.0
-pandas>=2.0.0
-openpyxl>=3.1.0
-xlrd>=2.0.1
-google-api-python-client>=2.100.0
-google-auth-httplib2>=0.1.1
-google-auth-oauthlib>=1.1.0
-APScheduler>=3.10.0
-PyYAML>=6.0
+# Versions pinned with == instead of >= so `pip install` is reproducible across
+# machines/deploys (Render rebuilds from scratch every deploy). These pins match
+# the previous minimum versions; if you have a working local venv, regenerating
+# this file with `pip freeze` there will capture the exact versions already
+# verified to work.
+Flask==3.0.0
+gunicorn==21.2.0
+pandas==2.0.0
+openpyxl==3.1.0
+xlrd==2.0.1
+google-api-python-client==2.100.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+APScheduler==3.10.0
+PyYAML==6.0
 

@@ -23,6 +23,17 @@ def safe_filename(filename):
     return filename or 'unnamed'
 
 
+def atomic_write_json(path, data):
+    """Write JSON to disk atomically (write to temp file, then os.replace) so a
+    crash or concurrent write mid-save can't leave a half-written / corrupt file."""
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,6 +45,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+# Cap request/upload size (default 50MB) to stop runaway disk/memory usage from
+# oversized or accidental uploads. Override with MAX_UPLOAD_MB env var if needed.
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_UPLOAD_MB', '50')) * 1024 * 1024
+
+
+@app.errorhandler(413)
+def handle_file_too_large(e):
+    return jsonify({
+        'success': False,
+        'error': f"檔案過大，上傳大小上限為 {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)}MB。"
+    }), 413
 
 @app.after_request
 def add_cache_busting_headers(response):
@@ -142,9 +164,52 @@ def get_project_config(project_id):
     return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS['clemente'])
 
 def get_project_upload_folder(project_id):
+    # project_id must be one of the known project keys -- otherwise it gets
+    # concatenated straight into a filesystem path (see os.path.join below),
+    # which would let a caller escape UPLOAD_FOLDER with something like
+    # project_id="../../somewhere". Falling back to 'clemente' keeps behavior
+    # sane for unknown ids while closing that path-traversal hole.
+    if project_id not in PROJECT_CONFIGS:
+        project_id = 'clemente'
     folder = os.path.join(UPLOAD_FOLDER, project_id)
     os.makedirs(folder, exist_ok=True)
     return folder
+
+
+def _build_allowed_roots():
+    """Collect every directory the app is configured to read/write files from
+    (all projects' dir_roots plus their upload folders). Used to make sure any
+    user-supplied file_path/base_file/dvt_file/etc. query param can only ever
+    point inside one of these directories."""
+    roots = set()
+    for cfg in PROJECT_CONFIGS.values():
+        for tab_dirs in cfg['dir_roots'].values():
+            for d in tab_dirs:
+                roots.add(os.path.realpath(d))
+    roots.add(os.path.realpath(UPLOAD_FOLDER))
+    roots.add(os.path.realpath(DATA_DIR))
+    return roots
+
+ALLOWED_ROOTS = _build_allowed_roots()
+
+def is_allowed_path(path):
+    """True only if `path` resolves to somewhere inside one of ALLOWED_ROOTS.
+    This is the guard against arbitrary file read via file_path/base_file/etc.
+    query parameters -- without it, any path that merely exists on disk would
+    be served back to the caller."""
+    if not path:
+        return False
+    try:
+        abs_path = os.path.realpath(path)
+    except Exception:
+        return False
+    for root in ALLOWED_ROOTS:
+        try:
+            if os.path.commonpath([abs_path, root]) == root:
+                return True
+        except ValueError:
+            continue
+    return False
 
 def is_valid_bkc_table(file_path):
     filename = os.path.basename(file_path).lower()
@@ -265,7 +330,7 @@ def resolve_file_path(tab_key, req_path=None, project_id='sanmiguel'):
     scanned = scan_files_in_dirs(tab_key, project_id)
     scanned_paths = set(os.path.abspath(f['path']) for f in scanned)
 
-    if req_path and os.path.exists(req_path):
+    if req_path and os.path.exists(req_path) and is_allowed_path(req_path):
         abs_req = os.path.abspath(req_path)
         if abs_req in scanned_paths:
             return abs_req
@@ -287,6 +352,19 @@ def resolve_file_path(tab_key, req_path=None, project_id='sanmiguel'):
         return scanned[0]['path']
 
     return default_path
+
+
+def resolve_or_default(raw_path, tab_key, default_val, project_id='sanmiguel'):
+    """Validate a raw file path coming from a query/form param (file_path,
+    base_file, dvt_file, pvt_file, ...): only use it if it exists on disk AND
+    resolves inside an allowed project directory (see is_allowed_path). This
+    is the single choke point that replaces the old pattern of
+    `req_path if (req_path and os.path.exists(req_path)) else resolve_file_path(...)`,
+    which let any existing file on the server -- not just project files -- be
+    read back through the API."""
+    if raw_path and os.path.exists(raw_path) and is_allowed_path(raw_path):
+        return os.path.abspath(raw_path)
+    return resolve_file_path(tab_key, default_val, project_id)
 
 
 def filter_valid_data_sheets(sheets):
@@ -467,7 +545,7 @@ def get_bkc():
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
 
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('bkc', default_bkc, project_id)
+    path = resolve_or_default(req_path, 'bkc', default_bkc, project_id)
     requested_sheet = request.args.get('sheet', None)
 
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
@@ -576,7 +654,7 @@ def get_bkc_compare():
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
 
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('bkc', default_bkc, project_id)
+    path = resolve_or_default(req_path, 'bkc', default_bkc, project_id)
 
     base_sheet = request.args.get('base_sheet', None)
     target_sheet = request.args.get('target_sheet', None)
@@ -809,7 +887,7 @@ def get_fru():
     default_fru_dvt = proj_cfg['default_paths'].get('fru_dvt', '')
 
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('fru', default_fru_dvt, project_id)
+    path = resolve_or_default(req_path, 'fru', default_fru_dvt, project_id)
     requested_sheet = request.args.get('sheet', None)
 
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
@@ -871,8 +949,8 @@ def get_fru_compare():
     req_dvt = request.args.get('dvt_file', None)
     req_pvt = request.args.get('pvt_file', None)
     
-    path_dvt = req_dvt if (req_dvt and os.path.exists(req_dvt)) else resolve_file_path('fru', default_fru_dvt, project_id)
-    path_pvt = req_pvt if (req_pvt and os.path.exists(req_pvt)) else resolve_file_path('fru', default_fru_pvt, project_id)
+    path_dvt = resolve_or_default(req_dvt, 'fru', default_fru_dvt, project_id)
+    path_pvt = resolve_or_default(req_pvt, 'fru', default_fru_pvt, project_id)
 
 
     requested_sheet = request.args.get('sheet', None)
@@ -1141,7 +1219,7 @@ def get_build_matrix():
     default_matrix = proj_cfg['default_paths'].get('matrix', '')
 
     req_path = request.args.get('file_path', None)
-    path = req_path if (req_path and os.path.exists(req_path)) else resolve_file_path('matrix', default_matrix, project_id)
+    path = resolve_or_default(req_path, 'matrix', default_matrix, project_id)
     requested_sheet = request.args.get('sheet', None)
 
     rows, sheets, err = read_file_safe(path, sheet_name=requested_sheet)
@@ -1282,8 +1360,7 @@ def load_signoffs(project_id='sanmiguel'):
 def save_signoffs(data, project_id='sanmiguel'):
     sf = get_project_signoff_file(project_id)
     try:
-        with open(sf, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(sf, data)
     except Exception as e:
         print(f"Failed to save signoffs for {project_id}: {e}")
 
@@ -1305,8 +1382,7 @@ def api_watchlist():
         body = request.get_json() or {}
         keywords = body.get('keywords', [])
         try:
-            with open(WATCHLIST_FILE, 'w', encoding='utf-8') as f:
-                json.dump({'keywords': keywords}, f, ensure_ascii=False, indent=2)
+            atomic_write_json(WATCHLIST_FILE, {'keywords': keywords})
             return jsonify({'success': True, 'keywords': keywords})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -2154,8 +2230,7 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
     def save_yaml_dispositions(data, proj_id='sanmiguel'):
         df = get_project_dispositions_file(proj_id)
         try:
-            with open(df, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            atomic_write_json(df, data)
         except Exception as e:
             print(f"[Error saving yaml dispositions]: {e}")
 
@@ -2565,8 +2640,7 @@ def api_yaml_dispositions():
     def save_dispositions(data, proj_id):
         df = get_dispositions_file(proj_id)
         try:
-            with open(df, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            atomic_write_json(df, data)
         except Exception as e:
             print(f"[Error saving yaml dispositions]: {e}")
 
@@ -2999,8 +3073,8 @@ def api_export_excel():
 
     elif tab_type == 'matrix':
         ws.title = "Build Matrix Comparison"
-        base_p = request.args.get('base_file') or resolve_file_path('matrix', proj_defaults.get('matrix', ''), project_id)
-        tgt_p  = request.args.get('target_file') or resolve_file_path('matrix', proj_defaults.get('matrix', ''), project_id)
+        base_p = resolve_or_default(request.args.get('base_file'), 'matrix', proj_defaults.get('matrix', ''), project_id)
+        tgt_p  = resolve_or_default(request.args.get('target_file'), 'matrix', proj_defaults.get('matrix', ''), project_id)
         b_rows, b_sheets, _ = read_file_safe(base_p, sheet_name=request.args.get('base_sheet'))
         t_rows, t_sheets, _ = read_file_safe(tgt_p, sheet_name=request.args.get('target_sheet'))
         res = compare_two_matrix_sheets(b_rows, t_rows)
@@ -3029,8 +3103,8 @@ def api_export_excel():
 
     else: # Default FRU
         ws.title = "FRU Comparison"
-        dvt_p = request.args.get('dvt_file') or resolve_file_path('fru', proj_defaults.get('fru_dvt', ''), project_id)
-        pvt_p = request.args.get('pvt_file') or resolve_file_path('fru', proj_defaults.get('fru_pvt', ''), project_id)
+        dvt_p = resolve_or_default(request.args.get('dvt_file'), 'fru', proj_defaults.get('fru_dvt', ''), project_id)
+        pvt_p = resolve_or_default(request.args.get('pvt_file'), 'fru', proj_defaults.get('fru_pvt', ''), project_id)
         r1, _, _ = read_file_safe(dvt_p, sheet_name=request.args.get('base_sheet'))
         r2, _, _ = read_file_safe(pvt_p, sheet_name=request.args.get('target_sheet'))
         res = compare_two_fru_sheets(r1, r2)

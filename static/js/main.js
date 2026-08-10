@@ -1,3 +1,14 @@
+// Small debounce helper: wraps fn so it only actually runs once no new calls
+// have come in for `delay` ms. Used on search inputs so typing doesn't
+// re-render the whole table on every keystroke.
+function debounce(fn, delay = 200) {
+    let timer = null;
+    return function debounced(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
 // Debug Logger System
 const debugLogs = [];
 let errorCount = 0;
@@ -763,7 +774,7 @@ async function copyTextToClipboard(text) {
 
     if (yStationF) yStationF.addEventListener('change', () => renderYamlTable());
     if (yStatusF) yStatusF.addEventListener('change', () => renderYamlTable());
-    if (ySearchI) ySearchI.addEventListener('input', () => renderYamlTable());
+    if (ySearchI) ySearchI.addEventListener('input', debounce(() => renderYamlTable(), 200));
     if (yMergeDup) yMergeDup.addEventListener('change', () => renderYamlTable());
 
 
@@ -1052,9 +1063,10 @@ function getLoadingTitle(targetTab) {
     const bkcTargetSheet = document.getElementById('bkc-target-sheet-select');
     const bkcClear = document.getElementById('bkc-clear-search');
 
+    const debouncedRenderBkcTable = debounce(() => renderBkcTable(), 200);
     bkcSearch.addEventListener('input', () => {
         bkcClear.style.display = bkcSearch.value ? 'block' : 'none';
-        renderBkcTable();
+        debouncedRenderBkcTable();
     });
 
     bkcClear.addEventListener('click', () => {
@@ -1184,7 +1196,7 @@ function getLoadingTitle(targetTab) {
         });
     }
 
-    document.getElementById('fru-search-input').addEventListener('input', renderFruTable);
+    document.getElementById('fru-search-input').addEventListener('input', debounce(renderFruTable, 200));
     document.getElementById('fru-only-diff-toggle').addEventListener('change', renderFruTable);
 
 
@@ -1232,10 +1244,10 @@ function getLoadingTitle(targetTab) {
     });
 
     // Matrix Search, Sheet & Diff Toggle
-    document.getElementById('matrix-search-input').addEventListener('input', () => {
+    document.getElementById('matrix-search-input').addEventListener('input', debounce(() => {
         if (appState.matrixMode === 'compare') renderMatrixCompareTable();
         else renderMatrixTable();
-    });
+    }, 200));
     document.getElementById('matrix-only-diff-toggle').addEventListener('change', () => {
         if (appState.matrixMode === 'compare') renderMatrixCompareTable();
         else renderMatrixTable();
