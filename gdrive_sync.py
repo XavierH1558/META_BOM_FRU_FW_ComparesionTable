@@ -67,13 +67,18 @@ def get_drive_service(config):
                     creds = None
 
             if not creds:
+                if os.environ.get('RENDER') or os.environ.get('NON_INTERACTIVE'):
+                    raise RuntimeError("GDrive OAuth token missing/expired. Interactive authentication is disabled in server mode.")
                 import webbrowser
                 flow = InstalledAppFlow.from_client_secrets_file(oauth_path, SCOPES)
                 print("\n" + "="*70)
                 print("🔗 [Google Drive OAuth 2.0 個人帳號一次性授權]")
                 print("請在下方出現的連結上按住 [Ctrl + 左鍵點擊]，或複製網址至瀏覽器開啟：")
                 print("="*70 + "\n")
-                creds = flow.run_local_server(port=0, prompt='consent', open_browser=True)
+                try:
+                    creds = flow.run_local_server(port=0, prompt='consent', open_browser=True, timeout_seconds=15)
+                except Exception as auth_err:
+                    raise RuntimeError(f"Google Drive OAuth login timeout or error: {auth_err}")
 
             with open(token_path, 'w', encoding='utf-8') as token:
                 token.write(creds.to_json())

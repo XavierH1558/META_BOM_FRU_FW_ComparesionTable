@@ -478,10 +478,26 @@ def get_projects():
 
 @app.route('/api/files')
 def get_files():
-    tab_key = request.args.get('type', 'bkc')
+    tab_key = request.args.get('type')
     project_id = request.args.get('project', 'sanmiguel')
-    files = scan_files_in_dirs(tab_key, project_id)
-    return jsonify({'success': True, 'type': tab_key, 'files': files})
+
+    bkc_files = scan_files_in_dirs('bkc', project_id)
+    yaml_files = scan_files_in_dirs('yaml', project_id)
+    fru_files = scan_files_in_dirs('fru', project_id)
+    matrix_files = scan_files_in_dirs('matrix', project_id)
+
+    target_type = tab_key or 'bkc'
+    files = scan_files_in_dirs(target_type, project_id)
+
+    return jsonify({
+        'success': True,
+        'type': target_type,
+        'files': files,
+        'bkc': bkc_files,
+        'yaml': yaml_files,
+        'fru': fru_files,
+        'matrix': matrix_files
+    })
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -1496,12 +1512,25 @@ def parse_single_yaml_file(path, default_station_label="Station"):
     
     base_name = os.path.basename(path)
     station_label = default_station_label
-    
-    if "clemente_ct_maxq_mp_" in base_name.lower():
-        st_code = base_name.lower().replace("clemente_ct_maxq_mp_", "").replace(".yaml", "").replace(".yml", "").upper()
-        station_label = f"Station ({st_code})"
-    elif isinstance(data, dict) and data.get('station'):
-        station_label = str(data.get('station')).strip()
+
+    # Extract station index prefix from default_station_label (e.g. "Station 1")
+    st_idx_prefix = ""
+    if default_station_label.startswith("Station "):
+        parts = default_station_label.split(" ")
+        if len(parts) >= 2 and parts[1].isdigit():
+            st_idx_prefix = f"Station {parts[1]} "
+
+    clean_name = base_name
+    # Strip long hex hash string (e.g., _8d6cecc0972ecd58da6e8cba)
+    clean_name = re.sub(r'_[0-9a-fA-F]{16,32}', '', clean_name)
+    clean_name = re.sub(r'\.yaml|\.yml', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^clemente_ct_maxq_mp_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^clemente_maxq_mp_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^clemente_mp_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^clemente_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = clean_name.upper()
+
+    station_label = clean_name
     
     extracted_items = []
     
@@ -2092,11 +2121,17 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
         if best_score >= 50 and matched_bkc:
             matched_bkc_indices.add(matched_idx)
             bkc_ver = matched_bkc.get('version', '')
-            if not bkc_ver or bkc_ver == '(Empty)':
-                bkc_ver = 'Read-out Version'
+            raw_b_ver = str(bkc_ver).strip()
+            raw_y_ver = str(y_ver).strip()
 
             sub_c_up = str(matched_bkc.get('sub_component') or yaml_item['sub_component']).strip().upper()
             comp_up = str(yaml_item['component']).strip().upper()
+
+            b_clean = raw_b_ver.lower()
+            y_clean = raw_y_ver.lower()
+
+            is_readout_bkc = any(k in b_clean for k in ['read-out', 'readout', 'read out']) or b_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
+            is_readout_yaml = any(k in y_clean for k in ['read-out', 'readout', 'read out']) or y_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
 
             if sub_c_up == 'FRU' or comp_up == 'FRU':
                 latest_fru_ver = get_latest_fru_version(project_id) or '0.05A'
@@ -2106,6 +2141,14 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 status = 'MATCH'
                 status_label = '🟢 吻合 (Follow BKC)'
                 note = f"Verified in FRU Spec ({bkc_ver})"
+            elif is_readout_bkc or is_readout_yaml:
+                ver_match = True
+                status = 'NO_COMPARE'
+                status_label = '⚪ 無需與 BKC 比較'
+                bkc_ver = raw_b_ver if (raw_b_ver and raw_b_ver not in ['(Empty)', '']) else 'Read-out Version'
+                note = yaml_item.get('discussion_note')
+                if not note:
+                    note = "此測試項目無指定 Target Version (屬 Read-out 讀取類別 / 測試動作)，無需與 BKC 標準版本進行數字比較。"
             else:
                 ver_match = is_version_compliant(bkc_ver, y_ver)
                 status = 'MATCH' if ver_match else 'MISMATCH'
@@ -2247,11 +2290,12 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
 
     matched_count = sum(1 for r in comparison_results if r['status'] == 'MATCH')
     mismatch_count = sum(1 for r in comparison_results if r['status'] == 'MISMATCH')
+    no_compare_count = sum(1 for r in comparison_results if r['status'] == 'NO_COMPARE')
     missing_bkc_count = sum(1 for r in comparison_results if r['status'] == 'MISSING_IN_BKC')
     unchecked_count = sum(1 for r in comparison_results if r['status'] == 'UNCHECKED_IN_YAML')
     
     total_checks = len(all_yaml_items)
-    compliance_rate = round((matched_count / total_checks * 100), 1) if total_checks > 0 else 0.0
+    compliance_rate = round(((matched_count + no_compare_count) / total_checks * 100), 1) if total_checks > 0 else 0.0
 
     active_sheet = bkc_sheet_name if (bkc_sheet_name and bkc_sheet_name in b_sheets) else (b_sheets[0] if b_sheets else 'Default')
 
@@ -2348,6 +2392,7 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
             'total_yaml_checks': total_checks,
             'matched_count': matched_count,
             'mismatch_count': mismatch_count,
+            'no_compare_count': no_compare_count,
             'missing_bkc_count': missing_bkc_count,
             'unchecked_bkc_count': unchecked_count,
             'compliance_rate': compliance_rate,
@@ -3224,8 +3269,14 @@ def api_export_coverage_excel():
     # 3. Table Headers
     headers = ["Test Action / Step Name (主要測試動作)", "Tested Targets / Sensors (測試對象 / FW / Sensor)"]
     for st in stations:
-        headers.append(f"{st}")
-    headers.append("Overall Action Coverage")
+        clean_st = str(st).strip()
+        m = re.search(r'\(([^)]+)\)', clean_st)
+        if m and m.group(1):
+            clean_st = m.group(1).upper()
+        else:
+            clean_st = re.sub(r'^Station\s*\d*\s*', '', clean_st, flags=re.IGNORECASE).upper()
+        headers.append(clean_st if clean_st else st)
+    headers.append("Overall Action Coverage (跨工站包含狀態)")
 
     ws.append(headers)
     header_row = 4
@@ -3256,27 +3307,27 @@ def api_export_coverage_excel():
         row_data.append(cov_status)
 
         ws.append(row_data)
-        ws.row_dimensions[row_idx].height = 22
+        ws.row_dimensions[row_idx].height = None  # Auto row height for wrapped text
 
         # Cells styling
         for col_idx in range(1, len(row_data) + 1):
             c = ws.cell(row=row_idx, column=col_idx)
             c.border = border_thin
-            c.alignment = Alignment(vertical="center")
 
             if col_idx == 1:
                 c.font = Font(name="Calibri", size=10, bold=True, color="0284C7")
+                c.alignment = Alignment(vertical="center", wrap_text=True)
             elif col_idx == 2:
                 c.font = Font(name="Calibri", size=10, bold=True, color="334155")
+                c.alignment = Alignment(vertical="center", wrap_text=True)
             elif col_idx >= 3 and col_idx < 3 + len(stations):
                 val_str = str(c.value)
                 if "✅ 包含" in val_str:
                     c.fill = fill_covered
                     c.font = font_covered
-                    c.alignment = Alignment(horizontal="center", vertical="center")
                 else:
                     c.font = Font(name="Calibri", size=10, color="94A3B8")
-                    c.alignment = Alignment(horizontal="center", vertical="center")
+                c.alignment = Alignment(horizontal="center", vertical="center")
             elif col_idx == len(row_data):
                 if "全包含" in str(c.value) or "跨站包含" in str(c.value):
                     c.fill = fill_covered
@@ -3288,11 +3339,22 @@ def api_export_coverage_excel():
 
         row_idx += 1
 
-    # Auto-adjust column widths
+    # Apply strict bounded column widths to prevent wide blowout
     for col in ws.columns:
-        max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = openpyxl.utils.get_column_letter(col[0].column)
-        ws.column_dimensions[col_letter].width = max(max_len + 4, 15)
+        col_idx = col[0].column
+
+        if col_idx == 1:
+            ws.column_dimensions[col_letter].width = 38
+        elif col_idx == 2:
+            ws.column_dimensions[col_letter].width = 45
+        elif col_idx >= 3 and col_idx < 3 + len(stations):
+            ws.column_dimensions[col_letter].width = 16
+        elif col_idx == 3 + len(stations):
+            ws.column_dimensions[col_letter].width = 24
+        else:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            ws.column_dimensions[col_letter].width = min(max(max_len + 4, 15), 50)
 
     output = io.BytesIO()
     wb.save(output)

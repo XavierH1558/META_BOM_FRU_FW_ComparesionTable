@@ -1903,6 +1903,12 @@ a.link-gdrive:hover {
     border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
+.badge-yaml-status.yaml-no-compare {
+    background: rgba(100, 116, 139, 0.2);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
 .tr-yaml-mismatch {
     background: rgba(239, 68, 68, 0.08) !important;
 }
@@ -2485,6 +2491,45 @@ body.project-clemente .nav-tab.active {
     grid-column: 1 / -1;
     width: 100%;
     margin-top: 0.2rem;
+}
+
+/* Target & Sensor Truncation & Hover Tooltip Effect */
+.target-sensor-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 320px;
+    transition: color 0.15s ease, opacity 0.15s ease;
+    cursor: pointer;
+}
+
+.target-sensor-truncate:hover {
+    color: #38bdf8 !important;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+}
+
+/* Prominent High-Tech Station Header Badge Styling */
+.station-header-badge {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(14, 165, 233, 0.15));
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.6);
+    padding: 6px 16px;
+    border-radius: 10px;
+    font-weight: 800;
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
+    display: inline-block;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+}
+
+.station-header-badge:hover {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.45), rgba(14, 165, 233, 0.3));
+    box-shadow: 0 0 18px rgba(56, 189, 248, 0.5);
+    color: #ffffff;
+    transform: translateY(-1px);
 }
 
 

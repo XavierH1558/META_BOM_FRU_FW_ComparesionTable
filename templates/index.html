@@ -532,12 +532,12 @@
                         </div>
 
                         <!-- FAVA Draft Export & Copy Button -->
-                        <button class="btn btn-outline-cyan" id="btn-export-fava-draft" title="預覽 FAVA FW Control Table-draft 格式並可一鍵複製貼至線上 Excel / Google Sheets" style="border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; background: rgba(56, 189, 248, 0.12); border-radius: 8px; padding: 0.45rem 0.85rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                        <button class="btn btn-outline-cyan" id="btn-export-fava-draft" disabled title="💡 請先於上方工站選單選擇或上傳 .yaml 測試腳本檔以解鎖預覽與比對功能" style="border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; background: rgba(56, 189, 248, 0.12); border-radius: 8px; padding: 0.45rem 0.85rem; font-size: 0.85rem; font-weight: 600; cursor: not-allowed; opacity: 0.45; pointer-events: none; filter: grayscale(0.7); transition: all 0.2s;">
                             <i class="fa-solid fa-copy" style="color: #38bdf8;"></i> 預覽與複製 FAVA Control Table
                         </button>
 
                         <!-- Test Coverage Matrix Preview Button -->
-                        <button class="btn btn-outline-amber" id="btn-preview-coverage-modal" title="預覽所有工站 Test Coverage 比對矩陣，並可一鍵導出 Excel (.xlsx) 檔案" style="border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; background: rgba(245, 158, 11, 0.12); border-radius: 8px; padding: 0.45rem 0.85rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                        <button class="btn btn-outline-amber" id="btn-preview-coverage-modal" disabled title="💡 請先於上方工站選單選擇或上傳 .yaml 測試腳本檔以解鎖預覽與比對功能" style="border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; background: rgba(245, 158, 11, 0.12); border-radius: 8px; padding: 0.45rem 0.85rem; font-size: 0.85rem; font-weight: 600; cursor: not-allowed; opacity: 0.45; pointer-events: none; filter: grayscale(0.7); transition: all 0.2s;">
                             <i class="fa-solid fa-chart-line" style="color: #fbbf24;"></i> 📊 預覽 Test Coverage 覆蓋矩陣
                         </button>
 
@@ -993,7 +993,7 @@
 
     <!-- FAVA L10 FW Control Table Preview & Copy Modal -->
     <div class="modal-overlay" id="fava-preview-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; align-items: center; justify-content: center; z-index: 10050; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);">
-        <div class="modal-card" style="max-width: 1050px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow: hidden;">
+        <div class="modal-card" style="max-width: 1650px; width: 96vw; height: 93vh; display: flex; flex-direction: column; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow: hidden;">
             
             <!-- Modal Header -->
             <div class="modal-header d-flex justify-content-between align-items-center px-4 py-3" style="border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(30, 41, 59, 0.6);">
@@ -1085,7 +1085,7 @@
 
     <!-- Test Coverage Matrix Preview Modal -->
     <div class="modal-overlay" id="coverage-preview-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; align-items: center; justify-content: center; z-index: 10060; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);">
-        <div class="modal-card" style="width: 95vw; max-width: 1400px; height: 88vh; background: #0f172a; border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(245, 158, 11, 0.25); display: flex; flex-direction: column; overflow: hidden;">
+        <div class="modal-card" style="width: 97vw; max-width: 1800px; height: 93vh; background: #0f172a; border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(245, 158, 11, 0.25); display: flex; flex-direction: column; overflow: hidden;">
             <div class="modal-header p-4 d-flex justify-content-between align-items-center" style="border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(30, 41, 59, 0.8);">
                 <div>
                     <h3 style="color: #fbbf24; font-size: 1.25rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.5rem;" id="coverage-modal-title">
