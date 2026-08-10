@@ -302,12 +302,14 @@ body {
     align-items: center;
     gap: 1rem;
     box-shadow: var(--shadow-sm);
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    cursor: pointer;
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.4);
 }
 
 .stat-icon {
@@ -1200,10 +1202,10 @@ a.link-gdrive:hover {
     outline: none;
 }
 
-/* Station Slots Drop Zone Panel for YAML Tab */
+/* Station Slots Drop Zone Panel for YAML Tab (Supports up to 5 Stations) */
 .station-slots-container {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 1.1rem;
     margin-bottom: 1.25rem;
 }
@@ -1248,8 +1250,29 @@ a.link-gdrive:hover {
 
 .station-slot-card.slot-bkc:hover {
     border-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(245, 158, 11, 0.14);
     box-shadow: 0 6px 20px rgba(245, 158, 11, 0.25);
+}
+
+/* BKC Slot Card Loading Pulse Animation */
+@keyframes bkcPulseGlow {
+    0% {
+        border-color: rgba(245, 158, 11, 0.45);
+        box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+    }
+    50% {
+        border-color: #f59e0b;
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+    }
+    100% {
+        border-color: rgba(245, 158, 11, 0.45);
+        box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+    }
+}
+
+.station-slot-card.slot-bkc.bkc-loading-pulse {
+    animation: bkcPulseGlow 1.4s infinite ease-in-out;
+    background: rgba(245, 158, 11, 0.12) !important;
 }
 
 .slot-header {
@@ -2415,6 +2438,53 @@ body.project-clemente .nav-tab.active {
     border-color: #a855f7;
     color: #a855f7;
     box-shadow: 0 -2px 0 #a855f7 inset, 0 0 15px rgba(168, 85, 247, 0.15);
+}
+
+/* Station Slot Grid Layout Fixes */
+.station-slots-container {
+    display: grid;
+    gap: 0.85rem;
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.station-slots-container.stage-l10 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.station-slots-container.stage-l11 {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+@media (max-width: 1200px) {
+    .station-slots-container.stage-l11 {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .station-slots-container.stage-l10,
+    .station-slots-container.stage-l11 {
+        grid-template-columns: repeat(1, 1fr);
+    }
+}
+
+.station-slot-card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 12px;
+    padding: 0.85rem;
+    transition: all 0.22s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.station-slot-card.slot-bkc {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 0.2rem;
 }
 
 

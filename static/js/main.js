@@ -570,9 +570,9 @@ function initTabs() {
             btn.classList.add('active');
             document.getElementById(targetTab).classList.add('active');
 
-            // Lazy-load YAML data on first visit to YAML tab
+            // Initialize YAML selectors on first visit to YAML tab without auto-running comparison
             if (targetTab === 'tab-yaml' && !appState.yamlCompare) {
-                fetchYamlData();
+                initYamlSelectorsOnly();
             }
         });
     });
@@ -629,6 +629,14 @@ function initEventListeners() {
     if (btnExportFava) {
         btnExportFava.addEventListener('click', () => {
             openFavaPreviewModal();
+        });
+    }
+
+    // Test Coverage Matrix Preview Button
+    const btnPreviewCoverage = document.getElementById('btn-preview-coverage-modal');
+    if (btnPreviewCoverage) {
+        btnPreviewCoverage.addEventListener('click', () => {
+            openCoveragePreviewModal();
         });
     }
 
@@ -1689,7 +1697,7 @@ async function fetchAllData() {
             bkcPromise,
             fruPromise,
             fetchMatrixData(),
-            fetchYamlData(),
+            initYamlSelectorsOnly(),
             fetchAndPopulateTimelines(),
             checkCriticalWatchlistAlerts()
         ]);
@@ -1697,6 +1705,42 @@ async function fetchAllData() {
     } catch (err) {
         console.error('Error fetching application data:', err);
         if (statusText) statusText.textContent = 'Data Error';
+    } finally {
+        hideLoading(300);
+    }
+}
+
+async function initYamlSelectorsOnly() {
+    try {
+        const res = await fetch(`/api/files?project=${encodeURIComponent(currentProject)}`);
+        const data = await res.json();
+        if (data.success) {
+            const availYaml = data.yaml || [];
+            const availBkc = data.bkc || [];
+
+            if (availYaml.length > 0) {
+                const defaultY1 = availYaml[0]?.path || '';
+                const defaultY2 = availYaml.length > 1 ? availYaml[1]?.path : '';
+                const defaultY3 = availYaml.length > 2 ? availYaml[2]?.path : '';
+                const defaultY4 = availYaml.length > 3 ? availYaml[3]?.path : '';
+                const defaultY5 = availYaml.length > 4 ? availYaml[4]?.path : '';
+
+                populateYamlFileSelect('yaml-file-select-1', availYaml, defaultY1, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-2', availYaml, defaultY2, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-3', availYaml, defaultY3, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-4', availYaml, defaultY4, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-5', availYaml, defaultY5, "(無 / None)");
+
+                populateYamlFileSelect('yaml-diff-base-select', availYaml, availYaml[0]?.path);
+                populateYamlFileSelect('yaml-diff-target-select', availYaml, availYaml.length > 1 ? availYaml[1]?.path : availYaml[0]?.path);
+            }
+            if (availBkc.length > 0) {
+                populateFileSelect('yaml-bkc-file-select', availBkc, availBkc[0]?.path);
+            }
+            checkActiveYamlAndSetBtnState();
+        }
+    } catch (err) {
+        console.error('Error initializing YAML selectors:', err);
     }
 }
 
@@ -3403,6 +3447,21 @@ function expandYamlConfigPanel() {
 // -------------------------------------------------------------
 // Test Suite (YAML) Comparison & Enhancements (1, 2, 3, 5)
 // -------------------------------------------------------------
+function setCompareBtnLoading(isLoading) {
+    const btn = document.getElementById('btn-run-yaml-compare');
+    if (!btn) return;
+    
+    if (isLoading) {
+        btn.disabled = true;
+        btn.style.opacity = '0.65';
+        btn.style.cursor = 'not-allowed';
+        btn.style.pointerEvents = 'none';
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ⚡ 正在載入與解析 BKC 控制表...`;
+    } else {
+        checkActiveYamlAndSetBtnState();
+    }
+}
+
 async function fetchYamlData() {
     const y1Select = document.getElementById('yaml-file-select-1');
     const y2Select = document.getElementById('yaml-file-select-2');
@@ -3421,6 +3480,10 @@ async function fetchYamlData() {
     const bkcSheet = bkcSheetSelect ? bkcSheetSelect.value : '';
 
     logDebug('info', `[fetchYamlData] Triggered with params:`, { y1, y2, y3, y4, y5, bkcFile, bkcSheet });
+
+    const bkcCard = document.getElementById('slot-card-bkc');
+    if (bkcCard) bkcCard.classList.add('bkc-loading-pulse');
+    setCompareBtnLoading(true);
 
     const hasActiveYaml = Boolean(y1 || y2 || y3 || y4 || y5);
 
@@ -3480,6 +3543,25 @@ async function fetchYamlData() {
         logDebug(data.success ? 'success' : 'error', `[fetchYamlData] API response received: success=${data.success}`, { itemsCount: data.items?.length, summary: data.summary });
 
         if (data.success) {
+            // Item 8: Check if BKC Sheet changed compared to previous run
+            if (appState.prevYamlCompare && appState.prevYamlCompare.summary && appState.prevYamlCompare.summary.bkc_sheet !== (data.summary?.bkc_sheet)) {
+                const prevMap = {};
+                (appState.prevYamlCompare.items || []).forEach(it => {
+                    const k = `${it.station}|${it.step_location}|${it.sub_component || it.component}`;
+                    prevMap[k] = { bkc_ver: it.bkc_version, status: it.status };
+                });
+
+                (data.items || []).forEach(it => {
+                    const k = `${it.station}|${it.step_location}|${it.sub_component || it.component}`;
+                    const prev = prevMap[k];
+                    if (prev && (prev.bkc_ver !== it.bkc_version || prev.status !== it.status)) {
+                        it.is_sheet_changed = true;
+                        it.discussion_note = `✨ [BKC 規範已變更: ${prev.bkc_ver} ➔ ${it.bkc_version}] ${it.discussion_note || ''}`;
+                    }
+                });
+            }
+            appState.prevYamlCompare = data;
+
             appState.yamlCompare = data;
             const summary = data.summary || {};
 
@@ -3501,15 +3583,45 @@ async function fetchYamlData() {
             if (val4) val4.textContent = `${summary.compliance_rate || 0}%`;
             if (badgeDiff) badgeDiff.textContent = `${summary.mismatch_count || 0} Diffs`;
 
+            // Item 7: Bind Stat Cards & Diffs Badge Click for Quick Filtering
+            ['yaml-stat-card-1', 'yaml-stat-card-2', 'yaml-stat-card-3', 'yaml-stat-card-4', 'yaml-badge-diff'].forEach((id) => {
+                const cardEl = document.getElementById(id);
+                if (!cardEl || cardEl.getAttribute('data-bound')) return;
+                cardEl.setAttribute('data-bound', 'true');
+                cardEl.addEventListener('click', () => {
+                    const filterSelect = document.getElementById('yaml-status-filter');
+                    if (!filterSelect) return;
+
+                    if (id === 'yaml-stat-card-2') {
+                        filterSelect.value = 'MATCH';
+                    } else if (id === 'yaml-stat-card-3' || id === 'yaml-badge-diff') {
+                        filterSelect.value = 'MISMATCH';
+                    } else {
+                        filterSelect.value = 'ALL';
+                    }
+                    filterSelect.dispatchEvent(new Event('change'));
+
+                    const tableCard = document.getElementById('yaml-view-bkc-container');
+                    if (tableCard) {
+                        tableCard.scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+            });
+
             // Populate File Selectors
             const availYaml = summary.available_yaml_files || [];
             const availBkc = summary.available_bkc_files || [];
             const availSheets = summary.bkc_sheets || [];
 
             if (availYaml.length > 0) {
-                populateYamlFileSelect('yaml-file-select-1', availYaml, y1 || '', "(無 / None)");
-                populateYamlFileSelect('yaml-file-select-2', availYaml, y2 || '', "(無 / None)");
-                populateYamlFileSelect('yaml-file-select-3', availYaml, y3 || '', "(無 / None)");
+                // Auto default select first 3 station files if y1..3 are not explicitly specified
+                const defaultY1 = y1 || availYaml[0]?.path || '';
+                const defaultY2 = y2 || (availYaml.length > 1 ? availYaml[1]?.path : '');
+                const defaultY3 = y3 || (availYaml.length > 2 ? availYaml[2]?.path : '');
+
+                populateYamlFileSelect('yaml-file-select-1', availYaml, defaultY1, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-2', availYaml, defaultY2, "(無 / None)");
+                populateYamlFileSelect('yaml-file-select-3', availYaml, defaultY3, "(無 / None)");
                 populateYamlFileSelect('yaml-file-select-4', availYaml, y4 || '', "(無 / None)");
                 populateYamlFileSelect('yaml-file-select-5', availYaml, y5 || '', "(無 / None)");
                 
@@ -3539,6 +3651,10 @@ async function fetchYamlData() {
         console.error('Error fetching YAML compare data:', err);
         logDebug('error', `[fetchYamlData] Exception: ${err.message}`, err.stack);
     } finally {
+        if (bkcCard) {
+            bkcCard.classList.remove('bkc-loading-pulse');
+        }
+        setCompareBtnLoading(false);
         await hideLoading(400);
     }
 }
@@ -4302,6 +4418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
+            checkActiveYamlAndSetBtnState();
             showToast('已成功清除所有選擇與上傳的 YAML 腳本檔案！', 'success');
         });
     }
@@ -4349,67 +4466,118 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (sEl) {
             sEl.addEventListener('change', () => {
-                const check = validateStageYamlFiles();
-                if (!check.valid) {
-                    alert(check.error);
-                    sEl.value = '';
-                    if (typeof showToast === 'function') showToast('已自動清理不符階段規範之檔案', 'warning');
-                }
+                validateStageYamlFiles(sEl.id);
             });
         }
         if (iEl) {
             iEl.addEventListener('change', () => {
-                const check = validateStageYamlFiles();
-                if (!check.valid) {
-                    alert(check.error);
-                    iEl.value = '';
-                    if (typeof showToast === 'function') showToast('已自動清理不符階段規範之檔案', 'warning');
-                }
+                validateStageYamlFiles(`yaml-file-select-${i}`);
             });
         }
     }
 });
 
-function validateStageYamlFiles() {
+function validateStageYamlFiles(changedSelectId = null) {
+    const selectIds = ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-file-select-4', 'yaml-file-select-5'];
+    const selectedValues = {};
+    let hasDuplicate = false;
+    let duplicateFileName = '';
+
     const invalidFiles = [];
-    ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-file-select-4', 'yaml-file-select-5'].forEach((id, idx) => {
+
+    selectIds.forEach((id, idx) => {
         const selectEl = document.getElementById(id);
         const inputEl = document.getElementById(`yaml-file-input-${idx + 1}`);
 
-        let fName = selectEl?.value || inputEl?.files?.[0]?.name || '';
-        if (fName) {
-            const baseName = fName.split('/').pop().split('\\').pop();
-            const lowName = baseName.toLowerCase();
-            const isL10File = lowName.includes('fdt') || lowName.includes('fro') || lowName.includes('fft');
+        let val = selectEl?.value || inputEl?.files?.[0]?.name || '';
+        if (!val) return;
 
-            if (currentFavaStage === 'L10') {
-                if (!isL10File) {
-                    invalidFiles.push(baseName);
-                }
-            } else if (currentFavaStage === 'L11') {
-                if (isL10File) {
-                    invalidFiles.push(baseName);
-                }
+        const baseName = val.split('/').pop().split('\\').pop();
+
+        // Item 2: Multi-slot Duplicate File Prevention
+        if (selectedValues[baseName]) {
+            hasDuplicate = true;
+            duplicateFileName = baseName;
+            if (id === changedSelectId) {
+                if (selectEl) selectEl.value = '';
+                if (inputEl) inputEl.value = '';
+            }
+        } else {
+            selectedValues[baseName] = idx + 1;
+        }
+
+        // Item 1: Real-time L10 vs L11 Stage Alert
+        const lowName = baseName.toLowerCase();
+        const isL10File = lowName.includes('fdt') || lowName.includes('fro') || lowName.includes('fft');
+
+        if (currentFavaStage === 'L10') {
+            if (!isL10File) {
+                invalidFiles.push(baseName);
+            }
+        } else if (currentFavaStage === 'L11') {
+            if (isL10File) {
+                invalidFiles.push(baseName);
             }
         }
     });
+
+    if (hasDuplicate) {
+        if (typeof showToast === 'function') {
+            showToast(`⚠️ 檔案 (${duplicateFileName}) 已於其他工站選取，已為您自動重置重複選項！`, 'warning');
+        }
+    }
+
+    // Item 3: Update Compare Button state
+    checkActiveYamlAndSetBtnState();
 
     if (invalidFiles.length > 0) {
         if (currentFavaStage === 'L10') {
             return {
                 valid: false,
                 invalidFiles: invalidFiles,
-                error: `❌ [L10 測試規範限制]\n\nL10 Stage 僅接受檔名包含 "FDT", "FRO", 或 "FFT"（大小寫皆可）之測試腳本！\n\n不符合規範之檔案：\n• ${invalidFiles.join('\n• ')}\n\n請更換正確腳本，或切換至 [ 🟣 L11 Stage ] 模式進行對照。`
+                error: `❌ [L10 測試規範限制]\n\nL10 Stage 僅接受檔名包含 "FDT", "FRO", 或 "FFT" 之測試腳本！\n\n不符合規範之檔案：\n• ${invalidFiles.join('\n• ')}\n\n請更換正確腳本，或切換至 [ 🟣 L11 Stage ] 模式。`
             };
         } else {
             return {
                 valid: false,
                 invalidFiles: invalidFiles,
-                error: `❌ [L11 測試規範限制]\n\nL11 Stage 不可使用包含 "FDT", "FRO", 或 "FFT" 之 L10 測試腳本！\n\n不符合規範之檔案：\n• ${invalidFiles.join('\n• ')}\n\n請更換 L11 測試腳本（如 Nettest, Netblade, RMM...）或切換至 [ 🔵 L10 Stage ] 模式進行對照。`
+                error: `❌ [L11 測試規範限制]\n\nL11 Stage 不可使用包含 "FDT", "FRO", 或 "FFT" 之 L10 測試腳本！\n\n不符合規範之檔案：\n• ${invalidFiles.join('\n• ')}\n\n請更換 L11 測試腳本（如 Nettest, Netblade, RMM...）或切換至 [ 🔵 L10 Stage ] 模式。`
             };
         }
     }
     return { valid: true };
+}
+
+function checkActiveYamlAndSetBtnState() {
+    function getSlotVal(id) {
+        const sel = document.getElementById(id);
+        if (!sel) return '';
+        return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
+    }
+
+    const y1 = getSlotVal('yaml-file-select-1');
+    const y2 = getSlotVal('yaml-file-select-2');
+    const y3 = getSlotVal('yaml-file-select-3');
+    const y4 = getSlotVal('yaml-file-select-4');
+    const y5 = getSlotVal('yaml-file-select-5');
+
+    const hasActive = Boolean(y1 || y2 || y3 || y4 || y5);
+    const btn = document.getElementById('btn-run-yaml-compare');
+    if (!btn) return;
+
+    if (!hasActive) {
+        btn.disabled = true;
+        btn.style.opacity = '0.65';
+        btn.style.cursor = 'not-allowed';
+        btn.style.pointerEvents = 'none';
+        btn.innerHTML = `<i class="fa-solid fa-folder-open"></i> 💡 請先選取或拖拽 .yaml 測試腳本`;
+    } else {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.style.pointerEvents = 'auto';
+        btn.innerHTML = `<i class="fa-solid fa-play"></i> ⚡ 開始 / 執行 BKC 合規比對`;
+    }
 }
 
 async function openFavaPreviewModal() {
@@ -4690,6 +4858,177 @@ async function showProjectMismatchModal(errMsg) {
     if (modal) {
         modal.style.display = 'flex';
     }
+}
+
+// -------------------------------------------------------------
+// Test Suite Coverage Matrix Preview Modal Logic
+// -------------------------------------------------------------
+async function openCoveragePreviewModal() {
+    const modal = document.getElementById('coverage-preview-modal');
+    const tbody = document.getElementById('coverage-modal-tbody');
+    const totalBadge = document.getElementById('cov-total-badge');
+    const rateBadge = document.getElementById('cov-rate-badge');
+
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    // Close buttons
+    const btnClose = document.getElementById('btn-close-coverage-modal');
+    const btnFooterClose = document.getElementById('btn-footer-close-coverage');
+    const closeHandler = () => { modal.style.display = 'none'; };
+    if (btnClose) btnClose.onclick = closeHandler;
+    if (btnFooterClose) btnFooterClose.onclick = closeHandler;
+
+    // Show loading spinner inside modal
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center py-5">
+                    <div class="table-loading-spinner mb-2" style="width: 36px; height: 36px; border: 3px solid rgba(245, 158, 11, 0.2); border-top-color: #f59e0b; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto;"></div>
+                    <div style="color: #fbbf24; font-weight: 600; font-size: 1rem; margin-top: 0.5rem;">⚡ 正在即時對照與提取 Test Suite Coverage Matrix...</div>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 0.25rem;">請稍候，系統正計算各工站 YAML 腳本與 BKC 控制表覆蓋率</p>
+                </td>
+            </tr>
+        `;
+    }
+
+    function getSlotVal(id) {
+        const sel = document.getElementById(id);
+        if (!sel) return '';
+        return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
+    }
+
+    const y1 = getSlotVal('yaml-file-select-1');
+    const y2 = getSlotVal('yaml-file-select-2');
+    const y3 = getSlotVal('yaml-file-select-3');
+    const y4 = getSlotVal('yaml-file-select-4');
+    const y5 = getSlotVal('yaml-file-select-5');
+    const bkcF = getSlotVal('yaml-bkc-file-select');
+    const bkcS = getSlotVal('yaml-bkc-sheet-select');
+
+    let url = `/api/yaml-compare?project=${encodeURIComponent(currentProject)}`;
+    if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
+    if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
+    if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+    if (y4) url += `&yaml_4=${encodeURIComponent(y4)}`;
+    if (y5) url += `&yaml_5=${encodeURIComponent(y5)}`;
+    if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
+    if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw new Error(`伺服器回應錯誤 (HTTP ${res.status})`);
+        }
+        const compData = await res.json();
+        if (compData.success) {
+            appState.yamlCompare = compData;
+        }
+
+        const cov = compData?.coverage_matrix || {};
+        const summary = compData?.summary || {};
+        const stations = cov.stations || [];
+        const grid = cov.grid || [];
+
+        if (totalBadge) totalBadge.innerHTML = `<i class="fa-solid fa-list-check"></i> 總測試動作/步驟數: ${cov.total_unique_items || grid.length} 項`;
+        if (rateBadge) rateBadge.innerHTML = `<i class="fa-solid fa-diagram-project"></i> 跨工站共同測試動作: ${cov.common_items_count || 0} 項 (${cov.active_stations_count || stations.length} 個工站)`;
+
+        renderCoverageModalTable(stations, grid);
+
+        // Search filter
+        const searchInput = document.getElementById('coverage-modal-search');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.oninput = () => {
+                const query = searchInput.value.trim().toLowerCase();
+                const filteredGrid = grid.filter(it => {
+                    const txt = `${it.action_name || ''} ${it.targets_summary || ''} ${it.bkc_category || ''} ${it.bkc_group || ''}`.toLowerCase();
+                    return txt.includes(query);
+                });
+                renderCoverageModalTable(stations, filteredGrid);
+            };
+        }
+
+        // Download Excel Button
+        const btnDownloadCovXlsx = document.getElementById('btn-download-coverage-xlsx');
+        if (btnDownloadCovXlsx) {
+            btnDownloadCovXlsx.onclick = () => {
+                let exportUrl = `/api/export-coverage-excel?project=${encodeURIComponent(currentProject)}`;
+                if (y1) exportUrl += `&yaml_1=${encodeURIComponent(y1)}`;
+                if (y2) exportUrl += `&yaml_2=${encodeURIComponent(y2)}`;
+                if (y3) exportUrl += `&yaml_3=${encodeURIComponent(y3)}`;
+                if (y4) exportUrl += `&yaml_4=${encodeURIComponent(y4)}`;
+                if (y5) exportUrl += `&yaml_5=${encodeURIComponent(y5)}`;
+                if (bkcF) exportUrl += `&bkc_file=${encodeURIComponent(bkcF)}`;
+                if (bkcS) exportUrl += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
+
+                window.location.href = exportUrl;
+            };
+        }
+    } catch (err) {
+        console.error('Error fetching coverage matrix:', err);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">❌ 載入失敗: ${escapeHtml(err.message)}</td></tr>`;
+        }
+    }
+}
+
+function renderCoverageModalTable(stations, grid) {
+    const thead = document.getElementById('coverage-modal-thead');
+    const tbody = document.getElementById('coverage-modal-tbody');
+    if (!thead || !tbody) return;
+
+    let headHtml = `
+        <tr style="background: #1e293b; color: #f8fafc;">
+            <th style="padding: 10px 14px; width: 220px;">TEST ACTION 測試動作 (主要 Index)</th>
+            <th style="padding: 10px 14px;">TESTED TARGETS / SENSORS (輔助測試標的與 FW)</th>
+    `;
+    stations.forEach(st => {
+        headHtml += `<th style="padding: 10px 14px; text-align: center;">${escapeHtml(st)}</th>`;
+    });
+    headHtml += `<th style="padding: 10px 14px; text-align: center; width: 150px;">跨工站包含狀態</th></tr>`;
+    thead.innerHTML = headHtml;
+
+    if (!grid || grid.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${3 + stations.length}" class="text-center py-4 text-muted">無獨立測試動作矩陣資料</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = grid.map((it, idx) => {
+        const actionName = it.action_name || it.sub_component || it.component || 'General Action';
+        const targetsSummary = it.targets_summary || 'General Check';
+
+        let stColsHtml = '';
+        const stMap = it.stations || {};
+
+        stations.forEach(st => {
+            const stInfo = stMap[st];
+            if (stInfo && stInfo.is_included) {
+                stColsHtml += `<td style="padding: 8px 12px; text-align: center;"><span class="badge bg-green-subtle text-green" style="padding: 4px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 600;"><i class="fa-solid fa-check"></i> 包含</span></td>`;
+            } else {
+                stColsHtml += `<td style="padding: 8px 12px; text-align: center; color: #64748b;">—</td>`;
+            }
+        });
+
+        const statusTag = it.coverage_status_tag || '🔵 單站包含';
+        let badgeStyle = 'background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);';
+        if (statusTag.includes('全包含')) {
+            badgeStyle = 'background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);';
+        } else if (statusTag.includes('跨站包含')) {
+            badgeStyle = 'background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);';
+        }
+
+        const statusBadge = `<span class="badge" style="padding: 4px 10px; border-radius: 12px; font-size: 0.78rem; ${badgeStyle}">${escapeHtml(statusTag)}</span>`;
+
+        return `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); background: ${idx % 2 === 0 ? 'rgba(30, 41, 59, 0.3)' : 'transparent'};">
+                <td style="padding: 8px 14px; color: #38bdf8; font-weight: 700; font-family: monospace;"><i class="fa-solid fa-play-circle" style="color: #0284c7;"></i> ${escapeHtml(actionName)}</td>
+                <td style="padding: 8px 14px; color: #cbd5e1; font-weight: 500;">${escapeHtml(targetsSummary)}</td>
+                ${stColsHtml}
+                <td style="padding: 8px 14px; text-align: center;">${statusBadge}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 
