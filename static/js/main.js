@@ -4734,11 +4734,6 @@ async function openFavaPreviewModal() {
         `;
     }
 
-    const y1 = document.getElementById('yaml-file-select-1')?.value || '';
-    const y2 = document.getElementById('yaml-file-select-2')?.value || '';
-    const y3 = document.getElementById('yaml-file-select-3')?.value || '';
-    const y4 = document.getElementById('yaml-file-select-4')?.value || '';
-    const y5 = document.getElementById('yaml-file-select-5')?.value || '';
     const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
     const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
 
@@ -4989,6 +4984,8 @@ async function openCoveragePreviewModal() {
     const y3 = getSlotVal('yaml-file-select-3');
     const y4 = (typeof currentFavaStage !== 'undefined' && currentFavaStage === 'L10') ? '' : getSlotVal('yaml-file-select-4');
     const y5 = (typeof currentFavaStage !== 'undefined' && currentFavaStage === 'L10') ? '' : getSlotVal('yaml-file-select-5');
+    const bkcF = getSlotVal('yaml-bkc-file-select');
+    const bkcS = getSlotVal('yaml-bkc-sheet-select');
     if (!y1 && !y2 && !y3 && !y4 && !y5) {
         if (typeof showToast === 'function') {
             showToast('💡 請先於上方工站選單選擇或上傳 .yaml 測試腳本檔以解鎖預覽與比對功能', 'warning');
@@ -5023,20 +5020,6 @@ async function openCoveragePreviewModal() {
             </tr>
         `;
     }
-
-    function getSlotVal(id) {
-        const sel = document.getElementById(id);
-        if (!sel) return '';
-        return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
-    }
-
-    const y1 = getSlotVal('yaml-file-select-1');
-    const y2 = getSlotVal('yaml-file-select-2');
-    const y3 = getSlotVal('yaml-file-select-3');
-    const y4 = currentFavaStage === 'L10' ? '' : getSlotVal('yaml-file-select-4');
-    const y5 = currentFavaStage === 'L10' ? '' : getSlotVal('yaml-file-select-5');
-    const bkcF = getSlotVal('yaml-bkc-file-select');
-    const bkcS = getSlotVal('yaml-bkc-sheet-select');
 
     let url = `/api/yaml-compare?project=${encodeURIComponent(currentProject)}`;
     if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
