@@ -2151,8 +2151,9 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
             b_clean = raw_b_ver.lower()
             y_clean = raw_y_ver.lower()
 
-            is_readout_bkc = any(k in b_clean for k in ['read-out', 'readout', 'read out']) or b_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
-            is_readout_yaml = any(k in y_clean for k in ['read-out', 'readout', 'read out']) or y_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
+            readout_keywords = ['read-out', 'readout', 'read out', 'complete', 'completed', 'pass', 'passed', 'done', 'tbd', 'static', 'see spec', 'by spec']
+            is_readout_bkc = any(k in b_clean for k in readout_keywords) or b_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
+            is_readout_yaml = any(k in y_clean for k in readout_keywords) or y_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
 
             if sub_c_up == 'FRU' or comp_up == 'FRU':
                 latest_fru_ver = get_latest_fru_version(project_id) or '0.05A'
@@ -2169,7 +2170,10 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 bkc_ver = raw_b_ver if (raw_b_ver and raw_b_ver not in ['(Empty)', '']) else 'Read-out Version'
                 note = yaml_item.get('discussion_note')
                 if not note:
-                    note = "此測試項目無指定 Target Version (屬 Read-out 讀取類別 / 測試動作)，無需與 BKC 標準版本進行數字比較。"
+                    if any(k in b_clean for k in ['complete', 'completed', 'pass', 'passed', 'done', 'tbd']):
+                        note = f"BKC 標準標註為 '{raw_b_ver}'，無特定數字版號要求，無需與 BKC 進行數字版號比較。"
+                    else:
+                        note = "此測試項目無指定 Target Version (屬 Read-out 讀取類別 / 測試動作)，無需與 BKC 標準版本進行數字比較。"
             else:
                 ver_match = is_version_compliant(bkc_ver, y_ver)
                 status = 'MATCH' if ver_match else 'MISMATCH'
