@@ -5,7 +5,7 @@
 # verified to work.
 Flask==3.0.0
 gunicorn==21.2.0
-pandas==2.0.0
+pandas>=2.0.0
 openpyxl==3.1.0
 xlrd==2.0.1
 google-api-python-client==2.100.0
