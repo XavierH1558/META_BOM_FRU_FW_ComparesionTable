@@ -1705,6 +1705,8 @@ function initYamlDragAndDrop() {
 
 // Fetch Data from Backend APIs
 async function fetchAllData() {
+    showLoading('正在載入數據與對照表單...', 'Fetching BKC Control Table, FRU Specs, and Build Matrix');
+    startProgressSequence();
     const statusText = document.querySelector('.status-text');
     if (statusText) statusText.textContent = 'Loading data...';
 
@@ -1720,11 +1722,12 @@ async function fetchAllData() {
             checkCriticalWatchlistAlerts()
         ]);
         if (statusText) statusText.textContent = 'Connected';
+        stopProgressSequenceSuccess('✅ 全平台數據載入完成！', 'BKC Control Table & FRU Specs ready');
     } catch (err) {
         console.error('Error fetching application data:', err);
         if (statusText) statusText.textContent = 'Data Error';
     } finally {
-        hideLoading(300);
+        await hideLoading(400);
     }
 }
 

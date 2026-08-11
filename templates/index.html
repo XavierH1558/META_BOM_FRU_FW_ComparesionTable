@@ -11,7 +11,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=25.0">
+
 
 
 
@@ -96,6 +97,48 @@
             <p class="project-switch-sub" id="overlay-project-sub">正在重新載入所有資料...</p>
         </div>
     </div>
+
+    <!-- Global Loading & Multi-Stage Progress Overlay -->
+    <div class="global-loading-overlay" id="global-loading-overlay">
+        <div class="loading-modal-card">
+            <div class="loading-spinner-wrapper" style="position: relative; display: inline-block; margin-bottom: 1.2rem;">
+                <div class="loading-outer-ring" style="width: 68px; height: 68px; border: 4px solid rgba(56, 189, 248, 0.15); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #38bdf8; font-size: 1.4rem;">
+                    <i class="fa-solid fa-server fa-pulse"></i>
+                </div>
+            </div>
+
+            <h3 id="loading-title" style="color: #f8fafc; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.35rem;">正在讀取與解析表單...</h3>
+            <p id="loading-subtitle" style="color: #94a3b8; font-size: 0.86rem; margin-bottom: 1.4rem;">Processing comparison data &amp; calculating compliance matrix</p>
+
+            <!-- Multi-Stage Animated Progress Bar -->
+            <div style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; font-size: 0.85rem;">
+                    <span id="loading-stage-label" style="color: #38bdf8; font-weight: 600;">📦 階段 1/4: 讀取腳本與對照表...</span>
+                    <span id="loading-percent-label" style="color: #f8fafc; font-weight: 700; font-family: 'JetBrains Mono', monospace;">10%</span>
+                </div>
+                <div class="loading-progress-bg">
+                    <div class="loading-progress-bar" id="loading-progress-fill"></div>
+                </div>
+            </div>
+
+            <div style="color: #64748b; font-size: 0.78rem;">
+                <i class="fa-solid fa-circle-info" style="color: #38bdf8; margin-right: 4px;"></i> 正在解析跨工站與 BKC 對照數據，請稍候...
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Floating Success Toast Banner -->
+    <div class="toast-notification" id="toast-notification">
+        <div class="toast-icon">
+            <i class="fa-solid fa-circle-check"></i>
+        </div>
+        <div>
+            <div class="toast-title" id="toast-title">✅ 載入與比對分析完成！</div>
+            <div class="toast-sub" id="toast-sub">已成功對照 BKC 表單並渲染測試規範數據</div>
+        </div>
+    </div>
+
 
     <!-- Main Workspace Container -->
     <main class="main-container">
@@ -271,7 +314,18 @@
                         </thead>
 
                         <tbody id="bkc-tbody">
-                            <tr><td colspan="9" class="text-center py-4">載入資料中...</td></tr>
+                            <tr>
+                                <td colspan="9" class="text-center py-5">
+                                    <div class="table-loading-container">
+                                        <div class="table-loading-spinner"></div>
+                                        <div style="font-weight: 600; color: #38bdf8; font-size: 0.95rem;">⚡ 正在解析與載入 BKC 韌體資料...</div>
+                                        <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Processing BKC Control Table components &amp; firmware versions</div>
+                                        <div class="table-loading-progress">
+                                            <div class="table-loading-progress-fill"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -402,7 +456,18 @@
                             </tr>
                         </thead>
                         <tbody id="fru-tbody">
-                            <tr><td colspan="6" class="text-center py-4">載入規格資料中...</td></tr>
+                            <tr>
+                                <td colspan="6" class="text-center py-5">
+                                    <div class="table-loading-container">
+                                        <div class="table-loading-spinner"></div>
+                                        <div style="font-weight: 600; color: #38bdf8; font-size: 0.95rem;">⚡ 正在對比與載入 FRU 規格欄位...</div>
+                                        <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Comparing Base &amp; Target FRU Spec Fields</div>
+                                        <div class="table-loading-progress">
+                                            <div class="table-loading-progress-fill"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -504,7 +569,18 @@
                         </thead>
 
                         <tbody id="matrix-tbody">
-                            <tr><td colspan="5" class="text-center py-4">載入 Build Matrix 中...</td></tr>
+                            <tr>
+                                <td colspan="10" class="text-center py-5">
+                                    <div class="table-loading-container">
+                                        <div class="table-loading-spinner"></div>
+                                        <div style="font-weight: 600; color: #38bdf8; font-size: 0.95rem;">⚡ 正在對照 Build Matrix 架構變更...</div>
+                                        <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Analyzing Build Matrix Rack Configurations</div>
+                                        <div class="table-loading-progress">
+                                            <div class="table-loading-progress-fill"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -1163,7 +1239,8 @@
     </div>
 
     <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v=20.4"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=25.0"></script>
+
 </body>
 </html>
 

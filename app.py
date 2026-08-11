@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import openpyxl
 import re
@@ -34,13 +35,24 @@ def atomic_write_json(path, data):
     os.replace(tmp_path, path)
 
 
-app = Flask(__name__)
+if getattr(sys, 'frozen', False):
+    BUNDLE_DIR = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = BUNDLE_DIR
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BUNDLE_DIR, 'templates'),
+    static_folder=os.path.join(BUNDLE_DIR, 'static')
+)
+
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -584,9 +596,18 @@ def get_bkc():
 
         c0 = r[0].strip() if len(r) > 0 else ''
         c1 = r[1].strip() if len(r) > 1 else ''
+        c4 = r[4].strip() if len(r) > 4 else ''
         c5 = r[5].strip() if len(r) > 5 else ''
 
-        if c0 and not c1 and not c5 and not any(c.strip() for c in r[2:]):
+        # Skip header rows
+        if c0.lower() == 'group' and c1.lower() == 'item':
+            continue
+        if not c0 and not c1 and c4.lower() in ['version', 'pvt1 fw version', 'read-out version']:
+            continue
+        if c4.lower().startswith('pvt1 l10') or c4.lower().startswith('ok to deploy'):
+            continue
+
+        if c0 and not c1 and not c4 and not c5 and not any(c.strip() for c in r[2:]):
             current_category = c0
             if current_category not in categories_dict:
                 categories_dict[current_category] = []
@@ -599,7 +620,7 @@ def get_bkc():
         meta_owner = r[2].strip() if len(r) > 2 else ''
         odm_owner = r[3].strip() if len(r) > 3 else ''
         
-        ver = c5
+        ver = c4 if (c4 and c4.lower() not in ['version', 'read-out version']) else c5
         if ver.endswith('.0') and ver.replace('.0', '').isdigit():
             ver = ver[:-2]
         
