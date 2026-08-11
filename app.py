@@ -2153,7 +2153,7 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
 
             readout_keywords = ['read-out', 'readout', 'read out', 'complete', 'completed', 'pass', 'passed', 'done', 'tbd', 'static', 'see spec', 'by spec']
             is_readout_bkc = any(k in b_clean for k in readout_keywords) or b_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
-            is_readout_yaml = any(k in y_clean for k in readout_keywords) or y_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
+            is_readout_yaml_explicit = any(k in y_clean for k in ['read-out', 'readout', 'read out'])
 
             if sub_c_up == 'FRU' or comp_up == 'FRU':
                 latest_fru_ver = get_latest_fru_version(project_id) or '0.05A'
@@ -2163,7 +2163,7 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 status = 'MATCH'
                 status_label = '🟢 吻合 (Follow BKC)'
                 note = f"Verified in FRU Spec ({bkc_ver})"
-            elif is_readout_bkc or is_readout_yaml:
+            elif is_readout_bkc or is_readout_yaml_explicit:
                 ver_match = True
                 status = 'NO_COMPARE'
                 status_label = '⚪ 無需與 BKC 比較'
