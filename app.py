@@ -2148,6 +2148,9 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
             sub_c_up = str(matched_bkc.get('sub_component') or yaml_item['sub_component']).strip().upper()
             comp_up = str(yaml_item['component']).strip().upper()
 
+            b_clean = raw_b_ver.lower()
+            y_clean = raw_y_ver.lower()
+
             has_yaml_ver = bool(raw_y_ver and raw_y_ver not in ['-', 'N/A', 'None', '(Empty)', ''])
             is_bkc_readout = any(k in b_clean for k in ['read-out', 'readout', 'read out']) or b_clean in ['', '-', 'n/a', 'none', '--', '(empty)', 'null']
             is_bkc_completed = any(k in b_clean for k in ['complete', 'completed', 'pass', 'passed', 'done'])
