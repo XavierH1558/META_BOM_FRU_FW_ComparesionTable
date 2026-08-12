@@ -1,0 +1,432 @@
+# Clemente MP NETTEST MAXQ
+
+- name: ShopFloorTest~Proxy
+  proxy: controller
+  wholerack: true
+
+- name: SwapTrace
+  proxy: controller
+  wholerack: true
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: SwapTrace.get_cable_cartridge
+  wholerack: true
+  args:
+    netblade_credentials: 'tools/platforms/clemente/utils/nwbladecreds2'
+    netblade_bmc_creds: 'tools/platforms/clemente/utils/obmccreds2'
+    dut_nic_interface: enP6s6np0
+
+# PVT build
+- name: SledAcCycle
+  proxy: controller
+  timeout: 1800
+  reboot: true
+  args:
+    always: true
+    runtime: 1800
+    product: clemente
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+- name: GB300StatusCheck~FRU_Check_WR
+  timeout: 300
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+- name: GB300StatusCheck
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/CheckGB300Status.sh
+
+- name: ClementeGB300VersionCheck
+  args:
+    check_list: {
+      'HGX_FW_BMC_0': 'GB200Nvl-25.09-2',
+      'HGX_FW_CPLD_0': '0.22',
+      'HGX_FW_CPU_0': 'CLE403',
+      'HGX_FW_CPU_1': 'CLE403',
+      'HGX_FW_ERoT_BMC_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_CPU_1': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_0': '01.04.0031.0000_n04',
+      'HGX_FW_ERoT_FPGA_1': '01.04.0031.0000_n04',
+      'HGX_FW_FPGA_0': '1.60',
+      'HGX_FW_FPGA_1': '1.60',
+      'HGX_FW_GPU_0': '97.10.59.00.13',
+      'HGX_FW_GPU_1': '97.10.59.00.13',
+      'HGX_FW_GPU_2': '97.10.59.00.13',
+      'HGX_FW_GPU_3': '97.10.59.00.13',
+      'HGX_PCIeSwitchConfig_0': '01151024',
+    }
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+#check DAC and switch SN
+- name: DACCableCheck
+  args:
+      intf: ['enP6s6np0', 'enP22s22np0']
+
+- name: ShopFloorTest~Proxy
+  proxy: controller
+  wholerack: true
+
+- name: SwapTrace.enforce_no_change
+  proxy: controller
+  wholerack: true
+
+# Check Port mapping
+- name: ClementeRSWPortMapCheck.test_port_map
+  continue_on_fail: false
+  proxy: controller
+  wholerack: true
+  use_tor: true
+  retries: 3
+  args:
+    mode: MP3_RSW_GB300
+    password_file: /etc/wedge400_creds
+    boot_order: [ [ 'IPv6', 'IPv4', 'CentOS', 'Built-in EFI Shell' ], [ 'IPv4', 'IPv6', 'CentOS', 'Built-in EFI Shell' ], [ 'IPv4', 'IPv6', 'Linux OS', 'Built-in EFI Shell' ], [ 'IPv6', 'IPv4', 'Linux OS', 'Built-in EFI Shell' ] ]
+    bmc_passwdfile: /etc/wedge_bmc_creds
+    memtest_cmd: /usr/bin/memtester
+    patch_w400c_322: true
+
+- name: ClementeRESWPortMapCheck.test_port_map
+  proxy: controller
+  wholerack: true
+  continue_on_fail: false
+  use_tor: true
+  args:
+    bmc_passwdfile: /etc/wedge_bmc_creds
+
+- name: ShopFloorTest~Proxy
+  proxy: controller
+  wholerack: true
+
+- name: SwapTrace.enforce_no_change
+  proxy: controller
+  wholerack: true
+
+- name: CartridgeEEPromCheck.unbind_i2c_address
+  continue_on_fail: false
+  args:
+    addresses: ['12-0055', '13-0055', '12-0054', '13-0054']
+
+- name: CartridgeEEPromCheck
+  continue_on_fail: false
+  num_nodes: 18
+  args:
+    netblade_credentials: 'tools/platforms/clemente/utils/nwbladecreds2'
+    netblade_bmc_creds: 'tools/platforms/clemente/utils/obmccreds2'
+    cbc_checker: tools/platforms/clemente/tools/CBC/cbc_whole_rack_fix_1.15.tgz
+    dut_nic_interface: enP6s6np0
+    topology: 'bianca'
+
+- name: InstallRPMPackage~ib_stress
+  runner: bash
+  cmd: 'ls ; cd /tmp;wget -nv http://controller/tools/platforms/clemente/rpm/clemente_ib_stress_rpm_v625.tar.gz;tar xzfv /tmp/clemente_ib_stress_rpm_v625.tar.gz;bash -x /tmp/clemente_ib_stress_rpm_v625/pre_install_ib_stress.sh; rm /tmp/clemente_ib_stress_rpm_v625.tar.gz ; rm -rf /tmp/clemente_ib_stress_rpm_v625'
+
+- name: SleepTest~10sec
+  args:
+    duration: 10
+
+- name: InstallRPM~mft_4.32.0-20250821
+  runner: bash
+  cmd: 'ls; cd /tmp && wget -nv http://controller/tools/platforms/clemente/rpm/mstflint-4.32.0-fb.el9.aarch64.rpm && rpm -ivh --force mstflint-4.32.0-fb.el9.aarch64.rpm; '
+
+# Transceiver check
+- name: ClementeTransceiverCheck.test_firmware
+  continue_on_fail: false
+  args:
+    nic_addr: [ '0000:03:00.0', '0000:03:00.1', '0002:03:00.0', '0002:03:00.1', '0010:03:00.0', '0010:03:00.1', '0012:03:00.0', '0012:03:00.1' ]
+    fw_version:
+      - 46.150.55
+      - 40.134.0
+      - 3.2.0
+      - 1.6.0
+      - 36.198.0
+      - 3.0.0
+
+- name: ClementeTransceiverCheck.test_transceiver_info_check
+
+- name: ClementeRackIBWriteTest~15mins
+  args:
+    runtime: 900
+    avg_bw_threshold: 360
+    port_mapping: {
+      'mlx5_0': 'enp3s0f0np0',
+      'mlx5_1': 'enp3s0f1np1',
+      'mlx5_2': 'enP2s2f0np0',
+      'mlx5_3': 'enP2s2f1np1',
+      'mlx5_5': 'enP16s16f0np0',
+      'mlx5_6': 'enP16s16f1np1',
+      'mlx5_7': 'enP18s18f0np0',
+      'mlx5_8': 'enP18s18f1np1',
+    }
+    nic_pairs: {
+      'mlx5_0': 'mlx5_1',
+      'mlx5_5': 'mlx5_6',
+    }
+
+- name: ClementeRackIBWriteTest~15mins
+  args:
+    runtime: 900
+    avg_bw_threshold: 360
+    port_mapping: {
+      'mlx5_0': 'enp3s0f0np0',
+      'mlx5_1': 'enp3s0f1np1',
+      'mlx5_2': 'enP2s2f0np0',
+      'mlx5_3': 'enP2s2f1np1',
+      'mlx5_5': 'enP16s16f0np0',
+      'mlx5_6': 'enP16s16f1np1',
+      'mlx5_7': 'enP18s18f0np0',
+      'mlx5_8': 'enP18s18f1np1',
+    }
+    nic_pairs: {
+      'mlx5_2': 'mlx5_3',
+      'mlx5_7': 'mlx5_8',
+    }
+
+- name: NetbladeClusterConfiguration
+  num_nodes: 18
+  args:
+    netblade_credentials: 'tools/platforms/clemente/utils/nwbladecreds2'
+    netblade_bmc_creds: 'tools/platforms/clemente/utils/obmccreds2'
+    fm_config_file: tools/platforms/clemente/tools/NVPD/L11/fm_config.cfg
+    dut_nic_interface: enP6s6np0
+    topology: bianca
+    extended_detection: True
+
+- name: SledAcCycle
+  proxy: controller
+  timeout: 1800
+  reboot: true
+  args:
+    always: true
+    runtime: 1800
+    product: clemente
+
+- name: ModifyTempThreshold
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/ModifyTempSettings.15.1.sh
+
+# ----- An workaround for HPM I2C Bus hang issue to
+#   cause the whole CX8/E1.S/OSFP FRU device missing issue
+- name: GB300StatusCheck~FRU_Check_WR
+  proxy: controller
+  args:
+    script_file: /opt/tools/platforms/clemente/utils/clemente_fru_check_wr.sh
+
+# wait 30s
+- name: SleepTest~30s
+  proxy: controller
+  args:
+    duration: 30
+
+- name: RunOOBCmd~Fan_Mode_manual
+  args:
+    cmd: 'mfg-tool fan-mode -m'
+    expected_result: '"zone1": "manual"'
+
+- name: RunOOBCmd~Set_FAN_Duty_50
+  args:
+    cmd: 'mfg-tool fan-speed -t 50'
+
+- name: SleepTest~1min
+  args:
+    duration: 60
+
+# Install NV 1.0.1 packages (580.105.08)
+- name: RPMInstaller~clemente
+  args:
+    force: true
+    rpm_package: tools/platforms/clemente/rpm/clemente_rpm_6.16.1-0_fbk0.tar.gz
+    exclude:
+      - 'kernel-6.16.1-0_fbk0_0_gc0739ee5037a.aarch64.rpm'
+    cmds:
+      - 'export CC=/usr/bin/clang && export CXX=/usr/bin/clang++'
+
+- name: RPMInstaller~cuda
+  args:
+    force: true
+    rpm_package: tools/platforms/clemente/rpm/cuda-580.105.08_20251208.tgz
+    cmds:
+      - 'systemctl enable nvidia-persistenced.service'
+      - 'systemctl start nvidia-persistenced.service'
+
+- name: BashRunner~disable_acs
+  args:
+    is_remote: True
+    shell_script: 'tools/platforms/clemente/utils/disable_acs.sh'
+
+- name: NetbladeClusterConfiguration.check_nmxc_status
+  num_nodes: 18
+  args:
+    netblade_credentials: 'tools/platforms/clemente/utils/nwbladecreds2'
+    netblade_bmc_creds: 'tools/platforms/clemente/utils/obmccreds2'
+    fm_config_file: tools/platforms/clemente/tools/NVPD/L11/fm_config.cfg
+    dut_nic_interface: enP6s6np0
+    topology: bianca
+    extended_detection: True
+
+- name: ClementePartnerDiag~switch
+  num_nodes: 18
+  args:
+    netblade_credentials: 'tools/platforms/clemente/utils/nwbladecreds2'
+    netblade_bmc_creds: 'tools/platforms/clemente/utils/obmccreds2'
+    dut_nic_interface: enP6s6np0
+    job_type: netblade
+    partner_tools: tools/platforms/clemente/tools/NVPD/L11/629-24975-0000-FLD-60001-rev3.tgz
+    test_recipe: spec_gb300_nvl_72_2_4_switch_nodes_partner_mfg.json
+    test_args:
+      - '--mfg'
+      - '--skip_driver_load'
+      - '--run_on_error'
+
+- name: ClementePartnerDiag~CT
+  num_nodes: 18
+  args:
+    netblade_credentials: 'tools/platforms/clemente/utils/nwbladecreds2'
+    netblade_bmc_creds: 'tools/platforms/clemente/utils/obmccreds2'
+    dut_nic_interface: enP6s6np0
+    job_type: compute
+    partner_tools: tools/platforms/clemente/tools/NVPD/L11/629-24975-0000-FLD-60001-rev3.tgz
+    test_recipe: spec_gb300_nvl_72_2_4_compute_nodes_partner_mfg.json
+    test_args:
+      - '--mfg'
+      - '--skip_driver_load'
+      - '--no_bmc'
+
+#check for NVPD
+- name: SELCheck
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold: 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_clemente_mp.json
+    product: clemente
+
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_clemente.json
+
+# reload nv drivers
+- name: BashRunner~Reload_NV_Driver
+  args:
+    is_remote: True
+    shell_script: tools/platforms/clemente/utils/reload_nv_driver.sh
+
+# run IOB sensor WR script
+- name: BashRunner~Run_WR_script
+  args:
+    is_remote: True
+    on_bmc: True
+    allow_bmc_error: True
+    shell_script: tools/platforms/clemente/utils/IOB_Sensor_WR_v2.sh
+
+- name: SleepTest~30sec
+  args:
+    duration: 30
+
+- name: SensorCheck
+  args:
+    cycles: 1
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C'
+
+- name: RPMInstaller~mft
+  args:
+    rpm_package: tools/platforms/clemente/rpm/mft-4.32.0-120.arm64.rpm
+
+# Network test - iperf
+- name: ClementeNetworkTest.check_multinics~1500mtu
+  num_nodes: 2
+  args:
+    runtime: 180
+    mtu_value: 1500
+    threshold: 0.9
+    num_threads: 16
+    nic_speed: 400
+    force_server_on_node: 1
+    interfaces: enP22s22np0:enP22s22np0,enP6s6np0:enP6s6np0
+
+- name: ClementeNetworkTest.check_multinics~5000mtu
+  num_nodes: 2
+  args:
+    runtime: 180
+    mtu_value: 5000
+    threshold: 0.9
+    num_threads: 16
+    nic_speed: 400
+    force_server_on_node: 1
+    interfaces: enP22s22np0:enP22s22np0,enP6s6np0:enP6s6np0
+
+- name: ClementeNetworkTest.check_multinics~9000mtu
+  num_nodes: 2
+  args:
+    runtime: 180
+    mtu_value: 9000
+    threshold: 0.9
+    num_threads: 16
+    nic_speed: 400
+    force_server_on_node: 1
+    interfaces: enP22s22np0:enP22s22np0,enP6s6np0:enP6s6np0
+
+- name: SELCheck
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold: 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_clemente_mp.json
+    product: clemente
+
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_clemente.json
+
+# SEL clear
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'clemente': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared'
+      ],
+    }
+
+- name: ShopFloorTest~Proxy
+  proxy: controller
+  wholerack: true
+
+- name: SwapTrace.enforce_no_change
+  proxy: controller
+  wholerack: true
+
+- name: NETTEST_COMPLETE
+  runner: bash
+  cmd: "/bin/true"

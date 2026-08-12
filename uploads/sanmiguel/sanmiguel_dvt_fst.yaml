@@ -1,0 +1,504 @@
+#
+# San Miguel Compute Tray L11 FST
+#
+# 1. PCICheck -> SanMiguelPCICheck
+# 2. Add HostUpCheck after SanMiguelAPStatusCheck
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist:
+      {
+        "sanmiguel":
+          [
+            "BMC-severity:OK-Event log cleared by user.",
+            "BMC-severity:OK-com.meta.RedfishClient.UnexpectedException",
+            "BMC-severity:OK-xyz.openbmc_project.Logging.Cleared",
+            "HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared",
+            "HMC-severity:OK-xyz.openbmc_project.Logging.Cleared",
+          ],
+      }
+
+- name: SanMiguelAPStatusCheck
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+      HGX_FW_CPLD_0
+      HGX_FW_CPLD_1
+      HGX_FW_GPU_SMA_0
+      HGX_FW_GPU_SMA_1
+      HGX_FW_ProcessorModule_SMA_0
+      HGX_FW_ProcessorModule_SMA_1
+      HGX_SBIOS_FMC_0
+      HGX_SBIOS_FMC_1
+      HGX_SBIOS_FW_0
+      HGX_SBIOS_FW_1
+      HGX_FW_GPU_0
+      HGX_FW_GPU_1
+      HGX_FW_GPU_2
+      HGX_FW_GPU_3
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: NPIOOBFlash~MCU_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: "None"
+    fw_file: "tools/platforms/sanmiguel/utils/Check_MCU_WA.sh"
+    copy_fw_util: False
+    cmd: "chmod +x {fw_file} && {fw_file}"
+
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: "None"
+    fw_file: "tools/platforms/sanmiguel/utils/Check_NV_FRU.sh"
+    copy_fw_util: False
+    cmd: "chmod +x {fw_file} && {fw_file} L11"
+
+- name: SanMiguelLeakCheck
+  timeout: 120
+  args:
+    leak_pins:
+      [
+        "Hpm0LeakDetector",
+        "Hpm0LeakDetectorFault",
+        "Hpm1LeakDetector",
+        "Hpm1LeakDetectorFault",
+      ]
+
+- name: RTCDriftTest
+  reboot: true
+  args:
+    drift_check: false
+    drift_threshold: 600
+
+- name: BMCFlash~check_only
+  proxy: controller
+  args:
+    check_only: true
+    force_update: false
+    postreboot: false
+    bmc_bootup_version_info: false
+    fw_version: sanmiguel-v2026.27.0
+
+# ----- VR200 version check
+- name: SanMiguelHMCFlash~VR200_all_check
+  proxy: controller
+  timeout: 4000
+  reboot: false
+  args:
+    check_only: true
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: all
+    postreboot: false
+    fw_version:
+      HGX_FW_BMC_0: "VRH-2605-01.02"
+      HGX_FW_CPLD_0: "0.2C"
+      HGX_FW_CPLD_1: "0.2C"
+      HGX_FW_ERoT_BMC_0: "02.00.0023.0000_n05"
+      HGX_FW_GPU_0: "99.00.16.00.28"
+      HGX_FW_GPU_1: "99.00.16.00.28"
+      HGX_FW_GPU_2: "99.00.16.00.28"
+      HGX_FW_GPU_3: "99.00.16.00.28"
+      HGX_FW_GPU_SMA_0: "0023.01.0261.0004"
+      HGX_FW_GPU_SMA_1: "0023.01.0261.0004"
+      HGX_FW_ProcessorModule_SMA_0: "0026.01.0263.0000"
+      HGX_FW_ProcessorModule_SMA_1: "0026.01.0263.0000"
+      HGX_SBIOS_FMC_0: "05.08.00.02"
+      HGX_SBIOS_FMC_1: "05.08.00.02"
+      HGX_SBIOS_FW_0: "2A.01.00.00"
+      HGX_SBIOS_FW_1: "2A.01.00.00"
+
+- name: OOB_FW_Flash~IOB_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: true
+    force_update: false
+    fru: iob
+    component: sma
+    postreboot: false
+    fw_version: 0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+
+- name: OOB_FW_Flash~CX9_Clover_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  args:
+    check_only: true
+    force_update: false
+    fru: clover
+    component: sma
+    postreboot: false
+    fw_version: "0034.01.0263.0000"
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: "mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm && rpm -ivh --force --nosignature mft-4.35.0-6007.arm64.rpm; }"
+
+- name: MST_Stop
+  runner: bash
+  cmd: "mst stop"
+
+- name: MultiNICFlash~FENIC~check_only
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: "North South SuperNIC"
+    device_count: 2
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: { "fw_tool": "/usr/bin/mlxfwmanager", "fw_version": "82.48.1326" }
+
+- name: MultiNICFlash~BENIC~check_only
+  timeout: 3600
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: "Quad ConnectX-9 SuperNIC"
+    device_count: 8
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: { "fw_tool": "/usr/bin/mlxfwmanager", "fw_version": "82.48.1326" }
+
+# ----- SSD FW check
+- name: SSDFlash~check_only
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+    check_only: true
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MTFDLBT7T6THC-1BK4FABVA:
+        vendor: micron
+        fw_version: E5FB004
+      WUL6BA176O9P8X7:
+        vendor: wd
+        fw_version: RG109W0B
+
+# ----- FRU Check
+- name: LFFRUEeprom~check
+  args:
+    check_only: true
+    fru_util: tools/platforms/sanmiguel/utils/fruid-util.py
+    fru_config: etc/fru_sanmiguel_chk.json
+    components_info:
+      {
+        hpm0: { eeprom: 1-0051, dev_file: PG558 },
+        hpm1: { eeprom: 3-0051, dev_file: PG558_0 },
+        scm: { eeprom: 10-0050, dev_file: San_Miguel_SCM_DVT },
+        pdb: { eeprom: 9-0050, dev_file: San_Miguel_PDB_DVT },
+        fio: { eeprom: 14-0050, dev_file: San_Miguel_FIO_DVT },
+        smm: { eeprom: 5-0050, dev_file: San_Miguel_SMM_Carrier_DVT },
+        smmext: { eeprom: 13-0055, dev_file: San_Miguel_SMM_Extender_DVT },
+      }
+
+# ----- PCI Check
+- name: SanMiguelPCICheck~ALL~BE_Case1
+  args:
+    config: "config1"
+    pci_info:
+      {
+        "FE_NIC_0": ["0005:41:00.0", "64GT/s", "x8"],
+        "CPU0_UPHY0_1": ["0001:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY0_2": ["0003:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY1_1": ["0002:80:00.0", "64GT/s", "x2"],
+        "CPU0_UPHY1_2": ["0002:c0:00.0", "64GT/s", "x2"],
+        "CPU0_UPHY1_3": ["0002:e0:00.0", "5GT/s", "x1"],
+        "CPU0_UPHY1_4": ["0002:a0:00.0", "5GT/s", "x1"],
+        "CPU0_UPHY2_1": ["0004:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY2_2": ["0006:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY3_1": ["0005:40:00.0", "64GT/s", "x8"],
+        "x1_Gen2_USB": ["0002:e1:00.0", "5GT/s", "x1"],
+        "x1_Gen2_BMC": ["0002:a1:00.0", "5GT/s", "x1"],
+        "SSD_0": ["000a:a1:00.0", "32GT/s", "x4"],
+        "FE_NIC_1": ["000d:41:00.0", "64GT/s", "x8"],
+        "CPU1_UPHY0_1": ["0009:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY0_2": ["000b:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY1_1": ["000a:a0:00.0", "32GT/s", "x4"],
+        "CPU1_UPHY1_2": ["000a:80:00.0", "64GT/s", "x2"],
+        "CPU1_UPHY1_3": ["000a:e0:00.0", "64GT/s", "x2"],
+        "CPU1_UPHY2_1": ["000c:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY2_2": ["000e:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY3_1": ["000d:40:00.0", "64GT/s", "x8"],
+        "CPU0_BE_NIC_Upper_0": ["0001:03:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Upper_1": ["0003:01:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Lower_0": ["0004:03:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Lower_1": ["0006:01:00.0", "64GT/s", "x16"],
+        "SSD_1": ["0001:06:00.0", "32GT/s", "x4"],
+        "SSD_2": ["0004:06:00.0", "32GT/s", "x4"],
+        "CPU1_BE_NIC_Upper_0": ["000c:03:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Upper_1": ["000e:01:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Lower_0": ["0009:03:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Lower_1": ["000b:01:00.0", "64GT/s", "x16"],
+        "SSD_3": ["000c:06:00.0", "32GT/s", "x4"],
+        "SSD_4": ["0009:06:00.0", "32GT/s", "x4"],
+        "CPU0_GPU_0": ["0002:81:00.0", "64GT/s", "x2"],
+        "CPU0_GPU_1": ["0002:c1:00.0", "64GT/s", "x2"],
+        "CPU1_GPU_0": ["000a:81:00.0", "64GT/s", "x2"],
+        "CPU1_GPU_1": ["000a:e1:00.0", "64GT/s", "x2"],
+      }
+
+- name: SanMiguelPCICheck~ALL~BE_Case5
+  args:
+    pci_info:
+      {
+        "FE_NIC_0": ["0005:41:00.0", "64GT/s", "x8"],
+        "CPU0_UPHY0_1": ["0001:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY0_2": ["0003:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY1_1": ["0002:80:00.0", "64GT/s", "x2"],
+        "CPU0_UPHY1_2": ["0002:c0:00.0", "64GT/s", "x2"],
+        "CPU0_UPHY1_3": ["0002:e0:00.0", "5GT/s", "x1"],
+        "CPU0_UPHY1_4": ["0002:a0:00.0", "5GT/s", "x1"],
+        "CPU0_UPHY2_1": ["0004:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY2_2": ["0006:00:00.0", "64GT/s", "x16"],
+        "CPU0_UPHY3_1": ["0005:40:00.0", "64GT/s", "x8"],
+        "x1_Gen2_USB": ["0002:e1:00.0", "5GT/s", "x1"],
+        "x1_Gen2_BMC": ["0002:a1:00.0", "5GT/s", "x1"],
+        "SSD_0": ["000a:a1:00.0", "32GT/s", "x4"],
+        "FE_NIC_1": ["000d:41:00.0", "64GT/s", "x8"],
+        "CPU1_UPHY0_1": ["0009:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY0_2": ["000b:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY1_1": ["000a:a0:00.0", "32GT/s", "x4"],
+        "CPU1_UPHY1_2": ["000a:80:00.0", "64GT/s", "x2"],
+        "CPU1_UPHY1_3": ["000a:e0:00.0", "64GT/s", "x2"],
+        "CPU1_UPHY2_1": ["000c:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY2_2": ["000e:00:00.0", "64GT/s", "x16"],
+        "CPU1_UPHY3_1": ["000d:40:00.0", "64GT/s", "x8"],
+        "CPU0_BE_NIC_Upper_0_0": ["0001:03:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Upper_0_1": ["0001:03:00.1", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Upper_1_0": ["0003:01:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Upper_1_1": ["0003:01:00.1", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Lower_0_0": ["0004:03:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Lower_0_1": ["0004:03:00.1", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Lower_1_0": ["0006:01:00.0", "64GT/s", "x16"],
+        "CPU0_BE_NIC_Lower_1_1": ["0006:01:00.1", "64GT/s", "x16"],
+        "SSD_1": ["0001:06:00.0", "32GT/s", "x4"],
+        "SSD_2": ["0004:06:00.0", "32GT/s", "x4"],
+        "CPU1_BE_NIC_Upper_0_0": ["000c:03:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Upper_0_1": ["000c:03:00.1", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Upper_1_0": ["000e:01:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Upper_1_1": ["000e:01:00.1", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Lower_0_0": ["0009:03:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Lower_0_1": ["0009:03:00.1", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Lower_1_0": ["000b:01:00.0", "64GT/s", "x16"],
+        "CPU1_BE_NIC_Lower_1_1": ["000b:01:00.1", "64GT/s", "x16"],
+        "SSD_3": ["000c:06:00.0", "32GT/s", "x4"],
+        "SSD_4": ["0009:06:00.0", "32GT/s", "x4"],
+        "CPU0_GPU_0": ["0002:81:00.0", "64GT/s", "x2"],
+        "CPU0_GPU_1": ["0002:c1:00.0", "64GT/s", "x2"],
+        "CPU1_GPU_0": ["000a:81:00.0", "64GT/s", "x2"],
+        "CPU1_GPU_1": ["000a:e1:00.0", "64GT/s", "x2"],
+      }
+
+# ----- ConfigCheck
+- name: ConfigCheck
+  args:
+    fava_skip_tests:
+      [
+        test_fw,
+        test_fan_speed,
+        test_hw,
+        test_hw_cpu_cores_count,
+        test_nic_info,
+        test_uuid,
+        test_check_slot,
+        test_battery,
+        test_mem_manufacturer,
+      ]
+
+# ----- SNCheck
+- name: SNCheck
+  args:
+    fava_skip_tests: [test_cpu, test_dimm, test_mb]
+    nic_entries:
+      [
+        "enP13s20f0np0",
+        "enP1p3s0f0np0",
+        "enP3s6f0np0",
+        "enP4p3s0f0np0",
+        "enP6s11f0np0",
+        "enP9p3s0f0np0",
+        "enP11s16f0np0",
+        "enP12p3s0f0np0",
+        "enP14s21f0np0",
+      ]
+
+- name: PartCheck
+  args:
+    fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+- name: RTCDriftTest~check_only
+  continue_on_fail: false
+  args:
+    clock_sync: false
+    drift_threshold: 600
+
+- name: DMESG_check
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_sanmiguel.json
+    dump_all_errors: true
+
+- name: SELCheck
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold: 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_sanmiguel.json
+    product: sanmiguel
+    dump_all_errors: true
+
+# ----- SDR check
+- name: RPMInstaller~sanmiguel~rc22
+  args:
+    rpm_package: tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10_cleaned.tar.gz
+
+- name: SleepTest~10sec
+  args:
+    duration: 10
+
+- name: SensorCheck
+  args:
+    cycles: 1
+    excluded_sensors: "IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C,HGX_GPU0_DRAM_PWR_W,HGX_GPU0_ENERGY_J,HGX_GPU0_PWR_W,HGX_GPU0_THERMAL_MARGIN_TEMP_C,HGX_GPU1_DRAM_PWR_W,HGX_GPU1_ENERGY_J,HGX_GPU1_PWR_W,HGX_GPU1_THERMAL_MARGIN_TEMP_C,HGX_GPU2_DRAM_PWR_W,HGX_GPU2_ENERGY_J,HGX_GPU2_PWR_W,HGX_GPU2_THERMAL_MARGIN_TEMP_C,HGX_GPU3_DRAM_PWR_W,HGX_GPU3_ENERGY_J,HGX_GPU3_PWR_W,HGX_GPU3_THERMAL_MARGIN_TEMP_C,NvidiaNSM_SMA_30_LEAKDETECTOR_0,NvidiaNSM_SMA_50_LEAKDETECTOR_0"
+
+# ----- FW info
+- name: RunOOBCmd~show_fw_version
+  args:
+    cmd: "mfg-tool version-display 2>/dev/null;hmc-util --version all"
+
+# ----- FRU dumps
+- name: RunOOBCmd~dump_fio_fru
+  proxy: controller
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/San_Miguel_FIO_DVT"
+    expected_result: "San Miguel FIO DVT"
+
+- name: RunOOBCmd~dump_pdb_fru
+  proxy: controller
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/San_Miguel_PDB_DVT"
+    expected_result: "San Miguel PDB DVT"
+
+- name: RunOOBCmd~dump_scm_fru
+  proxy: controller
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/San_Miguel_SCM_DVT"
+    expected_result: "San Miguel SCM DVT"
+
+- name: RunOOBCmd~dump_smm_carrier_fru
+  proxy: controller
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/San_Miguel_SMM_Carrier_DVT"
+    expected_result: "San Miguel SMM Carrier DVT"
+
+- name: RunOOBCmd~dump_smm_extender_fru
+  proxy: controller
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/San_Miguel_SMM_Extender_DVT"
+    expected_result: "San Miguel SMM Extender DVT"
+
+- name: RunOOBCmd~dump_vr200_0_fru
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/PG558"
+    expected_result: "Vera Rubin NVL72 1CPU:2GPU HPM LC"
+
+- name: RunOOBCmd~dump_vr200_1_fru
+  args:
+    cmd: "busctl introspect xyz.openbmc_project.FruDevice /xyz/openbmc_project/FruDevice/PG558_0"
+    expected_result: "Vera Rubin NVL72 1CPU:2GPU HPM LC"
+
+# ----- Factory reset BMC to restore BMC log size
+- name: RunOOBCmd~factory_reset
+  args:
+    cmd: "fw_setenv openbmconce factory-reset"
+
+# AC
+- name: SledAcCycle
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+- name: NPIOOBFlash~MCU_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: "None"
+    fw_file: "tools/platforms/sanmiguel/utils/Check_MCU_WA.sh"
+    copy_fw_util: False
+    cmd: "chmod +x {fw_file} && {fw_file}"
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: "None"
+    fw_file: "tools/platforms/sanmiguel/utils/Check_NV_FRU.sh"
+    copy_fw_util: False
+    cmd: "chmod +x {fw_file} && {fw_file} L11"
+
+# ----- SEL clear
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist:
+      {
+        "sanmiguel":
+          [
+            "BMC-severity:OK-Event log cleared by user.",
+            "BMC-severity:OK-com.meta.RedfishClient.UnexpectedException",
+            "BMC-severity:OK-xyz.openbmc_project.Logging.Cleared",
+            "HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared",
+            "HMC-severity:OK-xyz.openbmc_project.Logging.Cleared",
+          ],
+      }
+
+- name: L11_FST_COMPLETE
+  runner: bash
+  cmd: "/bin/true"

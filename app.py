@@ -1,5 +1,6 @@
 import os
 import sys
+import socket
 import csv
 import openpyxl
 import re
@@ -171,6 +172,44 @@ ACTIVE_PATHS = {
     for proj, cfg in PROJECT_CONFIGS.items()
 }
 
+def normalize_project_id(raw_id):
+    if not raw_id:
+        return None
+    val = str(raw_id).strip().lower()
+    if val in ['vr', 'vr200', 'sanmiguel', 'san_miguel', 'san-miguel', 'maxwell', 'earth']:
+        return 'sanmiguel'
+    if val in ['gb', 'gb300', 'clemente', 'clem']:
+        return 'clemente'
+    if val in PROJECT_CONFIGS:
+        return val
+    return None
+
+def parse_cli_default_project():
+    env_proj = os.environ.get('DEFAULT_PROJECT') or os.environ.get('PROJECT') or os.environ.get('APP_PROJECT')
+    norm = normalize_project_id(env_proj)
+    if norm:
+        os.environ['DEFAULT_PROJECT'] = norm
+        return norm
+
+    for i, arg in enumerate(sys.argv):
+        arg_lower = arg.lower()
+        if arg_lower in ['--project', '-p', '--proj', '-proj', '--p']:
+            if i + 1 < len(sys.argv):
+                n = normalize_project_id(sys.argv[i + 1])
+                if n:
+                    os.environ['DEFAULT_PROJECT'] = n
+                    return n
+        elif arg_lower.startswith('--project=') or arg_lower.startswith('-p='):
+            val = arg.split('=', 1)[1]
+            n = normalize_project_id(val)
+            if n:
+                os.environ['DEFAULT_PROJECT'] = n
+                return n
+
+    return 'clemente'
+
+DEFAULT_PROJECT = parse_cli_default_project()
+
 def get_project_config(project_id):
     """Return config for the given project id, defaulting to clemente (GB300)."""
     return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS['clemente'])
@@ -305,6 +344,10 @@ def validate_yaml_project(file_path, project_id):
             return False, f"專案不對，請重新輸入新檔案！您選擇/上傳的腳本 '{os.path.basename(file_path)}' 屬於 Clemente (GB300) 專案，但當前 active 專案為 SanMiguel (VR200)。"
             
     # 2. Deep content checks (first 50,000 characters)
+    # NOTE: If the filename already starts with 'sanmiguel', skip the clemente
+    # content check entirely — sanmiguel scripts may legitimately reference
+    # shared Clemente tool paths (e.g. psu_filters_clemente.json) or inherit
+    # from Clemente base classes, and we don't want to block them.
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read(50000).lower()
@@ -319,9 +362,13 @@ def validate_yaml_project(file_path, project_id):
                 if ind in content:
                     return False, f"專案不對，請重新輸入新檔案！腳本檔案 '{os.path.basename(file_path)}' 內包含 SanMiguel (VR200) 專案特徵 '{ind}'，但當前 active 專案為 Clemente (GB300)。"
                     
-        elif project_id == 'sanmiguel':
+        elif project_id == 'sanmiguel' and not fname.startswith('sanmiguel'):
+            # Only run deep content check if the filename doesn't already confirm
+            # it's a SanMiguel script. SanMiguel scripts may reuse clemente shared
+            # tool paths (e.g. psu_filters_clemente.json, nwbladecreds2) which
+            # would otherwise trigger false positives.
             clemente_indicators = [
-                'clemente', 'gb300', 'flash-clemente', 'clemente_ct',
+                'flash-clemente', 'clemente_ct',
                 'station 1 (fdt)', 'station 2 (fro)', 'station 3 (fft)',
                 'clementesbios', 'clementehmc', 'clementebmc'
             ]
@@ -388,16 +435,26 @@ def filter_valid_data_sheets(sheets):
     valid = [s for s in sheets if not any(k in s.lower() for k in ignored_keywords)]
     return valid if valid else sheets
 
+FILE_ROWS_CACHE = {}
+
 def read_file_safe(path, sheet_name=None):
     if not path or not os.path.exists(path):
         return None, [], f"File not found: {path}"
     
+    try:
+        mtime = os.path.getmtime(path)
+        cache_key = (path, sheet_name, mtime)
+        if cache_key in FILE_ROWS_CACHE:
+            return FILE_ROWS_CACHE[cache_key]
+    except Exception:
+        cache_key = None
+
     ext = os.path.splitext(path)[1].lower()
     sheet_names = []
     
     if ext in ['.xlsx', '.xls']:
         try:
-            wb = openpyxl.load_workbook(path, data_only=True)
+            wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
             sheet_names = wb.sheetnames
             valid_sheets = filter_valid_data_sheets(sheet_names)
             if sheet_name and sheet_name in sheet_names:
@@ -410,32 +467,26 @@ def read_file_safe(path, sheet_name=None):
             for r in ws.iter_rows(values_only=True):
                 row_str = [str(cell).strip() if cell is not None else '' for cell in r]
                 rows.append(row_str)
-            return rows, valid_sheets, None
+            wb.close()
+            res = (rows, valid_sheets, None)
+            if cache_key:
+                FILE_ROWS_CACHE[cache_key] = res
+            return res
         except Exception as e:
             return None, [], str(e)
     else:
         try:
             with open(path, 'r', encoding='utf-8-sig', errors='ignore') as f:
                 reader = list(csv.reader(f))
-                return reader, [], None
+                res = (reader, [], None)
+                if cache_key:
+                    FILE_ROWS_CACHE[cache_key] = res
+                return res
         except Exception as e:
             return None, [], str(e)
 
-FILE_ROWS_CACHE = {}
-
 def read_file_safe_cached(path, sheet_name=None):
-    if not path or not os.path.exists(path):
-        return None, [], f"File not found: {path}"
-    try:
-        mtime = os.path.getmtime(path)
-        cache_key = (path, sheet_name, mtime)
-        if cache_key in FILE_ROWS_CACHE:
-            return FILE_ROWS_CACHE[cache_key]
-        res = read_file_safe(path, sheet_name=sheet_name)
-        FILE_ROWS_CACHE[cache_key] = res
-        return res
-    except Exception:
-        return read_file_safe(path, sheet_name=sheet_name)
+    return read_file_safe(path, sheet_name=sheet_name)
 
 def parse_version_tuple(ver_str):
     if not ver_str or ver_str in ['-', 'NA', 'TBD']:
@@ -474,7 +525,10 @@ def compare_versions(ver_base, ver_target):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    req_proj = request.args.get('project') or request.args.get('p')
+    norm_req = normalize_project_id(req_proj)
+    active_default = norm_req if norm_req else DEFAULT_PROJECT
+    return render_template('index.html', default_project=active_default)
 
 @app.route('/api/projects')
 def get_projects():
@@ -1545,6 +1599,14 @@ def parse_single_yaml_file(path, default_station_label="Station"):
     # Strip long hex hash string (e.g., _8d6cecc0972ecd58da6e8cba)
     clean_name = re.sub(r'_[0-9a-fA-F]{16,32}', '', clean_name)
     clean_name = re.sub(r'\.yaml|\.yml', '', clean_name, flags=re.IGNORECASE)
+    # Strip version suffixes like _v2, _v3, _v5 at the end
+    clean_name = re.sub(r'_v\d+$', '', clean_name, flags=re.IGNORECASE)
+    # Strip SanMiguel prefixes
+    clean_name = re.sub(r'^sanmiguel_ct_dvt_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^sanmiguel_dvt_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^sanmiguel_ct_', '', clean_name, flags=re.IGNORECASE)
+    clean_name = re.sub(r'^sanmiguel_', '', clean_name, flags=re.IGNORECASE)
+    # Strip Clemente prefixes
     clean_name = re.sub(r'^clemente_ct_maxq_mp_', '', clean_name, flags=re.IGNORECASE)
     clean_name = re.sub(r'^clemente_maxq_mp_', '', clean_name, flags=re.IGNORECASE)
     clean_name = re.sub(r'^clemente_mp_', '', clean_name, flags=re.IGNORECASE)
@@ -3713,6 +3775,8 @@ def api_export_fava_draft():
     )
 
 
+LATEST_FRU_VER_CACHE = {}
+
 def get_latest_fru_version(project_id='clemente'):
     fru_dir = os.path.join(DATA_DIR, project_id, 'fru')
     if not os.path.exists(fru_dir):
@@ -3725,17 +3789,25 @@ def get_latest_fru_version(project_id='clemente'):
     xlsx_files.sort(reverse=True)
     latest_file = os.path.join(fru_dir, xlsx_files[0])
     try:
-        wb = load_workbook(latest_file, data_only=True)
+        mtime = os.path.getmtime(latest_file)
+        cache_key = (latest_file, mtime)
+        if cache_key in LATEST_FRU_VER_CACHE:
+            return LATEST_FRU_VER_CACHE[cache_key]
+
+        wb = openpyxl.load_workbook(latest_file, data_only=True, read_only=True)
         for sname in wb.sheetnames:
             if 'VERSION' in sname.upper():
                 ws = wb[sname]
                 last_ver = None
-                for r in range(1, ws.max_row + 1):
-                    val = ws.cell(row=r, column=2).value or ws.cell(row=r, column=1).value
+                for r in ws.iter_rows(values_only=True):
+                    val = r[1] if len(r) > 1 else (r[0] if len(r) > 0 else None)
                     if val and str(val).strip().lower() != 'fru version':
                         last_ver = str(val).strip()
+                wb.close()
                 if last_ver:
+                    LATEST_FRU_VER_CACHE[cache_key] = last_ver
                     return last_ver
+        wb.close()
     except Exception as e:
         print(f"Error reading FRU file: {e}")
     return '0.05A'
@@ -3973,7 +4045,22 @@ def api_debug_search():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8055))
+    default_p = int(os.environ.get('PORT', 8055))
+    port = default_p
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('0.0.0.0', default_p))
+    except OSError:
+        for try_p in [8056, 8057, 8058, 8059, 8060]:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('0.0.0.0', try_p))
+                    port = try_p
+                    break
+            except OSError:
+                continue
+
     debug_mode = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    print(f"[Server Launch] Running on http://localhost:{port} (Project: {DEFAULT_PROJECT})")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
 

@@ -1,5 +1,15 @@
 import os
 import sys
+
+# Parse CLI project parameter before importing Flask app
+for i, arg in enumerate(sys.argv):
+    arg_lower = arg.lower()
+    if arg_lower in ['--project', '-p', '--proj', '-proj', '--p']:
+        if i + 1 < len(sys.argv):
+            os.environ['DEFAULT_PROJECT'] = sys.argv[i + 1]
+    elif arg_lower.startswith('--project=') or arg_lower.startswith('-p='):
+        os.environ['DEFAULT_PROJECT'] = arg.split('=', 1)[1]
+
 import socket
 import threading
 import webview

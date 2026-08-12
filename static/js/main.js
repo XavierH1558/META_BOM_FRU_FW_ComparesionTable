@@ -86,7 +86,7 @@ const appState = {
 // ============================================================
 // MULTI-PROJECT SUPPORT
 // ============================================================
-let currentProject = 'clemente'; // default project set to Clemente (GB300)
+let currentProject = (typeof window !== 'undefined' && window.DEFAULT_PROJECT) ? window.DEFAULT_PROJECT : 'clemente';
 
 const PROJECT_META = {
     sanmiguel: {
@@ -209,6 +209,16 @@ function showSuccessToast(title = '✅ 載入與比對分析完成！', subMessa
             }, 400);
         }, 3200);
     }
+}
+
+function showToast(message, type = 'info') {
+    let subMsg = '';
+    if (type === 'info') subMsg = '系統提示';
+    else if (type === 'success') subMsg = '操作成功';
+    else if (type === 'warning') subMsg = '提醒注意';
+    else if (type === 'danger' || type === 'error') subMsg = '錯誤警告';
+
+    showSuccessToast(message, subMsg);
 }
 
 function stopProgressSequenceSuccess(customSuccessTitle = '✅ 比對與載入分析完成！', customSuccessSub = 'Comparison table rendered successfully') {
@@ -346,6 +356,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 
 function initProjectSwitcher() {
+    if (typeof window !== 'undefined' && window.DEFAULT_PROJECT) {
+        currentProject = window.DEFAULT_PROJECT;
+    }
+    const meta = PROJECT_META[currentProject];
+    if (meta) {
+        document.body.classList.remove('project-sanmiguel', 'project-clemente');
+        document.body.classList.add(`project-${currentProject}`);
+        const brandTitle = document.getElementById('app-brand-title');
+        if (brandTitle) brandTitle.textContent = meta.brandTitle;
+        document.querySelectorAll('.project-pill-btn, .project-option').forEach(opt => {
+            opt.classList.toggle('active', opt.getAttribute('data-project') === currentProject);
+        });
+    }
+
     document.querySelectorAll('.project-pill-btn, .project-option').forEach(opt => {
         opt.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -398,14 +422,14 @@ async function switchProject(projectId) {
     appState.matrix = null;
     appState.matrixCompare = null;
     appState.yamlCompare = null;
-    appState.selectedFiles = { bkc: null, fru_single: null, fru_dvt: null, fru_pvt: null, matrix: null, yaml_1: null, yaml_2: null, yaml_3: null };
+    appState.selectedFiles = { bkc: null, fru_single: null, fru_dvt: null, fru_pvt: null, matrix: null, yaml_1: null, yaml_2: null, yaml_3: null, yaml_4: null, yaml_5: null };
 
     // Reset file and sheet select dropdown values in DOM to prevent cross-project path leakage
     [
         'bkc-file-select', 'bkc-sheet-select',
         'fru-single-file-select', 'fru-single-sheet-select', 'fru-dvt-file-select', 'fru-pvt-file-select', 'fru-base-sheet-select', 'fru-target-sheet-select',
         'matrix-file-select', 'matrix-sheet-select', 'matrix-base-file-select', 'matrix-target-file-select', 'matrix-base-sheet-select', 'matrix-target-sheet-select',
-        'yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-bkc-file-select', 'yaml-bkc-sheet-select'
+        'yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-file-select-4', 'yaml-file-select-5', 'yaml-bkc-file-select', 'yaml-bkc-sheet-select'
     ].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
@@ -456,6 +480,7 @@ function addAndSelectOption(selectElement, filePath) {
             selectElement.selectedIndex = i;
             selectElement.options[i].selected = true;
             selectElement.value = opt.value;
+            selectElement.dispatchEvent(new Event('change'));
             return true;
         }
     }
@@ -466,22 +491,29 @@ function addAndSelectOption(selectElement, filePath) {
     newOpt.selected = true;
     selectElement.appendChild(newOpt);
     selectElement.value = filePath;
+    selectElement.dispatchEvent(new Event('change'));
     return true;
 }
 
 function assignUploadedYamlPathsToSlots(uploadedPaths) {
     if (!uploadedPaths || uploadedPaths.length === 0) return;
 
-    const s1 = document.getElementById('yaml-file-select-1');
-    const s2 = document.getElementById('yaml-file-select-2');
-    const s3 = document.getElementById('yaml-file-select-3');
+    const slots = [
+        document.getElementById('yaml-file-select-1'),
+        document.getElementById('yaml-file-select-2'),
+        document.getElementById('yaml-file-select-3'),
+        document.getElementById('yaml-file-select-4'),
+        document.getElementById('yaml-file-select-5')
+    ];
 
-    const assigned = [null, null, null];
+    const maxSlots = (typeof currentFavaStage !== 'undefined' && currentFavaStage === 'L10') ? 3 : 5;
+
+    const assigned = [null, null, null, null, null];
     const unassigned = [];
 
     uploadedPaths.forEach(path => {
         const lower = path.toLowerCase();
-        if (lower.includes('station1') || lower.includes('station_1') || lower.includes('st1') || lower.includes('fvt') || lower.includes('fdt')) {
+        if (lower.includes('station1') || lower.includes('station_1') || lower.includes('st1') || lower.includes('fvt') || lower.includes('fdt') || lower.includes('pretest')) {
             if (!assigned[0]) assigned[0] = path;
             else unassigned.push(path);
         } else if (lower.includes('station2') || lower.includes('station_2') || lower.includes('st2') || lower.includes('runin') || lower.includes('fro')) {
@@ -490,24 +522,42 @@ function assignUploadedYamlPathsToSlots(uploadedPaths) {
         } else if (lower.includes('station3') || lower.includes('station_3') || lower.includes('st3') || lower.includes('ort') || lower.includes('fft')) {
             if (!assigned[2]) assigned[2] = path;
             else unassigned.push(path);
+        } else if (lower.includes('station4') || lower.includes('station_4') || lower.includes('st4') || lower.includes('rmc') || lower.includes('fst')) {
+            if (!assigned[3]) assigned[3] = path;
+            else unassigned.push(path);
+        } else if (lower.includes('station5') || lower.includes('station_5') || lower.includes('st5') || lower.includes('nvswitch') || lower.includes('switch') || lower.includes('autouplink') || lower.includes('autoconfig') || lower.includes('netblade') || lower.includes('nettest')) {
+            if (!assigned[4]) assigned[4] = path;
+            else unassigned.push(path);
         } else {
             unassigned.push(path);
         }
     });
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < maxSlots; i++) {
         if (!assigned[i] && unassigned.length > 0) {
             assigned[i] = unassigned.shift();
         }
     }
 
-    if (assigned[0] && s1) addAndSelectOption(s1, assigned[0]);
-    if (assigned[1] && s2) addAndSelectOption(s2, assigned[1]);
-    if (assigned[2] && s3) addAndSelectOption(s3, assigned[2]);
+    // Compact assigned array to remove middle empty gaps (e.g., [A, B, null, C, D] -> [A, B, C, D, null])
+    const filled = assigned.filter(Boolean);
+    const finalAssigned = [null, null, null, null, null];
+    for (let i = 0; i < filled.length; i++) {
+        finalAssigned[i] = filled[i];
+    }
+
+    for (let i = 0; i < 5; i++) {
+        if (finalAssigned[i] && slots[i]) {
+            addAndSelectOption(slots[i], finalAssigned[i]);
+        }
+    }
+    if (typeof checkActiveYamlAndSetBtnState === 'function') {
+        checkActiveYamlAndSetBtnState();
+    }
 }
 
 function initYamlManualUploads() {
-    [1, 2, 3].forEach(slotNum => {
+    [1, 2, 3, 4, 5].forEach(slotNum => {
         const btn = document.getElementById(`btn-upload-yaml-${slotNum}`);
         const input = document.getElementById(`yaml-file-input-${slotNum}`);
         const select = document.getElementById(`yaml-file-select-${slotNum}`);
@@ -1486,6 +1536,8 @@ function initUploadModal() {
                         const s1 = document.getElementById('yaml-file-select-1');
                         const s2 = document.getElementById('yaml-file-select-2');
                         const s3 = document.getElementById('yaml-file-select-3');
+                        const s4 = document.getElementById('yaml-file-select-4');
+                        const s5 = document.getElementById('yaml-file-select-5');
 
                         const btnYamlTab = document.querySelector('.tab-btn[data-tab="tab-yaml"]');
                         if (btnYamlTab) btnYamlTab.click();
@@ -1495,6 +1547,8 @@ function initUploadModal() {
                         if (s1 && (!s1.value || s1.value === '')) targetSel = s1;
                         else if (s2 && (!s2.value || s2.value === '')) targetSel = s2;
                         else if (s3 && (!s3.value || s3.value === '')) targetSel = s3;
+                        else if (s4 && (!s4.value || s4.value === '')) targetSel = s4;
+                        else if (s5 && (!s5.value || s5.value === '')) targetSel = s5;
                         else targetSel = s1;
 
                         selectOptionByValueOrFilename(targetSel, targetVal);
@@ -1547,7 +1601,7 @@ function initYamlDragAndDrop() {
         });
     });
 
-    const slots = [1, 2, 3].map(id => document.getElementById(`slot-card-${id}`)).filter(Boolean);
+    const slots = [1, 2, 3, 4, 5].map(id => document.getElementById(`slot-card-${id}`)).filter(Boolean);
     const bkcSlot = document.getElementById('slot-card-bkc');
     if (bkcSlot) slots.push(bkcSlot);
 
@@ -1604,7 +1658,7 @@ function initYamlDragAndDrop() {
                 return;
             }
 
-            // Slot 1, 2, or 3
+            // Slot 1, 2, 3, 4, or 5
             const files = allFiles.filter(f => f.name.toLowerCase().endsWith('.yaml') || f.name.toLowerCase().endsWith('.yml'));
             if (files.length === 0) return;
 
@@ -1665,7 +1719,8 @@ function initYamlDragAndDrop() {
         try {
             const uploadedPaths = [];
             let lastError = null;
-            for (const file of files.slice(0, 3)) {
+            const maxDragFiles = (typeof currentFavaStage !== 'undefined' && currentFavaStage === 'L10') ? 3 : 5;
+            for (const file of files.slice(0, maxDragFiles)) {
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('tab_type', 'yaml');
@@ -4412,6 +4467,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 slotsPanel.classList.add('stage-l11');
                 slotsPanel.classList.remove('stage-l10');
             }
+        if (typeof checkActiveYamlAndSetBtnState === 'function') {
+            checkActiveYamlAndSetBtnState();
         }
     }
 
