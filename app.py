@@ -72,9 +72,13 @@ def handle_file_too_large(e):
 
 @app.after_request
 def add_cache_busting_headers(response):
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    else:
+        # Allow static files (JS, CSS, images, webfonts) to be cached by browser
+        response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
 
 
@@ -262,6 +266,8 @@ def is_allowed_path(path):
             continue
     return False
 
+_VALID_BKC_CACHE = {}
+
 def is_valid_bkc_table(file_path):
     filename = os.path.basename(file_path).lower()
     if any(k in filename for k in ['versiontracker', 'version_tracker', 'changelog', 'change_log', 'release_note', 'releasenote', 'history', 'revision']):
@@ -269,10 +275,20 @@ def is_valid_bkc_table(file_path):
     if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
         return True
     try:
+        mtime = os.path.getmtime(file_path)
+        cache_key = (file_path, mtime)
+        if cache_key in _VALID_BKC_CACHE:
+            return _VALID_BKC_CACHE[cache_key]
+    except Exception:
+        cache_key = None
+
+    try:
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
         valid_sheets = [s for s in wb.sheetnames if not any(k in s.lower() for k in ['change list', 'changelog', 'history', 'readme', 'instructions', 'notes', 'versiontracker'])]
         if not valid_sheets:
             wb.close()
+            if cache_key:
+                _VALID_BKC_CACHE[cache_key] = False
             return False
         for sname in valid_sheets[:3]:
             ws = wb[sname]
@@ -280,10 +296,16 @@ def is_valid_bkc_table(file_path):
                 row_str = ' '.join([str(c).lower() for c in row if c is not None])
                 if any(k in row_str for k in ['component', 'sub component', 'fw version', 'control table', 'bkc version', 'dvt', 'evt', 'pvt']):
                     wb.close()
+                    if cache_key:
+                        _VALID_BKC_CACHE[cache_key] = True
                     return True
         wb.close()
     except Exception:
+        if cache_key:
+            _VALID_BKC_CACHE[cache_key] = False
         return False
+    if cache_key:
+        _VALID_BKC_CACHE[cache_key] = False
     return False
 
 def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
@@ -2919,7 +2941,7 @@ def api_yaml_version_diff():
             'target_version': t_item.get('yaml_version', 'N/A'),
             'status': status,
             'status_label': status_label,
-            'command': t_item.get('command') or b_item.get('command') or ''
+        'command': t_item.get('command') or b_item.get('command') or ''
         })
 
     return jsonify({
@@ -2950,6 +2972,8 @@ def api_history():
     return jsonify({'success': True, 'history': history})
 
 
+_RELEASE_SUMMARY_CACHE = {}
+
 
 @app.route('/api/release-summary', methods=['GET'])
 def api_release_summary():
@@ -2959,36 +2983,40 @@ def api_release_summary():
     proj_cfg = get_project_config(project_id)
     proj_defaults = proj_cfg['default_paths']
     watchlist = load_watchlist()
-    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
-    # Gather BKC stats
     bkc_file_req = request.args.get('bkc_file')
     bkc_p = resolve_file_path('bkc', bkc_file_req or proj_defaults.get('bkc', ''), project_id)
-    b_rows, b_sheets, _ = read_file_safe(bkc_p)
-    bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
-    # Gather FRU compare stats using user selected files & sheets
     dvt_file_req = request.args.get('fru_dvt_file')
     pvt_file_req = request.args.get('fru_pvt_file')
     dvt_sheet_req = request.args.get('fru_base_sheet')
     pvt_sheet_req = request.args.get('fru_target_sheet')
-
     dvt_p = resolve_file_path('fru', dvt_file_req or proj_defaults.get('fru_dvt', ''), project_id)
     pvt_p = resolve_file_path('fru', pvt_file_req or proj_defaults.get('fru_pvt', ''), project_id)
+
+    mat_b_file_req = request.args.get('matrix_base_file')
+    mat_t_file_req = request.args.get('matrix_target_file')
+    mat_b_sheet_req = request.args.get('matrix_base_sheet')
+    mat_t_sheet_req = request.args.get('matrix_target_sheet')
+    mat_b_p = resolve_file_path('matrix', mat_b_file_req or proj_defaults.get('matrix', ''), project_id)
+    mat_t_p = resolve_file_path('matrix', mat_t_file_req or proj_defaults.get('matrix', ''), project_id)
+
+    paths_to_check = [bkc_p, dvt_p, pvt_p, mat_b_p, mat_t_p]
+    mtimes = tuple(os.path.getmtime(p) if p and os.path.exists(p) else 0 for p in paths_to_check)
+    cache_key = (project_id, tab, bkc_p, dvt_p, pvt_p, mat_b_p, mat_t_p, dvt_sheet_req, pvt_sheet_req, mat_b_sheet_req, mat_t_sheet_req, mtimes)
+    if cache_key in _RELEASE_SUMMARY_CACHE:
+        return jsonify(_RELEASE_SUMMARY_CACHE[cache_key])
+
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    # Gather BKC stats
+    b_rows, b_sheets, _ = read_file_safe(bkc_p)
+    bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
     r1, s1, _ = read_file_safe(dvt_p, sheet_name=dvt_sheet_req)
     r2, s2, _ = read_file_safe(pvt_p, sheet_name=pvt_sheet_req)
     fru_res = compare_two_fru_sheets(r1, r2)
     
-    # Gather Matrix compare stats using user selected files & sheets
-    mat_b_file_req = request.args.get('matrix_base_file')
-    mat_t_file_req = request.args.get('matrix_target_file')
-    mat_b_sheet_req = request.args.get('matrix_base_sheet')
-    mat_t_sheet_req = request.args.get('matrix_target_sheet')
-
-    mat_b_p = resolve_file_path('matrix', mat_b_file_req or proj_defaults.get('matrix', ''), project_id)
-    mat_t_p = resolve_file_path('matrix', mat_t_file_req or proj_defaults.get('matrix', ''), project_id)
-
     r_b, s_b, _ = read_file_safe(mat_b_p, sheet_name=mat_b_sheet_req)
     r_t, s_t, _ = read_file_safe(mat_t_p, sheet_name=mat_t_sheet_req)
     
@@ -3049,12 +3077,14 @@ def api_release_summary():
         y1 = request.args.get('yaml_1')
         y2 = request.args.get('yaml_2')
         y3 = request.args.get('yaml_3')
-        y_files = [f for f in [y1, y2, y3] if f]
-        bkc_f = request.args.get('bkc_file')
-        bkc_s = request.args.get('bkc_sheet')
-        y_res = compare_yaml_with_bkc(y_files, bkc_file_path=bkc_f, bkc_sheet_name=bkc_s, project_id=project_id)
+        y4 = request.args.get('yaml_4')
+        y5 = request.args.get('yaml_5')
+        selected_yamls = [y for y in [y1, y2, y3, y4, y5] if y]
+        y_res = compare_yaml_with_bkc(selected_yamls, bkc_file_path=bkc_p, project_id=project_id)
         
         md.append(f"# 🧪 Test Suite (YAML) Compliance Summary")
+        md.append(f"**Generated Time:** `{now_str}`")
+        md.append(f"- **Active Project**: `{project_id.upper()}`")
         md.append(f"- **BKC Reference File**: `{y_res['summary']['bkc_file']}` (Sheet: `{y_res['summary']['bkc_sheet']}`)")
         md.append(f"- **Overall Compliance Rate**: **{y_res['summary']['compliance_rate']}%** ({y_res['summary']['matched_count']}/{y_res['summary']['total_yaml_checks']} items compliant)")
         md.append(f"- **Mismatches / Violations**: {y_res['summary']['mismatch_count']} items")
@@ -3100,13 +3130,15 @@ def api_release_summary():
 
     impact_count = len([fld for fld in fru_res.get('fields', []) if fld.get('is_diff') and any(w.lower() in f"{fld.get('section','')} {fld.get('field_name','')}".lower() for w in watchlist)])
 
-    return jsonify({
+    response_payload = {
         'success': True,
         'tab': tab,
         'markdown': md_text,
         'text': plain_text,
         'watchlist_impacts_count': impact_count
-    })
+    }
+    _RELEASE_SUMMARY_CACHE[cache_key] = response_payload
+    return jsonify(response_payload)
 
 
 @app.route('/api/export-excel', methods=['GET'])

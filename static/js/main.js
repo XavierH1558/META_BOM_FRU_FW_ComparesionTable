@@ -348,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initYamlManualUploads();
     initYamlDragAndDrop();
     initProjectSwitcher();
+    initStageToggleListeners();
     fetchAllData();
 });
 
@@ -4439,7 +4440,7 @@ let currentFavaTsvText = '';
 let currentFavaStage = 'L10';
 
 // Initialize Stage Toggle & Clear Uploaded YAMLs Listeners
-document.addEventListener('DOMContentLoaded', () => {
+function initStageToggleListeners() {
     const btnStageL10 = document.getElementById('btn-stage-l10');
     const btnStageL11 = document.getElementById('btn-stage-l11');
     const btnClearYamls = document.getElementById('btn-clear-uploaded-yamls');
@@ -4611,7 +4612,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }
-});
+}
 
 function validateStageYamlFiles(changedSelectId = null) {
     const selectIds = ['yaml-file-select-1', 'yaml-file-select-2', 'yaml-file-select-3', 'yaml-file-select-4', 'yaml-file-select-5'];
@@ -4684,13 +4685,13 @@ function validateStageYamlFiles(changedSelectId = null) {
     return { valid: true };
 }
 
-function checkActiveYamlAndSetBtnState() {
-    function getSlotVal(id) {
-        const sel = document.getElementById(id);
-        if (!sel) return '';
-        return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
-    }
+function getSlotVal(id) {
+    const sel = document.getElementById(id);
+    if (!sel) return '';
+    return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
+}
 
+function checkActiveYamlAndSetBtnState() {
     const y1 = getSlotVal('yaml-file-select-1');
     const y2 = getSlotVal('yaml-file-select-2');
     const y3 = getSlotVal('yaml-file-select-3');
@@ -4736,11 +4737,6 @@ function checkActiveYamlAndSetBtnState() {
 }
 
 async function openFavaPreviewModal() {
-    function getSlotVal(id) {
-        const sel = document.getElementById(id);
-        if (!sel) return '';
-        return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
-    }
     const y1 = getSlotVal('yaml-file-select-1');
     const y2 = getSlotVal('yaml-file-select-2');
     const y3 = getSlotVal('yaml-file-select-3');
@@ -5031,11 +5027,6 @@ async function showProjectMismatchModal(errMsg) {
 // Test Suite Coverage Matrix Preview Modal Logic
 // -------------------------------------------------------------
 async function openCoveragePreviewModal() {
-    function getSlotVal(id) {
-        const sel = document.getElementById(id);
-        if (!sel) return '';
-        return (sel.value || sel.options[sel.selectedIndex]?.value || '').trim();
-    }
     const y1 = getSlotVal('yaml-file-select-1');
     const y2 = getSlotVal('yaml-file-select-2');
     const y3 = getSlotVal('yaml-file-select-3');

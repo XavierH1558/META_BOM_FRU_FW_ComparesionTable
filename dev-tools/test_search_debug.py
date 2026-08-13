@@ -21,6 +21,7 @@ with app.test_client() as client:
     res = client.get('/api/global-search?q=15-106079')
     output_data['api_response'] = res.get_json()
 
+os.makedirs('scratch', exist_ok=True)
 with open('scratch/search_debug_result.json', 'w', encoding='utf-8') as out_f:
     json.dump(output_data, out_f, indent=2, ensure_ascii=False)
 

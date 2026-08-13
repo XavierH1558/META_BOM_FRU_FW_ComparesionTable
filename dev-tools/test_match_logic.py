@@ -1,8 +1,9 @@
 import os
 import re
-from app import resolve_file_path, read_file_safe, parse_bkc_items, parse_single_yaml_file, DEFAULT_PATHS
+from app import resolve_file_path, read_file_safe, parse_bkc_items, parse_single_yaml_file, PROJECT_CONFIGS
 
-bkc_p = resolve_file_path('bkc', DEFAULT_PATHS['bkc'])
+default_bkc = PROJECT_CONFIGS['sanmiguel']['default_paths']['bkc']
+bkc_p = resolve_file_path('bkc', default_bkc, 'sanmiguel')
 b_rows, _, _ = read_file_safe(bkc_p)
 bkc_items = parse_bkc_items(b_rows) if b_rows else []
 
