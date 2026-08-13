@@ -681,11 +681,15 @@ function initEventListeners() {
             const y1 = document.getElementById('yaml-file-select-1')?.value;
             const y2 = document.getElementById('yaml-file-select-2')?.value;
             const y3 = document.getElementById('yaml-file-select-3')?.value;
+            const y4 = document.getElementById('yaml-file-select-4')?.value;
+            const y5 = document.getElementById('yaml-file-select-5')?.value;
             const bkcF = document.getElementById('yaml-bkc-file-select')?.value;
             const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value;
             if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
             if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
             if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+            if (y4) url += `&yaml_4=${encodeURIComponent(y4)}`;
+            if (y5) url += `&yaml_5=${encodeURIComponent(y5)}`;
             if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
             if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
         }
@@ -802,6 +806,8 @@ async function copyTextToClipboard(text) {
             const y1 = document.getElementById('yaml-file-select-1')?.value || '';
             const y2 = document.getElementById('yaml-file-select-2')?.value || '';
             const y3 = document.getElementById('yaml-file-select-3')?.value || '';
+            const y4 = document.getElementById('yaml-file-select-4')?.value || '';
+            const y5 = document.getElementById('yaml-file-select-5')?.value || '';
             const bkcF = document.getElementById('yaml-bkc-file-select')?.value || '';
             const bkcS = document.getElementById('yaml-bkc-sheet-select')?.value || '';
 
@@ -809,6 +815,8 @@ async function copyTextToClipboard(text) {
             if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
             if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
             if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+            if (y4) url += `&yaml_4=${encodeURIComponent(y4)}`;
+            if (y5) url += `&yaml_5=${encodeURIComponent(y5)}`;
             if (bkcF) url += `&bkc_file=${encodeURIComponent(bkcF)}`;
             if (bkcS) url += `&bkc_sheet=${encodeURIComponent(bkcS)}`;
 
@@ -864,12 +872,16 @@ function getSummaryApiUrl(targetTab) {
     const y1 = document.getElementById('yaml-file-select-1')?.value;
     const y2 = document.getElementById('yaml-file-select-2')?.value;
     const y3 = document.getElementById('yaml-file-select-3')?.value;
+    const y4 = document.getElementById('yaml-file-select-4')?.value;
+    const y5 = document.getElementById('yaml-file-select-5')?.value;
     const yamlBkcFile = document.getElementById('yaml-bkc-file-select')?.value;
     const yamlBkcSheet = document.getElementById('yaml-bkc-sheet-select')?.value;
 
     if (y1) url += `&yaml_1=${encodeURIComponent(y1)}`;
     if (y2) url += `&yaml_2=${encodeURIComponent(y2)}`;
     if (y3) url += `&yaml_3=${encodeURIComponent(y3)}`;
+    if (y4) url += `&yaml_4=${encodeURIComponent(y4)}`;
+    if (y5) url += `&yaml_5=${encodeURIComponent(y5)}`;
     if (targetTab === 'yaml') {
         if (yamlBkcFile) url += `&bkc_file=${encodeURIComponent(yamlBkcFile)}`;
         if (yamlBkcSheet) url += `&bkc_sheet=${encodeURIComponent(yamlBkcSheet)}`;

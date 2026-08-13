@@ -133,6 +133,17 @@ class TestV2EnhancementSuite(unittest.TestCase):
         self.assertIn('summary', data)
         self.assertIn('items', data)
 
+    def test_5slot_yaml_export_and_summary(self):
+        """Test /api/export-excel and /api/release-summary with 5 YAML slots."""
+        res_excel = self.client.get('/api/export-excel?type=yaml&yaml_1=sanmiguel_dvt_fst.yaml&yaml_4=sanmiguel_dvt_runin_v2.yaml')
+        self.assertEqual(res_excel.status_code, 200)
+
+        res_sum = self.client.get('/api/release-summary?tab=all&yaml_1=sanmiguel_dvt_fst.yaml&yaml_5=sanmiguel_dvt_pretest.yaml')
+        self.assertEqual(res_sum.status_code, 200)
+        data = res_sum.get_json()
+        self.assertTrue(data['success'])
+        self.assertIn('SanMiguel', data['markdown'])
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -2985,6 +2985,7 @@ def api_release_summary():
     watchlist = load_watchlist()
 
     bkc_file_req = request.args.get('bkc_file')
+    bkc_sheet_req = request.args.get('bkc_sheet')
     bkc_p = resolve_file_path('bkc', bkc_file_req or proj_defaults.get('bkc', ''), project_id)
     
     dvt_file_req = request.args.get('fru_dvt_file')
@@ -3001,16 +3002,33 @@ def api_release_summary():
     mat_b_p = resolve_file_path('matrix', mat_b_file_req or proj_defaults.get('matrix', ''), project_id)
     mat_t_p = resolve_file_path('matrix', mat_t_file_req or proj_defaults.get('matrix', ''), project_id)
 
-    paths_to_check = [bkc_p, dvt_p, pvt_p, mat_b_p, mat_t_p]
+    y_params = [request.args.get(f'yaml_{i}') for i in range(1, 6)]
+    selected_yamls = [y for y in y_params if y]
+
+    avail_yamls = scan_files_in_dirs('yaml', project_id)
+    yaml_paths = []
+    for yf in (selected_yamls or [av['path'] for av in avail_yamls]):
+        if os.path.exists(yf):
+            yaml_paths.append(os.path.abspath(yf))
+        else:
+            for av in avail_yamls:
+                if av['filename'] == yf or os.path.basename(av['path']) == yf:
+                    yaml_paths.append(os.path.abspath(av['path']))
+                    break
+
+    disp_file = os.path.join(DATA_DIR, project_id, 'yaml_dispositions.json')
+    sign_file = os.path.join(DATA_DIR, project_id, 'signoffs.json')
+
+    paths_to_check = [bkc_p, dvt_p, pvt_p, mat_b_p, mat_t_p, disp_file, sign_file] + yaml_paths
     mtimes = tuple(os.path.getmtime(p) if p and os.path.exists(p) else 0 for p in paths_to_check)
-    cache_key = (project_id, tab, bkc_p, dvt_p, pvt_p, mat_b_p, mat_t_p, dvt_sheet_req, pvt_sheet_req, mat_b_sheet_req, mat_t_sheet_req, mtimes)
+    cache_key = (project_id, tab, bkc_p, bkc_sheet_req, dvt_p, pvt_p, mat_b_p, mat_t_p, dvt_sheet_req, pvt_sheet_req, mat_b_sheet_req, mat_t_sheet_req, tuple(selected_yamls), mtimes)
     if cache_key in _RELEASE_SUMMARY_CACHE:
         return jsonify(_RELEASE_SUMMARY_CACHE[cache_key])
 
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
     # Gather BKC stats
-    b_rows, b_sheets, _ = read_file_safe(bkc_p)
+    b_rows, b_sheets, _ = read_file_safe(bkc_p, sheet_name=bkc_sheet_req)
     bkc_items = parse_bkc_items(b_rows) if b_rows else []
     
     r1, s1, _ = read_file_safe(dvt_p, sheet_name=dvt_sheet_req)
@@ -3074,13 +3092,7 @@ def api_release_summary():
                 md.append("- *No build matrix differences detected between selected sheets.*")
 
     elif tab == 'yaml':
-        y1 = request.args.get('yaml_1')
-        y2 = request.args.get('yaml_2')
-        y3 = request.args.get('yaml_3')
-        y4 = request.args.get('yaml_4')
-        y5 = request.args.get('yaml_5')
-        selected_yamls = [y for y in [y1, y2, y3, y4, y5] if y]
-        y_res = compare_yaml_with_bkc(selected_yamls, bkc_file_path=bkc_p, project_id=project_id)
+        y_res = compare_yaml_with_bkc(selected_yamls, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet_req, project_id=project_id)
         
         md.append(f"# 🧪 Test Suite (YAML) Compliance Summary")
         md.append(f"**Generated Time:** `{now_str}`")
@@ -3099,10 +3111,11 @@ def api_release_summary():
             md.append("- *All test suite firmware/hardware specifications comply with BKC table.*")
 
     else: # ALL
-        y_res = compare_yaml_with_bkc([], bkc_file_path=bkc_p)
+        y_res = compare_yaml_with_bkc(selected_yamls, bkc_file_path=bkc_p, bkc_sheet_name=bkc_sheet_req, project_id=project_id)
         y_sum = y_res['summary']
 
-        md.append(f"# 🚀 META VR200 (SanMiguel) All-in-One Release Summary Report")
+        proj_display = 'SanMiguel' if project_id == 'sanmiguel' else ('Clemente' if project_id == 'clemente' else project_id.title())
+        md.append(f"# 🚀 META VR200 ({proj_display}) All-in-One Release Summary Report")
         md.append(f"**Generated Time:** `{now_str}`")
         md.append(f"**Environment:** Hardware & Firmware Verification Platform\n")
 
@@ -3174,7 +3187,9 @@ def api_export_excel():
         y1 = request.args.get('yaml_1')
         y2 = request.args.get('yaml_2')
         y3 = request.args.get('yaml_3')
-        y_files = [f for f in [y1, y2, y3] if f]
+        y4 = request.args.get('yaml_4')
+        y5 = request.args.get('yaml_5')
+        y_files = [f for f in [y1, y2, y3, y4, y5] if f]
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
 
@@ -3809,7 +3824,9 @@ def api_export_fava_draft():
 
 LATEST_FRU_VER_CACHE = {}
 
-def get_latest_fru_version(project_id='clemente'):
+def get_latest_fru_version(project_id=None):
+    if not project_id:
+        project_id = DEFAULT_PROJECT
     fru_dir = os.path.join(DATA_DIR, project_id, 'fru')
     if not os.path.exists(fru_dir):
         return '0.05A'
