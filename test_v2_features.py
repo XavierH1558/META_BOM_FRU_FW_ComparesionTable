@@ -16,7 +16,7 @@ class TestV2EnhancementSuite(unittest.TestCase):
 
     def test_release_summary(self):
         """Test /api/release-summary returns structured markdown and text."""
-        res = self.client.get('/api/release-summary')
+        res = self.client.get('/api/release-summary?project=sanmiguel')
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertTrue(data['success'])
@@ -138,7 +138,7 @@ class TestV2EnhancementSuite(unittest.TestCase):
         res_excel = self.client.get('/api/export-excel?type=yaml&yaml_1=sanmiguel_dvt_fst.yaml&yaml_4=sanmiguel_dvt_runin_v2.yaml')
         self.assertEqual(res_excel.status_code, 200)
 
-        res_sum = self.client.get('/api/release-summary?tab=all&yaml_1=sanmiguel_dvt_fst.yaml&yaml_5=sanmiguel_dvt_pretest.yaml')
+        res_sum = self.client.get('/api/release-summary?project=sanmiguel&tab=all&yaml_1=sanmiguel_dvt_fst.yaml&yaml_5=sanmiguel_dvt_pretest.yaml')
         self.assertEqual(res_sum.status_code, 200)
         data = res_sum.get_json()
         self.assertTrue(data['success'])

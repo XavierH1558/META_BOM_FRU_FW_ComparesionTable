@@ -22,9 +22,11 @@ def build():
         "--windowed",
         "--name=META_BOM_Comparison_App",
         f"--add-data=templates{sep}templates",
-        f"--add-data=static{sep}static",
-        "desktop_app.py"
+        f"--add-data=static{sep}static"
     ]
+    if os.path.exists("data"):
+        cmd.append(f"--add-data=data{sep}data")
+    cmd.append("desktop_app.py")
 
     print(f"[Build] Command: {' '.join(cmd)}")
     result = subprocess.run(cmd)

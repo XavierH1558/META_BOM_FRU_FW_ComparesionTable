@@ -617,34 +617,89 @@ function initYamlManualUploads() {
 
 
 // Tab Switching System
-function initTabs() {
+function switchTab(targetTab) {
     const tabButtons = document.querySelectorAll('.nav-tab');
     const tabContents = document.querySelectorAll('.tab-content');
+    const btn = document.querySelector(`.nav-tab[data-tab="${targetTab}"]`);
+    if (!btn) return;
 
+    appState.activeTab = targetTab;
+    tabButtons.forEach(b => b.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+
+    btn.classList.add('active');
+    const contentEl = document.getElementById(targetTab);
+    if (contentEl) contentEl.classList.add('active');
+
+    // Initialize YAML selectors on first visit to YAML tab without auto-running comparison
+    if (targetTab === 'tab-yaml') {
+        if (!appState.yamlCompare) {
+            initYamlSelectorsOnly();
+        }
+        checkActiveYamlAndSetBtnState();
+    }
+}
+
+function initTabs() {
+    const tabButtons = document.querySelectorAll('.nav-tab');
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const targetTab = btn.getAttribute('data-tab');
-            appState.activeTab = targetTab;
-
-            tabButtons.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
-
-            btn.classList.add('active');
-            document.getElementById(targetTab).classList.add('active');
-
-            // Initialize YAML selectors on first visit to YAML tab without auto-running comparison
-            if (targetTab === 'tab-yaml') {
-                if (!appState.yamlCompare) {
-                    initYamlSelectorsOnly();
-                }
-                checkActiveYamlAndSetBtnState();
-            }
+            switchTab(targetTab);
         });
     });
 }
 
 // Event Listeners for Filters & Controls
 function initEventListeners() {
+    // Global Keyboard Shortcuts (Cmd/Ctrl+K for search, Esc to close modals, Alt+1~6 for tabs)
+    window.addEventListener('keydown', (e) => {
+        // 1. Cmd/Ctrl + K -> Focus Global Search
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            const searchInput = document.getElementById('global-search-input');
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+                showToast('🔍 已聚焦全域搜尋框 (Cmd/Ctrl + K)', 'info');
+            }
+        }
+        // 2. Escape -> Close Modals & Drawers
+        else if (e.key === 'Escape') {
+            const modalIds = [
+                'fava-preview-modal',
+                'project-mismatch-modal',
+                'yaml-patch-modal',
+                'coverage-preview-modal',
+                'global-search-modal'
+            ];
+            modalIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none') {
+                    el.style.display = 'none';
+                }
+            });
+            const drawer = document.getElementById('debug-drawer');
+            if (drawer && drawer.classList.contains('open')) {
+                drawer.classList.remove('open');
+            }
+        }
+        // 3. Alt + 1 ~ 6 -> Switch Tabs
+        else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '6') {
+            e.preventDefault();
+            const tabMap = {
+                '1': 'tab-bkc',
+                '2': 'tab-fru',
+                '3': 'tab-matrix',
+                '4': 'tab-yaml',
+                '5': 'tab-summary',
+                '6': 'tab-gdrive'
+            };
+            const target = tabMap[e.key];
+            if (target) switchTab(target);
+        }
+    });
+
     document.getElementById('btn-refresh').addEventListener('click', async () => {
         showLoading('正在連線 Google Drive 同步最新檔案...', 'Connecting to Google Drive & downloading updated files');
         try {
@@ -666,6 +721,8 @@ function initEventListeners() {
         if (appState.activeTab === 'tab-bkc') tabType = 'bkc';
         else if (appState.activeTab === 'tab-matrix') tabType = 'matrix';
         else if (appState.activeTab === 'tab-yaml') tabType = 'yaml';
+
+        showToast(`📊 正在準備並下載 ${tabType.toUpperCase()} Excel 比較報告...`, 'info');
 
         let url = `/api/export-excel?type=${tabType}&project=${encodeURIComponent(currentProject)}`;
         if (tabType === 'matrix' && appState.matrixMode === 'compare') {
@@ -3417,6 +3474,17 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+// Utility: Real-time Keyword Highlight in Strings
+function highlightMatch(str, query) {
+    if (!str && str !== 0) return '';
+    const safeStr = escapeHtml(String(str));
+    if (!query || !String(query).trim()) return safeStr;
+    const qTrim = String(query).trim();
+    const escapedQuery = qTrim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+    return safeStr.replace(regex, '<mark class="search-highlight">$1</mark>');
+}
+
 function renderGlobalSearchResults(results, q) {
     const container = document.getElementById('global-search-results-container');
     if (!container) return;
@@ -3434,8 +3502,8 @@ function renderGlobalSearchResults(results, q) {
         html += `<h4 style="color: var(--primary-blue); margin-top: 1rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-list-check"></i> BKC Firmware Table Matches (${results.bkc.length})</h4><ul style="list-style: none; padding-left: 0;">`;
         results.bkc.forEach(m => {
             html += `<li style="padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.4rem; border-radius: 8px;">
-                <strong>${escapeHtml(m.category)}</strong> ➔ <span>${escapeHtml(m.group)}</span> / <span style="color: var(--accent-cyan); font-weight: 600;">${escapeHtml(m.sub_component)}</span>
-                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">DVT FW: ${escapeHtml(m.dvt_version)} | PVT FW: ${escapeHtml(m.pvt_version)}</div>
+                <strong>${highlightMatch(m.category, q)}</strong> ➔ <span>${highlightMatch(m.group, q)}</span> / <span style="color: var(--accent-cyan); font-weight: 600;">${highlightMatch(m.sub_component, q)}</span>
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">DVT FW: ${highlightMatch(m.dvt_version, q)} | PVT FW: ${highlightMatch(m.pvt_version, q)}</div>
             </li>`;
         });
         html += `</ul>`;
@@ -3445,8 +3513,8 @@ function renderGlobalSearchResults(results, q) {
         html += `<h4 style="color: var(--warning-amber); margin-top: 1.5rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-code-compare"></i> FRU Spec Matches (${results.fru.length})</h4><ul style="list-style: none; padding-left: 0;">`;
         results.fru.forEach(m => {
             html += `<li style="padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.4rem; border-radius: 8px;">
-                <strong>[${escapeHtml(m.module)}]</strong> <span>${escapeHtml(m.section)}</span> ➔ <span style="color: var(--warning-amber); font-weight: 600;">${escapeHtml(m.field_name)}</span>
-                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">DVT: ${escapeHtml(m.dvt_value)} ➔ PVT: ${escapeHtml(m.pvt_value)}</div>
+                <strong>[${highlightMatch(m.module, q)}]</strong> <span>${highlightMatch(m.section, q)}</span> ➔ <span style="color: var(--warning-amber); font-weight: 600;">${highlightMatch(m.field_name, q)}</span>
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">DVT: ${highlightMatch(m.dvt_value, q)} ➔ PVT: ${highlightMatch(m.pvt_value, q)}</div>
             </li>`;
         });
         html += `</ul>`;
@@ -3456,9 +3524,9 @@ function renderGlobalSearchResults(results, q) {
         html += `<h4 style="color: #a78bfa; margin-top: 1.5rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-table-cells"></i> Build Matrix Matches (${results.matrix.length})</h4><ul style="list-style: none; padding-left: 0;">`;
         results.matrix.forEach(m => {
             const fileBadge = m.file ? `<span class="badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd; font-size:0.75rem; margin-right:0.4rem;"><i class="fa-regular fa-file-excel"></i> ${escapeHtml(m.file)} (${escapeHtml(m.sheet || 'Default')})</span>` : '';
-            const cfgSummary = m.configs ? Object.entries(m.configs).map(([k, v]) => `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join(' | ') : '';
+            const cfgSummary = m.configs ? Object.entries(m.configs).map(([k, v]) => `<strong>${highlightMatch(k, q)}:</strong> ${highlightMatch(v, q)}`).join(' | ') : '';
             html += `<li style="padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--border-color); background: rgba(30, 41, 59, 0.5); margin-bottom: 0.5rem; border-radius: 8px;">
-                <div style="margin-bottom: 0.3rem;">${fileBadge} <strong style="color: #a78bfa; font-size: 0.95rem;">${escapeHtml(m.group_item)}</strong> ➔ <span style="font-weight:600; color:#f8fafc;">${escapeHtml(m.description)}</span></div>
+                <div style="margin-bottom: 0.3rem;">${fileBadge} <strong style="color: #a78bfa; font-size: 0.95rem;">${highlightMatch(m.group_item, q)}</strong> ➔ <span style="font-weight:600; color:#f8fafc;">${highlightMatch(m.description, q)}</span></div>
                 <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.4; background: rgba(15,23,42,0.4); padding: 0.4rem 0.6rem; border-radius: 6px; word-break: break-all;">${cfgSummary}</div>
             </li>`;
         });
@@ -3470,7 +3538,7 @@ function renderGlobalSearchResults(results, q) {
 
 async function loadAndRenderWatchlist() {
     try {
-        const res = await fetch('/api/watchlist');
+        const res = await fetch(`/api/watchlist?project=${encodeURIComponent(currentProject)}`);
         const data = await res.json();
         if (data.success) {
             appState.watchlistKeywords = data.keywords || [];
@@ -3505,10 +3573,10 @@ async function removeWatchlistKeyword(kw) {
 
 async function updateWatchlistKeywords(keywords) {
     try {
-        const res = await fetch('/api/watchlist', {
+        const res = await fetch(`/api/watchlist?project=${encodeURIComponent(currentProject)}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({keywords})
+            body: JSON.stringify({keywords, project: currentProject})
         });
         const data = await res.json();
         if (data.success) {
@@ -4155,21 +4223,23 @@ function renderYamlTable(page) {
             else if (it.status === 'UNCHECKED_IN_YAML') badgeClass = 'yaml-unchecked';
             else if (it.status === 'NO_COMPARE') badgeClass = 'yaml-no-compare';
 
+            const rawQ = (document.getElementById('yaml-search-input')?.value || '').trim();
+
             const stationDisplay = it.is_grouped
                 ? it.station_display
                 : ((it.station && it.station !== 'None')
-                    ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${escapeHtml(it.station)}</span>`
+                    ? `<span class="badge-station"><i class="fa-solid fa-vial"></i> ${highlightMatch(it.station, rawQ)}</span>`
                     : `<span class="text-muted" style="font-size:0.8rem;">-</span>`);
 
             const stepDisplay = it.is_grouped
                 ? it.step_display
                 : ((it.step_location && it.step_location !== 'N/A (未涵蓋)')
-                    ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${escapeHtml(it.step_location)}</span>`
-                    : `<span class="text-muted" style="font-size:0.8rem;">${escapeHtml(it.step_location)}</span>`);
+                    ? `<span class="step-location-pill" title="${escapeHtml(it.command || '')}"><i class="fa-solid fa-code-branch"></i> ${highlightMatch(it.step_location, rawQ)}</span>`
+                    : `<span class="text-muted" style="font-size:0.8rem;">${highlightMatch(it.step_location, rawQ)}</span>`);
 
             const yamlVersionDisplay = it.is_grouped
                 ? it.yaml_version_display
-                : `<span class="font-mono text-cyan">${escapeHtml(it.yaml_version || '-')}</span>`;
+                : `<span class="font-mono text-cyan">${highlightMatch(it.yaml_version || '-', rawQ)}</span>`;
 
             const bkcVersionCell = formatBkcVersionDisplay(it.bkc_version, it.raw_yaml_version || it.yaml_version);
 
@@ -4188,7 +4258,7 @@ function renderYamlTable(page) {
 
             const favaMeta = formatFavaCategoryAndItem(it);
 
-            tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-size:0.75rem;color:#38bdf8;font-weight:600;margin-bottom:2px;"><i class="fa-solid fa-folder-tree"></i> ${escapeHtml(favaMeta.category)}</div><div style="font-weight:700;color:#f8fafc;font-size:0.92rem;">${escapeHtml(favaMeta.item)}</div></td><td>${yamlVersionDisplay}</td><td>${bkcVersionCell}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${escapeHtml(it.discussion_note)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${escapeHtml(it.command)}</code></div>`:''}${patchBtn}</td>`;
+            tr.innerHTML = `<td>${stationDisplay}</td><td>${stepDisplay}</td><td><div style="font-size:0.75rem;color:#38bdf8;font-weight:600;margin-bottom:2px;"><i class="fa-solid fa-folder-tree"></i> ${highlightMatch(favaMeta.category, rawQ)}</div><div style="font-weight:700;color:#f8fafc;font-size:0.92rem;">${highlightMatch(favaMeta.item, rawQ)}</div></td><td>${yamlVersionDisplay}</td><td>${bkcVersionCell}</td><td><span class="badge-yaml-status ${badgeClass}">${escapeHtml(it.status_label)}</span></td><td>${dispCol}</td><td style="font-size:0.83rem;color:#cbd5e1;line-height:1.4;">${highlightMatch(it.discussion_note, rawQ)}${it.command?`<div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Cmd:<code>${highlightMatch(it.command, rawQ)}</code></div>`:''}${patchBtn}</td>`;
 
             const selectElem = tr.querySelector('.yaml-disp-select');
             const ownerElem = tr.querySelector('.yaml-owner-input');

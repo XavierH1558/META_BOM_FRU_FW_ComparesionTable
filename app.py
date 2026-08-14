@@ -8,8 +8,58 @@ import io
 import json
 import datetime
 import yaml
+import logging
+from threading import Lock
+import collections
+import functools
 from flask import Flask, render_template, jsonify, request, send_file
 from werkzeug.utils import secure_filename
+
+# Standardized Logging Configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("META_BOM_App")
+
+
+class BoundedLRUCache:
+    """Thread-safe bounded LRU Cache to prevent unbounded memory growth."""
+    def __init__(self, maxsize=200):
+        self.maxsize = maxsize
+        self.cache = collections.OrderedDict()
+        self.lock = Lock()
+
+    def get(self, key, default=None):
+        with self.lock:
+            if key not in self.cache:
+                return default
+            self.cache.move_to_end(key)
+            return self.cache[key]
+
+    def __contains__(self, key):
+        with self.lock:
+            return key in self.cache
+
+    def __getitem__(self, key):
+        with self.lock:
+            val = self.cache[key]
+            self.cache.move_to_end(key)
+            return val
+
+    def __setitem__(self, key, value):
+        with self.lock:
+            if key in self.cache:
+                self.cache.move_to_end(key)
+            self.cache[key] = value
+            if len(self.cache) > self.maxsize:
+                self.cache.popitem(last=False)
+
+    def clear(self):
+        with self.lock:
+            self.cache.clear()
+
 
 def safe_filename(filename):
     """Sanitize filename while preserving Unicode/Chinese characters and spaces."""
@@ -53,6 +103,7 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -101,9 +152,9 @@ try:
             replace_existing=True
         )
         scheduler.start()
-        print(f"[GDrive Sync] Background scheduler started. Syncing twice daily at hours ({sync_hours}:00).")
+        logger.info(f"[GDrive Sync] Background scheduler started. Syncing twice daily at hours ({sync_hours}:00).")
 except Exception as g_err:
-    print(f"[GDrive Sync] Background scheduler initialization skipped: {g_err}")
+    logger.info(f"[GDrive Sync] Background scheduler initialization skipped: {g_err}")
 
 # ============================================================
 # MULTI-PROJECT CONFIGURATION
@@ -214,18 +265,58 @@ def parse_cli_default_project():
 
 DEFAULT_PROJECT = parse_cli_default_project()
 
-def get_project_config(project_id):
-    """Return config for the given project id, defaulting to clemente (GB300)."""
-    return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS['clemente'])
+def ensure_initial_directories_and_templates():
+    """Ensure directory tree and initial templates exist for all configured projects."""
+    for proj_id in PROJECT_CONFIGS:
+        proj_data = os.path.join(DATA_DIR, proj_id)
+        os.makedirs(proj_data, exist_ok=True)
+        for tab in ['bkc', 'fru', 'matrix', 'yaml']:
+            os.makedirs(os.path.join(proj_data, tab), exist_ok=True)
+        os.makedirs(os.path.join(UPLOAD_FOLDER, proj_id), exist_ok=True)
 
-def get_project_upload_folder(project_id):
-    # project_id must be one of the known project keys -- otherwise it gets
-    # concatenated straight into a filesystem path (see os.path.join below),
-    # which would let a caller escape UPLOAD_FOLDER with something like
-    # project_id="../../somewhere". Falling back to 'clemente' keeps behavior
-    # sane for unknown ids while closing that path-traversal hole.
-    if project_id not in PROJECT_CONFIGS:
-        project_id = 'clemente'
+        # Initialize default watchlist.json if missing
+        w_file = os.path.join(proj_data, 'watchlist.json')
+        if not os.path.exists(w_file):
+            default_watch = ["CPLD", "BIOS", "BMC", "MB PN", "Compute Tray", "VR", "PMIC"]
+            try:
+                atomic_write_json(w_file, {'keywords': default_watch})
+            except Exception as e:
+                logger.warning(f"Could not init watchlist for {proj_id}: {e}")
+
+ensure_initial_directories_and_templates()
+
+def get_current_project(req=None):
+    """Reliably determine the project ID for the current request, falling back to DEFAULT_PROJECT."""
+    if req is None:
+        try:
+            req = request
+        except RuntimeError:
+            req = None
+
+    raw = None
+    if req is not None:
+        if hasattr(req, 'args') and req.args:
+            raw = req.args.get('project') or req.args.get('p')
+        if not raw and hasattr(req, 'form') and req.form:
+            raw = req.form.get('project') or req.form.get('p')
+        if not raw and getattr(req, 'is_json', False):
+            body = req.get_json(silent=True) or {}
+            raw = body.get('project') or body.get('p')
+
+    norm = normalize_project_id(raw) if raw else None
+    if norm and norm in PROJECT_CONFIGS:
+        return norm
+    return DEFAULT_PROJECT
+
+def get_project_config(project_id=None):
+    """Return config for the given project id, defaulting to DEFAULT_PROJECT."""
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
+    return PROJECT_CONFIGS.get(project_id, PROJECT_CONFIGS.get(DEFAULT_PROJECT, PROJECT_CONFIGS['clemente']))
+
+def get_project_upload_folder(project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     folder = os.path.join(UPLOAD_FOLDER, project_id)
     os.makedirs(folder, exist_ok=True)
     return folder
@@ -266,7 +357,7 @@ def is_allowed_path(path):
             continue
     return False
 
-_VALID_BKC_CACHE = {}
+_VALID_BKC_CACHE = BoundedLRUCache(maxsize=150)
 
 def is_valid_bkc_table(file_path):
     filename = os.path.basename(file_path).lower()
@@ -308,7 +399,9 @@ def is_valid_bkc_table(file_path):
         _VALID_BKC_CACHE[cache_key] = False
     return False
 
-def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
+def scan_files_in_dirs(tab_key, project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     cfg = get_project_config(project_id)
     proj_upload = get_project_upload_folder(project_id)
     dirs = list(cfg['dir_roots'].get(tab_key, []))
@@ -352,7 +445,9 @@ def scan_files_in_dirs(tab_key, project_id='sanmiguel'):
     return found
 
 
-def validate_yaml_project(file_path, project_id):
+def validate_yaml_project(file_path, project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     if not file_path or not os.path.exists(file_path):
         return True, ""
     fname = os.path.basename(file_path).lower()
@@ -403,7 +498,9 @@ def validate_yaml_project(file_path, project_id):
     return True, ""
 
 
-def resolve_file_path(tab_key, req_path=None, project_id='sanmiguel'):
+def resolve_file_path(tab_key, req_path=None, project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     proj_cfg = get_project_config(project_id)
     proj_defaults = proj_cfg['default_paths']
     default_path = proj_defaults.get(tab_key) or proj_defaults.get(f"{tab_key}_dvt") or ''
@@ -435,7 +532,7 @@ def resolve_file_path(tab_key, req_path=None, project_id='sanmiguel'):
     return default_path
 
 
-def resolve_or_default(raw_path, tab_key, default_val, project_id='sanmiguel'):
+def resolve_or_default(raw_path, tab_key, default_val, project_id=None):
     """Validate a raw file path coming from a query/form param (file_path,
     base_file, dvt_file, pvt_file, ...): only use it if it exists on disk AND
     resolves inside an allowed project directory (see is_allowed_path). This
@@ -443,6 +540,8 @@ def resolve_or_default(raw_path, tab_key, default_val, project_id='sanmiguel'):
     `req_path if (req_path and os.path.exists(req_path)) else resolve_file_path(...)`,
     which let any existing file on the server -- not just project files -- be
     read back through the API."""
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     if raw_path and os.path.exists(raw_path) and is_allowed_path(raw_path):
         return os.path.abspath(raw_path)
     return resolve_file_path(tab_key, default_val, project_id)
@@ -457,7 +556,7 @@ def filter_valid_data_sheets(sheets):
     valid = [s for s in sheets if not any(k in s.lower() for k in ignored_keywords)]
     return valid if valid else sheets
 
-FILE_ROWS_CACHE = {}
+FILE_ROWS_CACHE = BoundedLRUCache(maxsize=150)
 
 def read_file_safe(path, sheet_name=None):
     if not path or not os.path.exists(path):
@@ -567,7 +666,7 @@ def get_projects():
 @app.route('/api/files')
 def get_files():
     tab_key = request.args.get('type')
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
 
     bkc_files = scan_files_in_dirs('bkc', project_id)
     yaml_files = scan_files_in_dirs('yaml', project_id)
@@ -594,7 +693,7 @@ def upload_file():
 
     file = request.files['file']
     tab_type = request.form.get('tab_type', 'bkc')
-    project_id = request.form.get('project', 'sanmiguel')
+    project_id = get_current_project()
 
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No selected file'}), 400
@@ -630,7 +729,7 @@ def upload_file():
 
 @app.route('/api/status')
 def get_status():
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     status = {}
     proj_paths = ACTIVE_PATHS.get(project_id, {})
     for key, path in proj_paths.items():
@@ -644,7 +743,7 @@ def get_status():
 
 @app.route('/api/bkc')
 def get_bkc():
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
 
@@ -762,7 +861,7 @@ def get_bkc():
 
 @app.route('/api/bkc-compare')
 def get_bkc_compare():
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
 
@@ -995,7 +1094,7 @@ def filter_valid_fru_sheets(sheets):
 
 @app.route('/api/fru')
 def get_fru():
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     default_fru_dvt = proj_cfg['default_paths'].get('fru_dvt', '')
 
@@ -1054,7 +1153,7 @@ def get_fru():
 
 @app.route('/api/fru-compare')
 def get_fru_compare():
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     default_fru_dvt = proj_cfg['default_paths'].get('fru_dvt', '')
     default_fru_pvt = proj_cfg['default_paths'].get('fru_pvt', '')
@@ -1327,7 +1426,7 @@ def compare_two_matrix_sheets(base_rows, tgt_rows):
 
 @app.route('/api/build-matrix')
 def get_build_matrix():
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     default_matrix = proj_cfg['default_paths'].get('matrix', '')
 
@@ -1383,7 +1482,7 @@ def get_build_matrix():
 @app.route('/api/build-matrix-compare')
 def get_build_matrix_compare():
     """Compare two build-matrix sheets (can be different files or different sheets in same file)."""
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     default_matrix = proj_cfg['default_paths'].get('matrix', '')
 
@@ -1453,14 +1552,14 @@ def api_sync_gdrive():
 
 # ==================== V2 FEATURE ENDPOINTS ====================
 
-WATCHLIST_FILE = os.path.join(BASE_DIR, 'watchlist.json')
-
-def get_project_signoff_file(project_id='sanmiguel'):
+def get_project_signoff_file(project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     proj_dir = os.path.join(DATA_DIR, project_id)
     os.makedirs(proj_dir, exist_ok=True)
     return os.path.join(proj_dir, 'signoffs.json')
 
-def load_signoffs(project_id='sanmiguel'):
+def load_signoffs(project_id=None):
     sf = get_project_signoff_file(project_id)
     if os.path.exists(sf):
         try:
@@ -1470,43 +1569,68 @@ def load_signoffs(project_id='sanmiguel'):
             return {}
     return {}
 
-def save_signoffs(data, project_id='sanmiguel'):
+def save_signoffs(data, project_id=None):
     sf = get_project_signoff_file(project_id)
     try:
         atomic_write_json(sf, data)
     except Exception as e:
-        print(f"Failed to save signoffs for {project_id}: {e}")
+        logger.error(f"Failed to save signoffs for {project_id}: {e}", exc_info=True)
 
-def load_watchlist():
-    if os.path.exists(WATCHLIST_FILE):
+def get_project_watchlist_file(project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
+    proj_dir = os.path.join(DATA_DIR, project_id)
+    os.makedirs(proj_dir, exist_ok=True)
+    return os.path.join(proj_dir, 'watchlist.json')
+
+def load_watchlist(project_id=None):
+    wf = get_project_watchlist_file(project_id)
+    if os.path.exists(wf):
         try:
-            with open(WATCHLIST_FILE, 'r', encoding='utf-8') as f:
+            with open(wf, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('keywords', [])
+        except Exception:
+            pass
+    # Fallback to root watchlist.json if exists
+    root_wf = os.path.join(BASE_DIR, 'watchlist.json')
+    if os.path.exists(root_wf):
+        try:
+            with open(root_wf, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 return data.get('keywords', [])
         except Exception:
             pass
     return ["CPLD", "BIOS", "BMC", "MB PN", "Compute Tray", "VR", "PMIC"]
 
+def save_watchlist(keywords, project_id=None):
+    wf = get_project_watchlist_file(project_id)
+    try:
+        atomic_write_json(wf, {'keywords': keywords})
+    except Exception as e:
+        logger.error(f"Failed to save watchlist for {project_id}: {e}", exc_info=True)
+
 
 @app.route('/api/watchlist', methods=['GET', 'POST'])
 def api_watchlist():
     """Get or update critical component watchlist keywords."""
+    project_id = get_current_project()
     if request.method == 'POST':
         body = request.get_json() or {}
         keywords = body.get('keywords', [])
         try:
-            atomic_write_json(WATCHLIST_FILE, {'keywords': keywords})
-            return jsonify({'success': True, 'keywords': keywords})
+            save_watchlist(keywords, project_id)
+            return jsonify({'success': True, 'project': project_id, 'keywords': keywords})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
     
-    return jsonify({'success': True, 'keywords': load_watchlist()})
+    return jsonify({'success': True, 'project': project_id, 'keywords': load_watchlist(project_id)})
 
 
 @app.route('/api/signoff', methods=['GET', 'POST'])
 def api_signoff():
     """Get or save engineer sign-off status and notes."""
-    project_id = request.args.get('project') or (request.get_json(silent=True) or {}).get('project') or 'sanmiguel'
+    project_id = get_current_project()
     signoffs = load_signoffs(project_id)
     if request.method == 'POST':
         body = request.get_json() or {}
@@ -2021,7 +2145,184 @@ def parse_single_yaml_file(path, default_station_label="Station"):
 
 
 
-def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=None, project_id='sanmiguel'):
+def get_project_dispositions_file(project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
+    pdir = os.path.join(DATA_DIR, project_id)
+    os.makedirs(pdir, exist_ok=True)
+    return os.path.join(pdir, 'yaml_dispositions.json')
+
+def load_yaml_dispositions(project_id=None):
+    df = get_project_dispositions_file(project_id)
+    if os.path.exists(df):
+        try:
+            with open(df, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_yaml_dispositions(data, project_id=None):
+    df = get_project_dispositions_file(project_id)
+    try:
+        atomic_write_json(df, data)
+    except Exception as e:
+        logger.error(f"[Error saving yaml dispositions]: {e}", exc_info=True)
+
+@functools.lru_cache(maxsize=4096)
+def normalize_str(s):
+    if not s:
+        return ""
+    return re.sub(r'[^a-zA-Z0-9]', '', str(s)).lower()
+
+@functools.lru_cache(maxsize=4096)
+def clean_version_num(v):
+    v_str = str(v or '').strip()
+    if v_str.endswith('.0') and v_str.replace('.0', '').isdigit():
+        v_str = v_str[:-2]
+    v_low = v_str.lower()
+    if v_low.startswith('0x'):
+        v_str = v_str[2:]
+    elif v_low.startswith('v') and len(v_low) > 1 and v_low[1].isdigit():
+        v_str = v_str[1:]
+    if v_str.isdigit():
+        v_str = str(int(v_str))
+    return v_str
+
+def is_version_compliant(bkc_v, y_v):
+    if not bkc_v or not y_v:
+        return False
+    bv = str(bkc_v).strip().lower()
+    yv = str(y_v).strip().lower()
+
+    if bv == yv:
+        return True
+    if 'read-out' in bv or 'readout' in bv or 'read out' in bv or bv in ['(empty)', '']:
+        return True
+
+    b_c = clean_version_num(bkc_v).lower()
+    y_c = clean_version_num(y_v).lower()
+    if b_c == y_c:
+        return True
+
+    # SBIOS CLE403 vs 00020300 alias check
+    if ('cle403' in b_c and ('00020300' in y_c or '20300' in y_c)) or (('00020300' in b_c or '20300' in b_c) and 'cle403' in y_c):
+        return True
+
+    bv_clean = re.sub(r'[^a-zA-Z0-9]', '', b_c)
+    yv_clean = re.sub(r'[^a-zA-Z0-9]', '', y_c)
+    if bv_clean == yv_clean:
+        return True
+    if len(yv_clean) >= 4 and yv_clean in bv_clean:
+        return True
+    if len(bv_clean) >= 4 and bv_clean in yv_clean:
+        return True
+    return compare_versions(bkc_v, y_v) == 'same'
+
+def calculate_match_score(yaml_item, b_item):
+    step = yaml_item.get('step_location', '')
+    comp = yaml_item.get('component', '')
+    sub = yaml_item.get('sub_component', '')
+    
+    y_norm = normalize_str(comp)
+    sub_norm = normalize_str(sub)
+    step_norm = normalize_str(step)
+    
+    cat_norm = normalize_str(b_item.get('category', ''))
+    grp_norm = normalize_str(b_item.get('group', ''))
+    b_sub_norm = normalize_str(b_item.get('sub_component', ''))
+
+    # 1. Strict VBIOS vs SBIOS Discrimination
+    is_y_vbios = 'vbios' in sub_norm or 'vbios' in y_norm or 'vbios' in step_norm
+    is_b_vbios = 'vbios' in b_sub_norm or 'vbios' in grp_norm
+    if is_y_vbios != is_b_vbios:
+        return 0
+
+    # 2. HMC vs OpenBMC Matching
+    if 'hgxfwbmc' in sub_norm or 'hmc' in sub_norm or 'hmcbundle' in sub_norm:
+        if 'openbmc' in b_sub_norm:
+            return 0
+        if 'hmc' in b_sub_norm:
+            return 95
+
+    # 3. Strict ERoT Check
+    is_y_erot = 'erot' in sub_norm or 'erot' in y_norm or 'erot' in step_norm
+    is_b_erot = 'erot' in b_sub_norm or 'erot' in grp_norm or 'erot' in cat_norm
+    if is_y_erot != is_b_erot:
+        return 0
+
+    # Exact match
+    if sub_norm and sub_norm == b_sub_norm:
+        return 100
+    if y_norm and y_norm == b_sub_norm:
+        return 95
+
+    # 4. SBIOS / System BIOS Matching
+    if any(k in sub_norm or k in step_norm for k in ['sbios', 'bios']):
+        if 'sbios' in b_sub_norm or ('bios' in b_sub_norm and 'vbios' not in b_sub_norm):
+            return 90
+
+    # 5. BMC / OpenBMC Component Matching
+    if 'bmc' in sub_norm or 'bmc' in y_norm or 'bmc' in step_norm:
+        if 'openbmc' in b_sub_norm or 'bmc' in b_sub_norm:
+            if 'erot' not in b_sub_norm and 'erot' not in grp_norm:
+                if 'ct' in sub_norm or 'ct' in step_norm or 'computetray' in cat_norm or 'bsm' in grp_norm:
+                    score_val = 90
+                else:
+                    score_val = 70
+                return score_val
+
+    # 6. CPLD Component Matching with strict location token matching
+    if 'cpld' in sub_norm or 'cpld' in y_norm or 'cpld' in step_norm:
+        if 'cpld' in b_sub_norm or 'cpld' in grp_norm or 'fpga' in b_sub_norm:
+            loc_tokens = ['interposer', 'scm', 'hdd', 'hmc', 'rmc', 'fio', 'nvswitch', 'cff', 'e1s']
+            y_locs = [loc for loc in loc_tokens if loc in step_norm or loc in sub_norm or loc in y_norm]
+            b_locs = [loc for loc in loc_tokens if loc in b_sub_norm or loc in grp_norm or loc in cat_norm]
+            
+            if 'hmc' in sub_norm or 'hgxfwcpld' in sub_norm or 'hmc' in step_norm:
+                if 'hmc' in b_sub_norm or 'hmc' in grp_norm:
+                    return 95
+                else:
+                    return 0
+
+            if y_locs:
+                common_locs = set(y_locs).intersection(set(b_locs))
+                if common_locs:
+                    return 90
+                else:
+                    return 0
+            else:
+                if 'hmc' in b_sub_norm or 'hmc' in grp_norm:
+                    return 0
+                return 50
+
+    # 7. VR Matching (PDB_P12V_N1_VR, PDB_P12V_N2_VR)
+    if 'vr' in sub_norm or 'vr' in y_norm or 'vr' in step_norm:
+        if 'vr' in b_sub_norm or 'vr' in grp_norm:
+            if ('n1' in sub_norm or 'n1' in y_norm) and ('n1' in b_sub_norm or 'n1' in grp_norm):
+                return 95
+            elif ('n2' in sub_norm or 'n2' in y_norm) and ('n2' in b_sub_norm or 'n2' in grp_norm):
+                return 95
+            else:
+                return 60
+
+    # 8. OS / Kernel Matching
+    if 'os' in sub_norm or 'kernel' in sub_norm:
+        if 'os' in b_sub_norm or 'kernel' in b_sub_norm:
+            return 80
+
+    # 9. Generic substring containment
+    if len(sub_norm) >= 3 and (sub_norm in b_sub_norm or b_sub_norm in sub_norm):
+        return 60
+    elif len(y_norm) >= 3 and (y_norm in b_sub_norm or b_sub_norm in y_norm):
+        return 55
+
+    return 0
+
+
+def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=None, project_id=None):
+    if not project_id or project_id not in PROJECT_CONFIGS:
+        project_id = DEFAULT_PROJECT
     proj_cfg = get_project_config(project_id)
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
     bkc_p = resolve_file_path('bkc', bkc_file_path or default_bkc, project_id)
@@ -2046,110 +2347,6 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
 
     matched_bkc_indices = set()
     comparison_results = []
-    
-    def normalize_str(s):
-        if not s: return ""
-        return re.sub(r'[^a-zA-Z0-9]', '', str(s)).lower()
-
-    def calculate_match_score(yaml_item, b_item):
-        step = yaml_item.get('step_location', '')
-        comp = yaml_item.get('component', '')
-        sub = yaml_item.get('sub_component', '')
-        
-        y_norm = normalize_str(comp)
-        sub_norm = normalize_str(sub)
-        step_norm = normalize_str(step)
-        
-        cat_norm = normalize_str(b_item.get('category', ''))
-        grp_norm = normalize_str(b_item.get('group', ''))
-        b_sub_norm = normalize_str(b_item.get('sub_component', ''))
-
-        # 1. Strict VBIOS vs SBIOS Discrimination
-        is_y_vbios = 'vbios' in sub_norm or 'vbios' in y_norm or 'vbios' in step_norm
-        is_b_vbios = 'vbios' in b_sub_norm or 'vbios' in grp_norm
-        if is_y_vbios != is_b_vbios:
-            return 0
-
-        # 2. HMC vs OpenBMC Matching
-        if 'hgxfwbmc' in sub_norm or 'hmc' in sub_norm or 'hmcbundle' in sub_norm:
-            if 'openbmc' in b_sub_norm:
-                return 0
-            if 'hmc' in b_sub_norm:
-                return 95
-
-        # 3. Strict ERoT Check
-        is_y_erot = 'erot' in sub_norm or 'erot' in y_norm or 'erot' in step_norm
-        is_b_erot = 'erot' in b_sub_norm or 'erot' in grp_norm or 'erot' in cat_norm
-        if is_y_erot != is_b_erot:
-            return 0
-
-        # Exact match
-        if sub_norm and sub_norm == b_sub_norm:
-            return 100
-        if y_norm and y_norm == b_sub_norm:
-            return 95
-
-        # 4. SBIOS / System BIOS Matching
-        if any(k in sub_norm or k in step_norm for k in ['sbios', 'bios']):
-            if 'sbios' in b_sub_norm or ('bios' in b_sub_norm and 'vbios' not in b_sub_norm):
-                return 90
-
-        # 5. BMC / OpenBMC Component Matching
-        if 'bmc' in sub_norm or 'bmc' in y_norm or 'bmc' in step_norm:
-            if 'openbmc' in b_sub_norm or 'bmc' in b_sub_norm:
-                if 'erot' not in b_sub_norm and 'erot' not in grp_norm:
-                    if 'ct' in sub_norm or 'ct' in step_norm or 'computetray' in cat_norm or 'bsm' in grp_norm:
-                        score_val = 90
-                    else:
-                        score_val = 70
-                    return score_val
-
-        # 6. CPLD Component Matching with strict location token matching
-        if 'cpld' in sub_norm or 'cpld' in y_norm or 'cpld' in step_norm:
-            if 'cpld' in b_sub_norm or 'cpld' in grp_norm or 'fpga' in b_sub_norm:
-                loc_tokens = ['interposer', 'scm', 'hdd', 'hmc', 'rmc', 'fio', 'nvswitch', 'cff', 'e1s']
-                y_locs = [loc for loc in loc_tokens if loc in step_norm or loc in sub_norm or loc in y_norm]
-                b_locs = [loc for loc in loc_tokens if loc in b_sub_norm or loc in grp_norm or loc in cat_norm]
-                
-                if 'hmc' in sub_norm or 'hgxfwcpld' in sub_norm or 'hmc' in step_norm:
-                    if 'hmc' in b_sub_norm or 'hmc' in grp_norm:
-                        return 95
-                    else:
-                        return 0
-
-                if y_locs:
-                    common_locs = set(y_locs).intersection(set(b_locs))
-                    if common_locs:
-                        return 90
-                    else:
-                        return 0
-                else:
-                    if 'hmc' in b_sub_norm or 'hmc' in grp_norm:
-                        return 0
-                    return 50
-
-        # 7. VR Matching (PDB_P12V_N1_VR, PDB_P12V_N2_VR)
-        if 'vr' in sub_norm or 'vr' in y_norm or 'vr' in step_norm:
-            if 'vr' in b_sub_norm or 'vr' in grp_norm:
-                if ('n1' in sub_norm or 'n1' in y_norm) and ('n1' in b_sub_norm or 'n1' in grp_norm):
-                    return 95
-                elif ('n2' in sub_norm or 'n2' in y_norm) and ('n2' in b_sub_norm or 'n2' in grp_norm):
-                    return 95
-                else:
-                    return 60
-
-        # 8. OS / Kernel Matching
-        if 'os' in sub_norm or 'kernel' in sub_norm:
-            if 'os' in b_sub_norm or 'kernel' in b_sub_norm:
-                return 80
-
-        # 9. Generic substring containment
-        if len(sub_norm) >= 3 and (sub_norm in b_sub_norm or b_sub_norm in sub_norm):
-            return 60
-        elif len(y_norm) >= 3 and (y_norm in b_sub_norm or b_sub_norm in y_norm):
-            return 55
-
-        return 0
 
     for yaml_item in all_yaml_items:
         y_ver = yaml_item['yaml_version']
@@ -2164,49 +2361,6 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 best_score = score
                 matched_bkc = b_item
                 matched_idx = idx
-
-        def clean_version_num(v):
-            v_str = str(v or '').strip()
-            if v_str.endswith('.0') and v_str.replace('.0', '').isdigit():
-                v_str = v_str[:-2]
-            v_low = v_str.lower()
-            if v_low.startswith('0x'):
-                v_str = v_str[2:]
-            elif v_low.startswith('v') and len(v_low) > 1 and v_low[1].isdigit():
-                v_str = v_str[1:]
-            if v_str.isdigit():
-                v_str = str(int(v_str))
-            return v_str
-
-        def is_version_compliant(bkc_v, y_v):
-            if not bkc_v or not y_v:
-                return False
-            bv = str(bkc_v).strip().lower()
-            yv = str(y_v).strip().lower()
-
-            if bv == yv:
-                return True
-            if 'read-out' in bv or 'readout' in bv or 'read out' in bv or bv in ['(empty)', '']:
-                return True
-
-            b_c = clean_version_num(bkc_v).lower()
-            y_c = clean_version_num(y_v).lower()
-            if b_c == y_c:
-                return True
-
-            # SBIOS CLE403 vs 00020300 alias check
-            if ('cle403' in b_c and ('00020300' in y_c or '20300' in y_c)) or (('00020300' in b_c or '20300' in b_c) and 'cle403' in y_c):
-                return True
-
-            bv_clean = re.sub(r'[^a-zA-Z0-9]', '', b_c)
-            yv_clean = re.sub(r'[^a-zA-Z0-9]', '', y_c)
-            if bv_clean == yv_clean:
-                return True
-            if len(yv_clean) >= 4 and yv_clean in bv_clean:
-                return True
-            if len(bv_clean) >= 4 and bv_clean in yv_clean:
-                return True
-            return compare_versions(bkc_v, y_v) == 'same'
 
         if best_score >= 50 and matched_bkc:
             matched_bkc_indices.add(matched_idx)
@@ -2361,28 +2515,6 @@ def compare_yaml_with_bkc(yaml_file_paths, bkc_file_path=None, bkc_sheet_name=No
                 'discussion_note': "BKC 表格中列出的組件，在所選的 1-3 個 YAML 測試腳本中皆未進行版本比對驗證。",
                 'command': ''
             })
-
-    def get_project_dispositions_file(proj_id):
-        pdir = os.path.join(DATA_DIR, proj_id)
-        os.makedirs(pdir, exist_ok=True)
-        return os.path.join(pdir, 'yaml_dispositions.json')
-
-    def load_yaml_dispositions(proj_id='sanmiguel'):
-        df = get_project_dispositions_file(proj_id)
-        if os.path.exists(df):
-            try:
-                with open(df, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
-
-    def save_yaml_dispositions(data, proj_id='sanmiguel'):
-        df = get_project_dispositions_file(proj_id)
-        try:
-            atomic_write_json(df, data)
-        except Exception as e:
-            print(f"[Error saving yaml dispositions]: {e}")
 
     dispositions = load_yaml_dispositions(project_id)
 
@@ -2541,7 +2673,7 @@ def api_global_search():
         return False
 
     # 1. Search BKC (Active latest files only, max 2)
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     bkc_files = scan_files_in_dirs('bkc', project_id)[:2]
     for f in bkc_files:
         try:
@@ -2629,12 +2761,12 @@ def api_global_search():
 @app.route('/api/yaml-compare', methods=['GET', 'POST'])
 def get_yaml_compare():
     """Compare 1 to 3 test suite YAML files against reference BKC table sheet."""
+    project_id = get_current_project()
     if request.method == 'POST':
         data = request.get_json(silent=True) or {}
         yaml_files = data.get('yaml_files', [])
         bkc_file = data.get('bkc_file')
         bkc_sheet = data.get('bkc_sheet')
-        project_id = data.get('project', 'sanmiguel')
     else:
         y1 = request.args.get('yaml_1')
         y2 = request.args.get('yaml_2')
@@ -2644,7 +2776,6 @@ def get_yaml_compare():
         yaml_files = [f for f in [y1, y2, y3, y4, y5] if f]
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
-        project_id = request.args.get('project', 'sanmiguel')
 
     proj_cfg = get_project_config(project_id)
     default_bkc = proj_cfg['default_paths'].get('bkc', '')
@@ -2744,7 +2875,7 @@ def upload_yaml():
     files = request.files.getlist('files') or [request.files['file']]
     uploaded_files = []
     
-    project_id = request.form.get('project') or request.args.get('project') or 'sanmiguel'
+    project_id = get_current_project()
     proj_upload = get_project_upload_folder(project_id)
     for file in files:
         if file and file.filename:
@@ -2772,31 +2903,8 @@ def upload_yaml():
 @app.route('/api/yaml-dispositions', methods=['GET', 'POST'])
 def api_yaml_dispositions():
     """Get or save customer action dispositions & owner assignments."""
-    project_id = request.args.get('project') or (request.get_json(silent=True) or {}).get('project') or 'sanmiguel'
-    
-    def get_dispositions_file(proj_id):
-        pdir = os.path.join(DATA_DIR, proj_id)
-        os.makedirs(pdir, exist_ok=True)
-        return os.path.join(pdir, 'yaml_dispositions.json')
-
-    def load_dispositions(proj_id):
-        df = get_dispositions_file(proj_id)
-        if os.path.exists(df):
-            try:
-                with open(df, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
-
-    def save_dispositions(data, proj_id):
-        df = get_dispositions_file(proj_id)
-        try:
-            atomic_write_json(df, data)
-        except Exception as e:
-            print(f"[Error saving yaml dispositions]: {e}")
-
-    dispositions = load_dispositions(project_id)
+    project_id = get_current_project()
+    dispositions = load_yaml_dispositions(project_id)
     if request.method == 'POST':
         req = request.get_json(silent=True) or {}
         key = req.get('key')
@@ -2807,7 +2915,7 @@ def api_yaml_dispositions():
                 'note': req.get('note', ''),
                 'updated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
             }
-            save_dispositions(dispositions, project_id)
+            save_yaml_dispositions(dispositions, project_id)
             return jsonify({'success': True, 'disposition': dispositions[key]})
         return jsonify({'success': False, 'error': 'Key is required'}), 400
         
@@ -2854,15 +2962,14 @@ def api_yaml_patch():
 @app.route('/api/yaml-version-diff', methods=['GET', 'POST'])
 def api_yaml_version_diff():
     """Compare two YAML test suites (Base v3 vs Target v4) for version-to-version evolution diff."""
+    project_id = get_current_project()
     if request.method == 'POST':
         req = request.get_json(silent=True) or {}
         base_path = req.get('base_yaml')
         target_path = req.get('target_yaml')
-        project_id = req.get('project', 'sanmiguel')
     else:
         base_path = request.args.get('base_yaml')
         target_path = request.args.get('target_yaml')
-        project_id = request.args.get('project', 'sanmiguel')
 
     available_yaml = scan_files_in_dirs('yaml', project_id)
     
@@ -2949,7 +3056,7 @@ def api_yaml_version_diff():
 @app.route('/api/history', methods=['GET'])
 def api_history():
     """List available historical files and snapshot metadata across all tabs."""
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     history = {}
     for tab_key in ['bkc', 'fru', 'matrix', 'yaml']:
         files = scan_files_in_dirs(tab_key, project_id)
@@ -2957,17 +3064,17 @@ def api_history():
     return jsonify({'success': True, 'history': history})
 
 
-_RELEASE_SUMMARY_CACHE = {}
+_RELEASE_SUMMARY_CACHE = BoundedLRUCache(maxsize=150)
 
 
 @app.route('/api/release-summary', methods=['GET'])
 def api_release_summary():
     """Generate structured Markdown and Text summary reports per tab or overall using current active selections."""
     tab = request.args.get('tab', 'all').lower()
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     proj_defaults = proj_cfg['default_paths']
-    watchlist = load_watchlist()
+    watchlist = load_watchlist(project_id)
 
     bkc_file_req = request.args.get('bkc_file')
     bkc_sheet_req = request.args.get('bkc_sheet')
@@ -3144,7 +3251,7 @@ def api_export_excel():
     """Export color-highlighted comparison Excel file."""
     tab_type = request.args.get('type', 'fru')
     diff_only = request.args.get('diff_only', 'false').lower() == 'true'
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     proj_cfg = get_project_config(project_id)
     proj_defaults = proj_cfg['default_paths']
     
@@ -3328,14 +3435,13 @@ def api_export_excel():
 @app.route('/api/export-coverage-excel', methods=['GET', 'POST'])
 def api_export_coverage_excel():
     """Export YAML Test Suite Coverage Matrix Excel (.xlsx) workbook with full styling and KPI banner."""
+    project_id = get_current_project()
     if request.method == 'POST':
         req_data = request.json or {}
-        project_id = req_data.get('project', 'sanmiguel')
         bkc_file = req_data.get('bkc_file')
         bkc_sheet = req_data.get('bkc_sheet')
         y_params = [req_data.get(f'yaml_{i}') for i in range(1, 6)]
     else:
-        project_id = request.args.get('project', 'sanmiguel')
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
         y_params = [request.args.get(f'yaml_{i}') for i in range(1, 6)]
@@ -3690,7 +3796,7 @@ def api_export_fava_draft():
         else:
             selected_indices = None
     else:
-        project_id = request.args.get('project', 'sanmiguel')
+        project_id = get_current_project()
         stage_exp = request.args.get('stage', 'L10').upper()
         bkc_file = request.args.get('bkc_file')
         bkc_sheet = request.args.get('bkc_sheet')
@@ -3807,7 +3913,7 @@ def api_export_fava_draft():
     )
 
 
-LATEST_FRU_VER_CACHE = {}
+LATEST_FRU_VER_CACHE = BoundedLRUCache(maxsize=150)
 
 def get_latest_fru_version(project_id=None):
     if not project_id:
@@ -3843,7 +3949,7 @@ def get_latest_fru_version(project_id=None):
                     return last_ver
         wb.close()
     except Exception as e:
-        print(f"Error reading FRU file: {e}")
+        logger.warning(f"Error reading FRU file: {e}")
     return '0.05A'
 
 
@@ -3861,7 +3967,7 @@ SSD_STATIC_SPECS = {
 @app.route('/api/preview-fava-draft', methods=['GET'])
 def api_preview_fava_draft():
     """Return live preview rows for FAVA FW Control Table Modal (Supports L10 & L11 stage modes)."""
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     stage = request.args.get('stage', 'L10').upper()
     bkc_file = request.args.get('bkc_file')
     bkc_sheet = request.args.get('bkc_sheet')
@@ -4035,7 +4141,7 @@ def api_preview_fava_draft():
 def api_debug_search():
     """Diagnostic endpoint to inspect file scanning and matrix search matches."""
     q_raw = request.args.get('q', '15-106079')
-    project_id = request.args.get('project', 'sanmiguel')
+    project_id = get_current_project()
     clean_q = re.sub(r'[^a-zA-Z0-9]', '', q_raw.lower())
 
     debug_info = {
@@ -4095,6 +4201,6 @@ if __name__ == '__main__':
                 continue
 
     debug_mode = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
-    print(f"[Server Launch] Running on http://localhost:{port} (Project: {DEFAULT_PROJECT})")
+    logger.info(f"[Server Launch] Running on http://localhost:{port} (Project: {DEFAULT_PROJECT})")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
 

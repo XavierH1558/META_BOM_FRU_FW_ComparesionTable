@@ -2630,6 +2630,31 @@ body.project-clemente .nav-tab.active {
     100% { width: 15%; margin-left: 85%; }
 }
 
+/* Search Keyword Realtime Highlighting */
+.search-highlight {
+    background: rgba(245, 158, 11, 0.45);
+    color: #ffffff;
+    padding: 0 3px;
+    border-radius: 3px;
+    font-weight: 700;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.3);
+}
 
-
-
+/* Keyboard Shortcut Hint Badges */
+.kbd-shortcut {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.4rem;
+    color: var(--text-muted, #94a3b8);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+    margin-left: 0.35rem;
+    pointer-events: none;
+    line-height: 1;
+}
