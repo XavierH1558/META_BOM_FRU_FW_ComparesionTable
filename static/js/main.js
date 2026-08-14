@@ -4451,39 +4451,40 @@ function renderYamlVersionDiffTable(items) {
 let currentFavaTsvText = '';
 let currentFavaStage = 'L10';
 
+function updateYamlSlotsVisibility() {
+    const slot4 = document.getElementById('slot-card-4');
+    const slot5 = document.getElementById('slot-card-5');
+    const slotsPanel = document.getElementById('yaml-station-slots-panel');
+
+    if (currentFavaStage === 'L10') {
+        if (slot4) slot4.style.display = 'none';
+        if (slot5) slot5.style.display = 'none';
+        const s4 = document.getElementById('yaml-file-select-4');
+        const s5 = document.getElementById('yaml-file-select-5');
+        if (s4) s4.value = '';
+        if (s5) s5.value = '';
+        if (slotsPanel) {
+            slotsPanel.classList.add('stage-l10');
+            slotsPanel.classList.remove('stage-l11');
+        }
+    } else {
+        if (slot4) slot4.style.display = 'flex';
+        if (slot5) slot5.style.display = 'flex';
+        if (slotsPanel) {
+            slotsPanel.classList.add('stage-l11');
+            slotsPanel.classList.remove('stage-l10');
+        }
+    }
+    if (typeof checkActiveYamlAndSetBtnState === 'function') {
+        checkActiveYamlAndSetBtnState();
+    }
+}
+
 // Initialize Stage Toggle & Clear Uploaded YAMLs Listeners
 function initStageToggleListeners() {
     const btnStageL10 = document.getElementById('btn-stage-l10');
     const btnStageL11 = document.getElementById('btn-stage-l11');
     const btnClearYamls = document.getElementById('btn-clear-uploaded-yamls');
-
-    function updateYamlSlotsVisibility() {
-        const slot4 = document.getElementById('slot-card-4');
-        const slot5 = document.getElementById('slot-card-5');
-        const slotsPanel = document.getElementById('yaml-station-slots-panel');
-
-        if (currentFavaStage === 'L10') {
-            if (slot4) slot4.style.display = 'none';
-            if (slot5) slot5.style.display = 'none';
-            const s4 = document.getElementById('yaml-file-select-4');
-            const s5 = document.getElementById('yaml-file-select-5');
-            if (s4) s4.value = '';
-            if (s5) s5.value = '';
-            if (slotsPanel) {
-                slotsPanel.classList.add('stage-l10');
-                slotsPanel.classList.remove('stage-l11');
-            }
-        } else {
-            if (slot4) slot4.style.display = 'flex';
-            if (slot5) slot5.style.display = 'flex';
-            if (slotsPanel) {
-                slotsPanel.classList.add('stage-l11');
-                slotsPanel.classList.remove('stage-l10');
-            }
-        if (typeof checkActiveYamlAndSetBtnState === 'function') {
-            checkActiveYamlAndSetBtnState();
-        }
-    }
 
     const btnToggleConfigPanel = document.getElementById('btn-toggle-yaml-config-panel');
     const collapsibleBody = document.getElementById('yaml-collapsible-config-body');

@@ -1654,21 +1654,6 @@ def parse_single_yaml_file(path, default_station_label="Station"):
             if not isinstance(args, dict): continue
             step_extracted_before = len(extracted_items)
             
-            # 1. check_list dictionary (e.g. ClementeGB300VersionCheck)
-            chk_list = args.get('check_list')
-            if isinstance(chk_list, dict):
-                for k, v in chk_list.items():
-                    extracted_items.append({
-                        'station': station_label,
-                        'file_name': base_name,
-                        'step_location': str(step_name),
-                        'component': str(k),
-                        'sub_component': str(k),
-                        'yaml_version': clean_val(v),
-                        'command': str(step.get('cmd') or args.get('cmd') or ''),
-                        'discussion_note': f"Test check in step '{step_name}'"
-                    })
-            
             # 2. ssd_info dictionary (e.g. SSDFlash~check_only)
             ssd_info = args.get('ssd_info')
             if isinstance(ssd_info, dict):

@@ -1,0 +1,1078 @@
+#
+# San Miguel Compute Tray DVT FRO v3
+#
+# ChangeLog
+#    - v1
+#    ---  Based on "sanmiguel_ct_evt_fro_v1"
+#    ---  FW BKC DVT_WW25_20260626
+#    ---  Add NIC SMA check
+#    ---  Update NVPD to r10.179_2.30.3
+#    ---  Since NV 0.5.1 did not release a GPU driver, disable InstallNVIDIAGPUDriver GPU_HBM_Info_Dump
+#    ---  SensorCheck skip GPU power due to no GPU driver
+#    ---  Enable dump_all_errors
+#    - v2
+#    ---  ConfigCheck skip test_mem_manufacturer
+#    - v3
+#    ---  Add a check for missing NV FRUs and automatic rescan after an AC cycle
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+#    bmc_only: true
+    runtime: 3000
+
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# check AP Status ready
+- name: SanMiguelAPStatusCheck
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+      HGX_FW_CPLD_0
+      HGX_FW_CPLD_1
+      HGX_FW_GPU_SMA_0
+      HGX_FW_GPU_SMA_1
+      HGX_FW_ProcessorModule_SMA_0
+      HGX_FW_ProcessorModule_SMA_1
+      HGX_SBIOS_FMC_0
+      HGX_SBIOS_FMC_1
+      HGX_SBIOS_FW_0
+      HGX_SBIOS_FW_1
+      HGX_FW_GPU_0
+      HGX_FW_GPU_1
+      HGX_FW_GPU_2
+      HGX_FW_GPU_3
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+# ----- Check FW/CPLD version
+
+- name: BMCFlash~check_only
+  proxy: controller
+  args:
+    check_only: true
+    force_update: false
+    postreboot: false 
+    bmc_bootup_version_info: false
+    fw_version: sanmiguel-v2026.26.1.quanta
+
+# ----- VR200 version check
+
+- name: SanMiguelHMCFlash~VR200_all_check
+  proxy: controller
+  timeout: 4000
+  reboot: false
+  args:
+    check_only: true
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: all
+    postreboot: false
+    fw_version: 
+      HGX_FW_BMC_0: 'VRH-2605-01.02'
+      HGX_FW_CPLD_0: '0.2C'
+      HGX_FW_CPLD_1: '0.2C'
+      HGX_FW_ERoT_BMC_0: '02.00.0023.0000_n05'
+      HGX_FW_GPU_0: '99.00.16.00.28'
+      HGX_FW_GPU_1: '99.00.16.00.28'
+      HGX_FW_GPU_2: '99.00.16.00.28'
+      HGX_FW_GPU_3: '99.00.16.00.28'
+      HGX_FW_GPU_SMA_0: '0023.01.0261.0004'
+      HGX_FW_GPU_SMA_1: '0023.01.0261.0004'
+      HGX_FW_ProcessorModule_SMA_0: '0026.01.0263.0000'
+      HGX_FW_ProcessorModule_SMA_1: '0026.01.0263.0000'
+      HGX_SBIOS_FMC_0: '05.08.00.02'
+      HGX_SBIOS_FMC_1: '05.08.00.02'
+      HGX_SBIOS_FW_0: '2A.01.00.00'
+      HGX_SBIOS_FW_1: '2A.01.00.00'
+
+- name: OOB_FW_Flash~IOB_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: true
+    force_update: false
+    fru: iob
+    component: sma
+    postreboot: false
+    fw_version: 
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+
+- name: OOB_FW_Flash~CX9_Clover_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  args:
+    check_only: true
+    force_update: false
+    fru: clover
+    component: sma
+    postreboot: false
+    fw_version: '0034.01.0263.0000'
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm && rpm -ivh --force --nosignature mft-4.35.0-6007.arm64.rpm; }'
+
+- name: MultiNICFlash~FENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: 'North South SuperNIC'
+    device_count: 2
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '82.48.1326'
+    }
+
+- name: MultiNICFlash~BENIC~check_only
+  timeout: 3600
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: 'Quad ConnectX-9 SuperNIC'
+    device_count: 8
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '82.48.1326'}
+
+#
+# SSD Flash
+#
+- name: SSDFlash~check_only
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+    check_only: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MTFDLBT7T6THC-ABK4FABVAES:
+        vendor: micron
+        fw_version: E5FB004
+      WUL6BA176O9P8X7:
+        vendor: wd
+        fw_version: RG109W0B
+
+#
+# FRU Check
+#
+- name: LFFRUEeprom~check
+  args:
+    check_only: true
+    fru_util: tools/platforms/sanmiguel/utils/fruid-util.py
+    fru_config: etc/fru_sanmiguel_chk.json
+    components_info: {
+      hpm0: {eeprom: 1-0051, dev_file: PG558},
+      hpm1: {eeprom: 3-0051, dev_file: PG558_0},
+      scm: {eeprom: 10-0050, dev_file: San_Miguel_SCM_DVT},
+      pdb: {eeprom: 9-0050, dev_file: San_Miguel_PDB_DVT},
+      fio: {eeprom: 14-0050, dev_file: San_Miguel_FIO_DVT},
+      smm: {eeprom: 5-0050, dev_file: San_Miguel_SMM_Carrier_DVT},
+      smmext: {eeprom: 13-0055, dev_file: San_Miguel_SMM_Extender_DVT},
+    }
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+#
+# dmesg check
+#
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_sanmiguel.json
+    dump_all_errors: true
+
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+# ----- PCI Check
+
+# The SSD is Gen5, but the system supports Gen6.
+- name: PCICheck~ALL~BE_Case5
+  args:
+    pci_info: {
+                'FE_NIC_0': ['0005:41:00.1', '64GT/s', 'x8'],
+                'CPU0_UPHY0_1': ['0001:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY0_2': ['0003:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY1_1': ['0002:80:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_2': ['0002:c0:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_3': ['0002:e0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY1_4': ['0002:a0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY2_1': ['0004:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY2_2': ['0006:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY3_1': ['0005:40:00.0', '64GT/s', 'x8'],
+                'x1_Gen2_USB': ['0002:e1:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_BMC': ['0002:a1:00.0', '5GT/s', 'x1'],
+                'SSD_0': ['000a:a1:00.0', '32GT/s', 'x4'],
+                'FE_NIC_1': ['000d:41:00.1', '64GT/s', 'x8'],
+                'CPU1_UPHY0_1': ['0009:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY0_2': ['000b:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY1_1': ['000a:a0:00.0', '32GT/s', 'x4'],
+                'CPU1_UPHY1_2': ['000a:80:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY1_3': ['000a:e0:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY2_1': ['000c:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY2_2': ['000e:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY3_1': ['000d:40:00.0', '64GT/s', 'x8'],
+                'CPU0_BE_NIC_Upper_0_0': ['0001:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_0_1': ['0001:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_0': ['0003:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_1': ['0003:01:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_0': ['0004:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_1': ['0004:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_0': ['0006:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_1': ['0006:01:00.1', '64GT/s', 'x16'],
+                'SSD_1': ['0001:06:00.0', '32GT/s', 'x4'],
+                'SSD_2': ['0004:06:00.0', '32GT/s', 'x4'],
+                'CPU1_BE_NIC_Upper_0_0': ['000c:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_0_1': ['000c:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_0': ['000e:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_1': ['000e:01:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_0': ['0009:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_1': ['0009:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_0': ['000b:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_1': ['000b:01:00.1', '64GT/s', 'x16'],
+                'SSD_3': ['000c:06:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0009:06:00.0', '32GT/s', 'x4'],
+                'CPU0_GPU_0': ['0002:81:00.0', '64GT/s', 'x2'],
+                'CPU0_GPU_1': ['0002:c1:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_0': ['000a:81:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_1': ['000a:e1:00.0', '64GT/s', 'x2'],
+              }
+
+# ----- PD test
+#- name: ClementeSSIFCheck~first_try
+#  timeout: 200
+#  args:
+#    exp_string: 'SSIF'
+#    trigger_reboot: True
+
+#- name: HostUpCheck
+#  proxy: controller
+#  args:
+#    runtime: 3000
+
+#- name: ClementeSSIFCheck~2nd_try
+#  timeout: 200
+#  args:
+#    exp_string: 'SSIF'
+
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+#- name: InstallNVIDIAGPUDriver~610.31
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/NVIDIA-Linux-aarch64-610.31.run ; chmod +x /tmp/NVIDIA-Linux-aarch64-610.31.run ; IGNORE_CC_MISMATCH=1 NV_ALLOW_VARIABLE_VERSION_COMPILER=1 LLVM=1 LD=/usr/bin/ld.lld HOSTLD=/usr/bin/ld.lld ./NVIDIA-Linux-aarch64-610.31.run --silent ; rm /tmp/NVIDIA-Linux-aarch64-610.31.run '
+
+#- name: Disable_acs
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/disable_acs.sh; chmod +x disable_acs.sh; ./disable_acs.sh;'
+
+- name: DisableNetworkManagerManageBENIC
+  runner: bash
+  cmd: 'for dev in enP1p3s0f0np0 enP1p3s0f1np1 enP3s6f0np0 enP3s6f1np1 enP4p3s0f0np0 enP4p3s0f1np1 enP6s11f0np0 enP6s11f1np1 enP9p3s0f0np0 enP9p3s0f1np1 enP11s16f0np0 enP11s16f1np1 enP12p3s0f0np0 enP12p3s0f1np1 enP14s21f0np0 enP14s21f1np1; do sudo nmcli device set "$dev" managed no; done'
+
+- name: NPIOOBFlash~Start_PD_sensor_record
+  retries: 1
+  retry_rand_delay: 10
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/F0W_sensor_record'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && cd /tmp && ((nohup {fw_file} < /dev/null > /dev/null 2>&1 &) &)'
+
+- name: NVDiagCheck~PD_r10.179_2.30.3
+  args:
+    field_diag_pkg: 'partnerdiag'
+    extra_args: ['--mfg', '--run_spec=spec_vr_nvl72_l10_partner_mfg_case5_wo_FE.json', '--run_on_error', '--no_bmc', '--skip_driver_load','--skip_tests=SyslogErrorCheck,KernLogErrorCheck,DmesgLogErrorCheck,SyslogAERCheck,KernLogAERCheck,DmesgLogAERCheck,DisableBfCxInterfacesFromNetworkManager,EnableBfCxInterfacesFromNetworkManager,NvmeBootDrivePcie,NvmeDataDrivePcie,NvmeBootDriveBandwidth,NvmeDataDriveBandwidth,DpuStress,BfCpuPcieStress,CpuPcieTraffic,CpuGpuPowerPulseBgCx,CpuSocVdd']
+    test_recipe: 'spec_vr_nvl72_l10_partner_mfg_case5_wo_FE.json'
+    sku_file: 'sku_vr_nvl72_l10_partner_mfg.json'
+    package_loc: 'platforms/sanmiguel/tools/NVPD/L10/'
+    Partner_tools: 'VR_NVL72_L10_Compute-r10.179_2.30.3-PD.tgz'
+    pkg_folder_name: 'VR_NVL72_L10_Compute-r10.179_2.30.3-PD'
+    log_folder_name: 'dgx'
+    log_subfolder_name: 'logs'
+    is_partner_diag: true
+
+- name: RunOOBCmd~Get_PD_sensor_record
+  args:
+    cmd: kill -9 $(ps | grep /tmp/F0W_sensor_record | grep -v grep | awk '{print $1}'); cat /tmp/log_Thermal_SDR/Thermal_SDR.log; rm -rf /tmp/log_Thermal_SDR
+    without_check: true
+
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# check AP Status ready
+- name: SanMiguelAPStatusCheck
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+      HGX_FW_CPLD_0
+      HGX_FW_CPLD_1
+      HGX_FW_GPU_SMA_0
+      HGX_FW_GPU_SMA_1
+      HGX_FW_ProcessorModule_SMA_0
+      HGX_FW_ProcessorModule_SMA_1
+      HGX_SBIOS_FMC_0
+      HGX_SBIOS_FMC_1
+      HGX_SBIOS_FW_0
+      HGX_SBIOS_FW_1
+      HGX_FW_GPU_0
+      HGX_FW_GPU_1
+      HGX_FW_GPU_2
+      HGX_FW_GPU_3
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+# ----- Background SEL check
+
+- name: SELCheck~background
+  background: true
+  retries: 0
+  args:
+    interval: 120
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 1
+    pcie_error_threshold: 3
+    sel_filters_file: etc/sel_filters_sanmiguel.json
+    product: sanmiguel
+#    log_type: "redfish"
+    dump_all_errors: true
+
+# ----- Background Dmesg check
+
+- name: DMESG_check~background
+  background: true
+  #ignore_fail: '_all_'
+  args:
+    bg_interval: 223
+    heartbeat_interval: 660
+    dmesg_filters_file: etc/dmesg_filters_sanmiguel.json
+    dump_all_errors: true
+
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+#- name: InstallNVIDIAGPUDriver~610.31
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/NVIDIA-Linux-aarch64-610.31.run ; chmod +x /tmp/NVIDIA-Linux-aarch64-610.31.run ; IGNORE_CC_MISMATCH=1 NV_ALLOW_VARIABLE_VERSION_COMPILER=1 LLVM=1 LD=/usr/bin/ld.lld HOSTLD=/usr/bin/ld.lld ./NVIDIA-Linux-aarch64-610.31.run --silent ; rm /tmp/NVIDIA-Linux-aarch64-610.31.run '
+
+#- name: InstallRPMPackage~disable_nvlink
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/disable_nvlink.sh; chmod +x disable_nvlink.sh; ./disable_nvlink.sh;'
+
+- name: SleepTest~2mins
+  args:
+    duration: 120
+
+#- name: GPU_HBM_Info_Dump
+#  runner: bash
+#  cmd: nvidia-smi
+
+#- name: InstallRPMPackage~CheckNVDevice~NOTOOLFORVR200
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/clemente/utils/check_nvidia_dev.sh; chmod +x check_nvidia_dev.sh; ./check_nvidia_dev.sh || { rm -f /tmp/check_nvidia_dev.sh; exit 1; }'
+
+- name: NPIOOBFlash~Start_CSST_sensor_record
+  retries: 1
+  retry_rand_delay: 10
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/F0W_sensor_record'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && cd /tmp && ((nohup {fw_file} < /dev/null > /dev/null 2>&1 &) &)'
+
+- name: CSST~VR200_DVT1_Build_NoCuda_Concurrency_MEM_only.json
+  timeout: 5400
+  args:
+    package_loc: 'platforms/sanmiguel/tools/CSST/'
+    test_pkg: VR200_DVT1_Build_NoCuda_Concurrency_1hr
+    csst_tool: csst_vr_march24_no_cuda
+    config_file: VR200_DVT1_Build_NoCuda_Concurrency_MEM_only.json
+
+- name: RunOOBCmd~Get_CSST_sensor_record
+  args:
+    cmd: kill -9 $(ps | grep /tmp/F0W_sensor_record | grep -v grep | awk '{print $1}'); cat /tmp/log_Thermal_SDR/Thermal_SDR.log; rm -rf /tmp/log_Thermal_SDR
+    without_check: true
+
+- name: SleepTest~2min
+  args:
+    duration: 120
+
+# AC
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+#- name: InstallNVIDIAGPUDriver~610.31
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/NVIDIA-Linux-aarch64-610.31.run ; chmod +x /tmp/NVIDIA-Linux-aarch64-610.31.run ; IGNORE_CC_MISMATCH=1 NV_ALLOW_VARIABLE_VERSION_COMPILER=1 LLVM=1 LD=/usr/bin/ld.lld HOSTLD=/usr/bin/ld.lld ./NVIDIA-Linux-aarch64-610.31.run --silent ; rm /tmp/NVIDIA-Linux-aarch64-610.31.run '
+
+- name: SleepTest~10sec
+  args:
+    duration: 10
+
+- name: NPIOOBFlash~Start_FIO_Mlucas_sensor_record
+  retries: 1
+  retry_rand_delay: 10
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/F0W_sensor_record'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && cd /tmp && ((nohup {fw_file} < /dev/null > /dev/null 2>&1 &) &)'
+
+# ----- FIO test
+
+- name: SanMiguelFIOTest~BootDrive
+  continue: true
+  args:
+    only_boot_device: true
+    fio_job_args:
+      rw: randrw
+      rwmixread: 50
+      time_based: 1
+      iodepth: 32
+      direct: 1
+      ramp_time: 10s
+      runtime: 3600
+      offset: 16G
+      bssplit: 4K/20:8K/10:16K/10:32K/10:64K/10:128K/20:256K/10:512K/10
+      numjobs: 4
+      group_reporting: 1
+      ioengine: libaio
+
+- name: SanMiguelFIOTest~DataDrive
+  continue: true
+  args:
+    exclude_boot_device: true
+    fio_job_args:
+      direct: 1
+      ioengine: libaio
+      refill_buffers: 1
+      norandommap: 1
+      randrepeat: 0
+      time_based: 1
+      iodepth: 64
+      iodepth_low: 1
+      runtime: 3600
+      numjobs: 16
+      group_reporting: 1
+      rw: randrw
+      percentage_random: 100,25,0
+      rwmixread: 50
+      bssplit: 4K/20:8K/10:16K/10:32K/10:64K/10:128K/20:256K/10:512K/10
+
+# ----- stress test
+
+#- name: StressappTest
+#  timeout: 12000
+#  args:
+#    runtime: 10800
+#    perc_mem: .90
+
+# Approximately 80 minutes
+- name: MlucasTest
+  timeout: 7200
+  args: 
+    controller_tool_path: tools/platforms/sanmiguel/tools/Mlucas-21.0.2
+    size: medium
+    cpu: "0:351"
+    iters: 500
+
+- name: RunOOBCmd~Get_FIO_Mlucas_sensor_record
+  args:
+    cmd: kill -9 $(ps | grep /tmp/F0W_sensor_record | grep -v grep | awk '{print $1}'); cat /tmp/log_Thermal_SDR/Thermal_SDR.log; rm -rf /tmp/log_Thermal_SDR
+    without_check: true
+
+#### SSD Smart Check ####
+- name: SMARTCheck
+  args:
+    cycles: 1
+
+- name: NvmeOCPSmartlogCheck
+  args:
+    device_list: ['/dev/nvme0n1', '/dev/nvme1n1', '/dev/nvme2n1', '/dev/nvme3n1', '/dev/nvme4n1']
+    check_param: 'PCIe correctable error count'
+    expected_value: '0'
+
+# The SSD is Gen5, but the system supports Gen6.
+- name: PCICheck~ALL~BE_Case5
+  args:
+    pci_info: {
+                'FE_NIC_0': ['0005:41:00.1', '64GT/s', 'x8'],
+                'CPU0_UPHY0_1': ['0001:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY0_2': ['0003:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY1_1': ['0002:80:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_2': ['0002:c0:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_3': ['0002:e0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY1_4': ['0002:a0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY2_1': ['0004:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY2_2': ['0006:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY3_1': ['0005:40:00.0', '64GT/s', 'x8'],
+                'x1_Gen2_USB': ['0002:e1:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_BMC': ['0002:a1:00.0', '5GT/s', 'x1'],
+                'SSD_0': ['000a:a1:00.0', '32GT/s', 'x4'],
+                'FE_NIC_1': ['000d:41:00.1', '64GT/s', 'x8'],
+                'CPU1_UPHY0_1': ['0009:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY0_2': ['000b:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY1_1': ['000a:a0:00.0', '32GT/s', 'x4'],
+                'CPU1_UPHY1_2': ['000a:80:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY1_3': ['000a:e0:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY2_1': ['000c:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY2_2': ['000e:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY3_1': ['000d:40:00.0', '64GT/s', 'x8'],
+                'CPU0_BE_NIC_Upper_0_0': ['0001:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_0_1': ['0001:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_0': ['0003:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_1': ['0003:01:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_0': ['0004:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_1': ['0004:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_0': ['0006:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_1': ['0006:01:00.1', '64GT/s', 'x16'],
+                'SSD_1': ['0001:06:00.0', '32GT/s', 'x4'],
+                'SSD_2': ['0004:06:00.0', '32GT/s', 'x4'],
+                'CPU1_BE_NIC_Upper_0_0': ['000c:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_0_1': ['000c:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_0': ['000e:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_1': ['000e:01:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_0': ['0009:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_1': ['0009:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_0': ['000b:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_1': ['000b:01:00.1', '64GT/s', 'x16'],
+                'SSD_3': ['000c:06:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0009:06:00.0', '32GT/s', 'x4'],
+                'CPU0_GPU_0': ['0002:81:00.0', '64GT/s', 'x2'],
+                'CPU0_GPU_1': ['0002:c1:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_0': ['000a:81:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_1': ['000a:e1:00.0', '64GT/s', 'x2'],
+              }
+
+#############
+
+# ----- SDR check
+
+- name: SensorCheck
+  args:
+    cycles: 1
+    #excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C'
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C,HGX_GPU0_DRAM_PWR_W,HGX_GPU0_ENERGY_J,HGX_GPU0_PWR_W,HGX_GPU0_THERMAL_MARGIN_TEMP_C,HGX_GPU1_DRAM_PWR_W,HGX_GPU1_ENERGY_J,HGX_GPU1_PWR_W,HGX_GPU1_THERMAL_MARGIN_TEMP_C,HGX_GPU2_DRAM_PWR_W,HGX_GPU2_ENERGY_J,HGX_GPU2_PWR_W,HGX_GPU2_THERMAL_MARGIN_TEMP_C,HGX_GPU3_DRAM_PWR_W,HGX_GPU3_ENERGY_J,HGX_GPU3_PWR_W,HGX_GPU3_THERMAL_MARGIN_TEMP_C,NvidiaNSM_SMA_30_LEAKDETECTOR_0,NvidiaNSM_SMA_50_LEAKDETECTOR_0'
+
+# ----- AC cycle - 5 loops
+
+- loop: 5
+  name: HostACCycleBlock
+  group:
+  - name: SledAcCycle
+    reboot: true
+    args:
+      always: true
+      runtime: 3000
+      product: sanmiguel
+  # Check for missing NV FRU workaround
+  - name: NPIOOBFlash~NV_FRU_Check_WA
+    retries: 1
+    retry_rand_delay: 10
+    proxy: controller
+    args:
+      allow_error: False
+      fw_util: 'None'
+      fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+      copy_fw_util: False
+      cmd: 'chmod +x {fw_file} && {fw_file}'
+  - name: ConfigCheck
+    args:
+      fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot, test_battery, test_mem_manufacturer]
+      #fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot]
+  - name: PartCheck
+    args:
+      fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+
+# check AP Status ready
+- name: SanMiguelAPStatusCheck
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+      HGX_FW_CPLD_0
+      HGX_FW_CPLD_1
+      HGX_FW_GPU_SMA_0
+      HGX_FW_GPU_SMA_1
+      HGX_FW_ProcessorModule_SMA_0
+      HGX_FW_ProcessorModule_SMA_1
+      HGX_SBIOS_FMC_0
+      HGX_SBIOS_FMC_1
+      HGX_SBIOS_FW_0
+      HGX_SBIOS_FW_1
+      HGX_FW_GPU_0
+      HGX_FW_GPU_1
+      HGX_FW_GPU_2
+      HGX_FW_GPU_3
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+#- name: InstallNVIDIAGPUDriver~610.31
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/NVIDIA-Linux-aarch64-610.31.run ; chmod +x /tmp/NVIDIA-Linux-aarch64-610.31.run ; IGNORE_CC_MISMATCH=1 NV_ALLOW_VARIABLE_VERSION_COMPILER=1 LLVM=1 LD=/usr/bin/ld.lld HOSTLD=/usr/bin/ld.lld ./NVIDIA-Linux-aarch64-610.31.run --silent ; rm /tmp/NVIDIA-Linux-aarch64-610.31.run '
+
+- name: SleepTest~10sec
+  args:
+    duration: 10
+
+#
+# SDR check
+#
+- name: SensorCheck~after_AC_cycle
+  args:
+    cycles: 1
+    #excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C'
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C,HGX_GPU0_DRAM_PWR_W,HGX_GPU0_ENERGY_J,HGX_GPU0_PWR_W,HGX_GPU0_THERMAL_MARGIN_TEMP_C,HGX_GPU1_DRAM_PWR_W,HGX_GPU1_ENERGY_J,HGX_GPU1_PWR_W,HGX_GPU1_THERMAL_MARGIN_TEMP_C,HGX_GPU2_DRAM_PWR_W,HGX_GPU2_ENERGY_J,HGX_GPU2_PWR_W,HGX_GPU2_THERMAL_MARGIN_TEMP_C,HGX_GPU3_DRAM_PWR_W,HGX_GPU3_ENERGY_J,HGX_GPU3_PWR_W,HGX_GPU3_THERMAL_MARGIN_TEMP_C,NvidiaNSM_SMA_30_LEAKDETECTOR_0,NvidiaNSM_SMA_50_LEAKDETECTOR_0'
+
+# ----- DC cycle - 5 loops
+
+- loop: 5
+  name: HostDCCycleBlock
+  group:
+  - name: HostDcCycle
+    reboot: true
+    timeout: 1200
+  - name: HostUpCheck
+    proxy: controller
+    args:
+      runtime: 3000
+  - name: ConfigCheck
+    args:
+      fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot, test_battery, test_mem_manufacturer]
+      #fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot]
+  - name: PartCheck
+    args:
+      fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+#- name: InstallNVIDIAGPUDriver~610.31
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/NVIDIA-Linux-aarch64-610.31.run ; chmod +x /tmp/NVIDIA-Linux-aarch64-610.31.run ; IGNORE_CC_MISMATCH=1 NV_ALLOW_VARIABLE_VERSION_COMPILER=1 LLVM=1 LD=/usr/bin/ld.lld HOSTLD=/usr/bin/ld.lld ./NVIDIA-Linux-aarch64-610.31.run --silent ; rm /tmp/NVIDIA-Linux-aarch64-610.31.run '
+
+# ----- Check FW/CPLD version
+
+- name: BMCFlash~check_only
+  proxy: controller
+  args:
+    check_only: true
+    force_update: false
+    postreboot: false 
+    bmc_bootup_version_info: false
+    fw_version: sanmiguel-v2026.26.1.quanta
+
+# ----- VR200 version check
+
+- name: SanMiguelHMCFlash~VR200_all_check
+  proxy: controller
+  timeout: 4000
+  reboot: false
+  args:
+    check_only: true
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: all
+    postreboot: false
+    fw_version: 
+      HGX_FW_BMC_0: 'VRH-2605-01.02'
+      HGX_FW_CPLD_0: '0.2C'
+      HGX_FW_CPLD_1: '0.2C'
+      HGX_FW_ERoT_BMC_0: '02.00.0023.0000_n05'
+      HGX_FW_GPU_0: '99.00.16.00.28'
+      HGX_FW_GPU_1: '99.00.16.00.28'
+      HGX_FW_GPU_2: '99.00.16.00.28'
+      HGX_FW_GPU_3: '99.00.16.00.28'
+      HGX_FW_GPU_SMA_0: '0023.01.0261.0004'
+      HGX_FW_GPU_SMA_1: '0023.01.0261.0004'
+      HGX_FW_ProcessorModule_SMA_0: '0026.01.0263.0000'
+      HGX_FW_ProcessorModule_SMA_1: '0026.01.0263.0000'
+      HGX_SBIOS_FMC_0: '05.08.00.02'
+      HGX_SBIOS_FMC_1: '05.08.00.02'
+      HGX_SBIOS_FW_0: '2A.01.00.00'
+      HGX_SBIOS_FW_1: '2A.01.00.00'
+
+- name: OOB_FW_Flash~IOB_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: true
+    force_update: false
+    fru: iob
+    component: sma
+    postreboot: false
+    fw_version: 
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+
+- name: OOB_FW_Flash~CX9_Clover_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  args:
+    check_only: true
+    force_update: false
+    fru: clover
+    component: sma
+    postreboot: false
+    fw_version: '0034.01.0263.0000'
+
+# ----- NIC FW Check
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm && rpm -ivh --force --nosignature mft-4.35.0-6007.arm64.rpm; }'
+
+#mst stop for MultiNICFlash
+- name: MST_Stop
+  runner: bash
+  cmd: 'mst stop'
+
+- name: MultiNICFlash~FENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: 'North South SuperNIC'
+    device_count: 2
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '82.48.1326'
+    }
+
+- name: MultiNICFlash~BENIC~check_only
+  timeout: 3600
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: 'Quad ConnectX-9 SuperNIC'
+    device_count: 8
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '82.48.1326'}
+
+# ----- SSD FW check
+
+- name: SSDFlash~check_only
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+    check_only: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MTFDLBT7T6THC-ABK4FABVAES:
+        vendor: micron
+        fw_version: E5FB004
+      WUL6BA176O9P8X7:
+        vendor: wd
+        fw_version: RG109W0B
+
+# ----- FRU Check
+
+- name: LFFRUEeprom~check
+  args:
+    check_only: true
+    fru_util: tools/platforms/sanmiguel/utils/fruid-util.py
+    fru_config: etc/fru_sanmiguel_chk.json
+    components_info: {
+      hpm0: {eeprom: 1-0051, dev_file: PG558},
+      hpm1: {eeprom: 3-0051, dev_file: PG558_0},
+      scm: {eeprom: 10-0050, dev_file: San_Miguel_SCM_DVT},
+      pdb: {eeprom: 9-0050, dev_file: San_Miguel_PDB_DVT},
+      fio: {eeprom: 14-0050, dev_file: San_Miguel_FIO_DVT},
+      smm: {eeprom: 5-0050, dev_file: San_Miguel_SMM_Carrier_DVT},
+      smmext: {eeprom: 13-0055, dev_file: San_Miguel_SMM_Extender_DVT},
+    }
+
+# ----- PCI Check
+
+# The SSD is Gen5, but the system supports Gen6.
+- name: PCICheck~ALL~BE_Case5
+  args:
+    pci_info: {
+                'FE_NIC_0': ['0005:41:00.1', '64GT/s', 'x8'],
+                'CPU0_UPHY0_1': ['0001:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY0_2': ['0003:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY1_1': ['0002:80:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_2': ['0002:c0:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_3': ['0002:e0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY1_4': ['0002:a0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY2_1': ['0004:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY2_2': ['0006:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY3_1': ['0005:40:00.0', '64GT/s', 'x8'],
+                'x1_Gen2_USB': ['0002:e1:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_BMC': ['0002:a1:00.0', '5GT/s', 'x1'],
+                'SSD_0': ['000a:a1:00.0', '32GT/s', 'x4'],
+                'FE_NIC_1': ['000d:41:00.1', '64GT/s', 'x8'],
+                'CPU1_UPHY0_1': ['0009:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY0_2': ['000b:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY1_1': ['000a:a0:00.0', '32GT/s', 'x4'],
+                'CPU1_UPHY1_2': ['000a:80:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY1_3': ['000a:e0:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY2_1': ['000c:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY2_2': ['000e:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY3_1': ['000d:40:00.0', '64GT/s', 'x8'],
+                'CPU0_BE_NIC_Upper_0_0': ['0001:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_0_1': ['0001:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_0': ['0003:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_1': ['0003:01:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_0': ['0004:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_1': ['0004:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_0': ['0006:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_1': ['0006:01:00.1', '64GT/s', 'x16'],
+                'SSD_1': ['0001:06:00.0', '32GT/s', 'x4'],
+                'SSD_2': ['0004:06:00.0', '32GT/s', 'x4'],
+                'CPU1_BE_NIC_Upper_0_0': ['000c:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_0_1': ['000c:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_0': ['000e:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_1': ['000e:01:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_0': ['0009:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_1': ['0009:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_0': ['000b:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_1': ['000b:01:00.1', '64GT/s', 'x16'],
+                'SSD_3': ['000c:06:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0009:06:00.0', '32GT/s', 'x4'],
+                'CPU0_GPU_0': ['0002:81:00.0', '64GT/s', 'x2'],
+                'CPU0_GPU_1': ['0002:c1:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_0': ['000a:81:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_1': ['000a:e1:00.0', '64GT/s', 'x2'],
+              }
+
+# ----- SDR check
+
+- name: SensorCheck~after_DC_cycle
+  args:
+    cycles: 1
+    #excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C'
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C,HGX_GPU0_DRAM_PWR_W,HGX_GPU0_ENERGY_J,HGX_GPU0_PWR_W,HGX_GPU0_THERMAL_MARGIN_TEMP_C,HGX_GPU1_DRAM_PWR_W,HGX_GPU1_ENERGY_J,HGX_GPU1_PWR_W,HGX_GPU1_THERMAL_MARGIN_TEMP_C,HGX_GPU2_DRAM_PWR_W,HGX_GPU2_ENERGY_J,HGX_GPU2_PWR_W,HGX_GPU2_THERMAL_MARGIN_TEMP_C,HGX_GPU3_DRAM_PWR_W,HGX_GPU3_ENERGY_J,HGX_GPU3_PWR_W,HGX_GPU3_THERMAL_MARGIN_TEMP_C,NvidiaNSM_SMA_30_LEAKDETECTOR_0,NvidiaNSM_SMA_50_LEAKDETECTOR_0'
+
+# ----- dmesg check
+
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_sanmiguel.json
+    dump_all_errors: true
+
+# ----- SEL check
+
+- name: SELCheck
+#  retries: 2
+#  retry_delay: 60
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_sanmiguel.json
+    product: sanmiguel
+#    log_type: "redfish"
+    dump_all_errors: true
+
+# ----- syslog check
+
+#- name: SysLogCheck
+#  args:
+#    #err_threshold: '<1360000'
+#    syslog_filter_file: etc/syslog_filter_clemente.txt
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+- name: L10_FRO_COMPLETE
+  runner: bash
+  cmd: "/bin/true"

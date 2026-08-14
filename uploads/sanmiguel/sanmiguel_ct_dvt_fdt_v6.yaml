@@ -1,0 +1,1311 @@
+#
+# San Miguel Compute Tray DVT FDT v3
+#
+# ChangeLog
+#    - v1
+#    ---  Based on "sanmiguel_ct_evt_fdt_v1"
+#    ---  FW BKC DVT_WW25_20260626
+#    ---  Disable HMC transition update
+#    ---  Add NIC SMA check and update
+#    ---  Since NV 0.5.1 did not release a GPU driver, disable InstallNVIDIAGPUDriver
+#    ---  SensorCheck skip GPU power due to no GPU driver
+#    ---  Enable dump_all_errors
+#    ---  Add SMA_update_debug to dump update log
+#    - v2
+#    ---  ConfigCheck skip test_mem_manufacturer
+#    ---  SanMiguelCX9Firmware disable postreboot
+#    - v3
+#    ---  Add a check for missing NV FRUs and automatic rescan after an AC cycle
+#    ---  SanMiguelAPStatusCheck~SBIOS~GPU retry increased from 1 to 2 times
+#    - v4 - igs
+#    --- Disable SanMiguelSMMCarrierMACCheck MAC flash 
+#    - v5 - igs
+#    --- Add DMESG and SEL check after IBWrite Config1
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# wait 1 min for bmc/hmc ready for sel clear
+- name: SleepTest~1min
+  proxy: controller
+  args:
+    duration: 60
+
+- name: SELClear
+  proxy: controller
+  timeout: 1800
+#  retries: 1
+#  retry_delay: 30
+  args:
+    whitelist: {
+      'channel islands san miguel - vr200': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+- name: BMCFlash
+  proxy: controller
+  do_not_interrupt: true
+  args:
+    allow_error: true
+    check_only: false
+    force_update: false
+    postreboot: false 
+    bmc_bootup_version_info: false
+    fw_version: sanmiguel-v2026.26.1.quanta
+    fw_file: '/tools/platforms/sanmiguel/firmware/dvt/bmc/flash-sanmiguel-v2026.26.1.quanta'
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+    skip_postreboot_check: true
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+- name: BMCFlash~check_only
+  proxy: controller
+  do_not_interrupt: true
+  args:
+    check_only: true
+    force_update: false
+    postreboot: false 
+    bmc_bootup_version_info: false
+    fw_version: sanmiguel-v2026.26.1.quanta
+
+# ----- Increase BMC log size to 1M
+
+- name: NPIOOBFlash~Update_BMC_log_size
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/server.VSER14.conf_no_baud'
+    copy_fw_util: False
+    cmd: 'cp {fw_file} /etc/obmc-console/server.VSER14.conf && systemctl restart obmc-console@VSER14.service'
+
+# wait 3 min for bmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+- name: NPIOOBFlash~FE_NIC_MCU_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/FE_NIC_MCU_WA.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+- name: SanMiguelCX9Firmware
+  proxy: controller
+  timeout: 1200
+  args:
+    fw_file: tools/platforms/sanmiguel/firmware/dvt/nic/cx9_clover/fw-ConnectX9-rel-82_48_1326-900-9X9ME-00EB-SF0-META_ALT_Ax-UEFI-14.41.14-FlexBoot-3.9.101.signed-MT_0000001751.fwpkg
+    fw_version: 82.48.1326
+    force_update: false
+    component: "fe_nic"
+    postreboot: false
+
+- name: OOB_FW_Flash~IOB_SMA
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: false
+    force_update: false
+    fru: iob
+    component: sma
+    postreboot: false
+    fw_version: 
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+    fw_file: tools/platforms/sanmiguel/firmware/dvt/nvfw/0.5.1/mcxn556-mcufw-px9oe-0027.01.0266.0000-rel-prod.fwpkg
+
+- name: OOB_FW_Flash~CX9_Clover_SMA
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: false
+    force_update: false
+    fru: clover
+    component: sma
+    postreboot: false
+    fw_version: '0034.01.0263.0000'
+    fw_file: tools/platforms/sanmiguel/firmware/dvt/nvfw/0.5.1/mcxn556-mcufw-px9me-0034.01.0263.0000-rel-prod.fwpkg
+
+- name: RunOOBCmd~SMA_update_debug
+  proxy: controller
+  args:
+    cmd: journalctl -u pldmd; pldmtool fw_update GetFirmwareParameters -m 30; pldmtool fw_update GetFirmwareParameters -m 40; pldmtool fw_update GetFirmwareParameters -m 50; pldmtool fw_update GetFirmwareParameters -m 60; pldmtool fw_update GetFirmwareParameters -m 70
+    allow_error: true
+    without_check: true
+
+#
+# Update HMC FW
+# 1. HMC BMC
+# 2. SBIOS
+# 3. NV Bundle
+#
+
+# check HMC ready
+- name: SanMiguelAPStatusCheck~HMC_BMC
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+
+# check HMC Task
+- name: SanMiguelHMCTaskCheck
+  proxy: controller
+
+# check and update HMC BMC FW
+- name: SanMiguelHMCFlash~HMC_BMC_check_and_update
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: bundle
+    postreboot: false
+    fw_file: 'tools/platforms/sanmiguel/firmware/dvt/nvfw/0.5.1/nvfw_VR-NVL72-P4109-HMC_0001_260605.1.4_custom_nosbios_prod-signed.fwpkg'
+    fw_version: 
+      HGX_FW_BMC_0: 'VRH-2605-01.02'
+      HGX_FW_ERoT_BMC_0: '02.00.0023.0000_n05'
+
+- name: ComputeTrayPowerSwitch~OFF
+  proxy: controller
+  args:
+    action: "off"
+
+- name: ComputeTrayPowerStatusCheck~OFF
+  proxy: controller
+  timeout: 120
+  retries: 3
+  retry_delay: 10
+  args:
+    bmc_only: true
+    pwr_status: "off"
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+    skip_postreboot_check: true
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# wait 3 min for hmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+# check HMC ready
+- name: SanMiguelAPStatusCheck~HMC_BMC
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+
+# check HMC BMC FW
+- name: SanMiguelHMCFlash~HMC_BMC_check
+  proxy: controller
+  timeout: 4000
+  reboot: false
+  args:
+    check_only: true
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: bundle
+    postreboot: false
+    fw_version: 
+      HGX_FW_BMC_0: 'VRH-2605-01.02'
+      HGX_FW_ERoT_BMC_0: '02.00.0023.0000_n05'
+
+- name: ComputeTrayPowerSwitch~ON
+  proxy: controller
+  args:
+    action: "on"
+
+- name: ComputeTrayPowerStatusCheck~ON
+  proxy: controller
+  timeout: 120
+  retries: 3
+  retry_delay: 10
+  args:
+    bmc_only: true
+    pwr_status: "on"
+
+# use recovery mode SBIOS for update
+- name: SanMiguelSBIOSRecovery~check_and_update
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: sbios
+    postreboot: false
+    recovery_file: 'tools/platforms/sanmiguel/firmware/dvt/bios/F0W_2A01_recovery-pkg.fwpkg'
+    fw_file: 'tools/platforms/sanmiguel/firmware/dvt/bios/F0W_2A01.BIN'
+    fw_version: 
+      HGX_SBIOS_FMC_0: '05.08.00.02'
+      HGX_SBIOS_FMC_1: '05.08.00.02'
+      HGX_SBIOS_FW_0: '2A.01.00.00'
+      HGX_SBIOS_FW_1: '2A.01.00.00'
+
+- name: ComputeTrayPowerSwitch~OFF
+  proxy: controller
+  args:
+    action: "off"
+
+- name: ComputeTrayPowerStatusCheck~OFF
+  proxy: controller
+  timeout: 120
+  retries: 3
+  retry_delay: 10
+  args:
+    bmc_only: true
+    pwr_status: "off"
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+    skip_postreboot_check: true
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# wait 3 min for hmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+# check HMC ready
+- name: SanMiguelAPStatusCheck~HMC_BMC
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+
+- name: ComputeTrayPowerSwitch~ON
+  proxy: controller
+  args:
+    action: "on"
+
+- name: ComputeTrayPowerStatusCheck~ON
+  proxy: controller
+  timeout: 120
+  retries: 3
+  retry_delay: 10
+  args:
+    bmc_only: true
+    pwr_status: "on"
+
+# check SBIOS FW
+- name: SanMiguelHMCFlash~SBIOS_check
+  proxy: controller
+  timeout: 4000
+  reboot: false
+  args:
+    check_only: true
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: sbios
+    postreboot: false
+    fw_version: 
+      HGX_SBIOS_FMC_0: '05.08.00.02'
+      HGX_SBIOS_FMC_1: '05.08.00.02'
+      HGX_SBIOS_FW_0: '2A.01.00.00'
+      HGX_SBIOS_FW_1: '2A.01.00.00'
+
+# check CPLD GPU_SMA ProcessorModule_SMA ready
+- name: SanMiguelAPStatusCheck~CPLD~GPU_SMA~ProcessorModule_SMA
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    ap_name: 
+      HGX_FW_CPLD_0
+      HGX_FW_CPLD_1
+      HGX_FW_GPU_SMA_0
+      HGX_FW_GPU_SMA_1
+      HGX_FW_ProcessorModule_SMA_0
+      HGX_FW_ProcessorModule_SMA_1
+
+# check SBIOS GPU ready
+- name: SanMiguelAPStatusCheck~SBIOS~GPU
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_SBIOS_FMC_0
+      HGX_SBIOS_FMC_1
+      HGX_SBIOS_FW_0
+      HGX_SBIOS_FW_1
+      HGX_FW_GPU_0
+      HGX_FW_GPU_1
+      HGX_FW_GPU_2
+      HGX_FW_GPU_3
+
+- name: SanMiguelHMCFlash~VR200_bundle_check_and_update
+  proxy: controller
+  timeout: 4000
+  do_not_interrupt: true
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    check_only: false
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: bundle
+    postreboot: false
+    skip_ap_check: true
+    fw_file: 'tools/platforms/sanmiguel/firmware/dvt/nvfw/0.5.1/nvfw_VR-NVL72-P4109-HMC_0001_260605.1.4_custom_nosbios_prod-signed.fwpkg'
+    fw_version: 
+      HGX_FW_BMC_0: 'VRH-2605-01.02'
+      HGX_FW_CPLD_0: '0.2C'
+      HGX_FW_CPLD_1: '0.2C'
+      HGX_FW_ERoT_BMC_0: '02.00.0023.0000_n05'
+      HGX_FW_GPU_0: '99.00.16.00.28'
+      HGX_FW_GPU_1: '99.00.16.00.28'
+      HGX_FW_GPU_2: '99.00.16.00.28'
+      HGX_FW_GPU_3: '99.00.16.00.28'
+      HGX_FW_GPU_SMA_0: '0023.01.0261.0004'
+      HGX_FW_GPU_SMA_1: '0023.01.0261.0004'
+      HGX_FW_ProcessorModule_SMA_0: '0026.01.0263.0000'
+      HGX_FW_ProcessorModule_SMA_1: '0026.01.0263.0000'
+
+- name: ComputeTrayPowerSwitch~OFF
+  proxy: controller
+  args:
+    action: "off"
+
+- name: ComputeTrayPowerStatusCheck~OFF
+  proxy: controller
+  timeout: 120
+  retries: 3
+  retry_delay: 10
+  args:
+    bmc_only: true
+    pwr_status: "off"
+
+- name: SledAcCycle~Proxy
+  proxy: controller
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+    skip_postreboot_check: true
+
+- name: HostUpCheck~BMC
+  proxy: controller
+  args:
+    bmc_only: true
+    runtime: 3000
+
+# wait 3 min for hmc ready
+- name: SleepTest~3min
+  proxy: controller
+  args:
+    duration: 180
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+- name: ComputeTrayPowerSwitch~ON
+  proxy: controller
+  args:
+    action: "on"
+
+- name: ComputeTrayPowerStatusCheck~ON
+  proxy: controller
+  timeout: 120
+  retries: 3
+  retry_delay: 10
+  args:
+    bmc_only: true
+    pwr_status: "on"
+
+# check HMC ready
+- name: SanMiguelAPStatusCheck~HMC_BMC
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 1
+    ap_name: 
+      HGX_FW_BMC_0
+      HGX_FW_ERoT_BMC_0
+
+# check SBIOS GPU ready
+- name: SanMiguelAPStatusCheck~SBIOS~GPU
+  proxy: controller
+  reboot: false
+  args:
+    sleep_time: 900
+    retry: 2
+    ap_name: 
+      HGX_SBIOS_FMC_0
+      HGX_SBIOS_FMC_1
+      HGX_SBIOS_FW_0
+      HGX_SBIOS_FW_1
+      HGX_FW_GPU_0
+      HGX_FW_GPU_1
+      HGX_FW_GPU_2
+      HGX_FW_GPU_3
+
+- name: HostUpCheck
+  proxy: controller
+  args:
+    runtime: 3000
+
+- name: LFOBMCNTPSetting~add_controller_url
+
+- name: RTCDriftTest
+  args:
+    drift_check: false
+    drift_threshold: 600
+    skip_reboot: true
+
+- name: SanMiguelHMCFlash~VR200_all_check
+  proxy: controller
+  timeout: 4000
+  reboot: false
+  args:
+    check_only: true
+    force_update: false
+    force_option: true
+    fru: hmc
+    component: all
+    postreboot: false
+    fw_version: 
+      HGX_FW_BMC_0: 'VRH-2605-01.02'
+      HGX_FW_CPLD_0: '0.2C'
+      HGX_FW_CPLD_1: '0.2C'
+      HGX_FW_ERoT_BMC_0: '02.00.0023.0000_n05'
+      HGX_FW_GPU_0: '99.00.16.00.28'
+      HGX_FW_GPU_1: '99.00.16.00.28'
+      HGX_FW_GPU_2: '99.00.16.00.28'
+      HGX_FW_GPU_3: '99.00.16.00.28'
+      HGX_FW_GPU_SMA_0: '0023.01.0261.0004'
+      HGX_FW_GPU_SMA_1: '0023.01.0261.0004'
+      HGX_FW_ProcessorModule_SMA_0: '0026.01.0263.0000'
+      HGX_FW_ProcessorModule_SMA_1: '0026.01.0263.0000'
+      HGX_SBIOS_FMC_0: '05.08.00.02'
+      HGX_SBIOS_FMC_1: '05.08.00.02'
+      HGX_SBIOS_FW_0: '2A.01.00.00'
+      HGX_SBIOS_FW_1: '2A.01.00.00'
+
+- name: OOB_FW_Flash~IOB_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  do_not_interrupt: true
+  args:
+    check_only: true
+    force_update: false
+    fru: iob
+    component: sma
+    postreboot: false
+    fw_version: 
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+      0027.01.0266.0000
+
+- name: OOB_FW_Flash~CX9_Clover_SMA~Check_only
+  proxy: controller
+  timeout: 1800
+  args:
+    check_only: true
+    force_update: false
+    fru: clover
+    component: sma
+    postreboot: false
+    fw_version: '0034.01.0263.0000'
+
+- name: SSDFlash~with_quantity_check
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_file: tools/platforms/sanmiguel/firmware/dvt/ssd/samsung/LDD66F2Q.bin
+        fw_version: LDD66F2Q
+      MTFDLBT7T6THC-1BK4FABVA:
+        vendor: micron
+        fw_file: tools/platforms/sanmiguel/firmware/dvt/ssd/micron/Micron_7550_E5FB004_release.ubi.enc
+        fw_version: E5FB004
+      WUL6BA176O9P8X7:
+        vendor: wd
+        fw_file: tools/platforms/sanmiguel/firmware/dvt/ssd/wd/RG109W0B.bin
+        fw_version: RG109W0B
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm && rpm -ivh --force --nosignature mft-4.35.0-6007.arm64.rpm; }'
+
+- name: NICFlashFlexible~FENIC
+  timeout: 1200
+  do_not_interrupt: true
+  args:
+    nic_name: enP5s10f0np0
+    check_only: false
+    postreboot: false
+    force_update: false
+    900-9X9ME-00EB-QS1: {
+      'update_cmds': [ { 'cmd': 'mlxfwmanager -u -d 0005:41:00.0 -i {} -f', 'file_loc': 'tools/platforms/sanmiguel/firmware/dvt/nic/cx9_clover/fw-ConnectX9-rel-82_48_1326-900-9X9ME-00EB-SF0-META_ALT_Ax-UEFI-14.41.14-FlexBoot-3.9.101.signed.bin' } ],
+      'fw_version': '82.48.1326' }
+
+- name: MultiNICFlash~BENIC
+  timeout: 6000
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: False
+    device_keyword: 'Quad ConnectX-9 SuperNIC'
+    device_count: 8
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_file': 'tools/platforms/sanmiguel/firmware/dvt/nic/cx9_be/fw-ConnectX9-rel-82_48_1326-900-9X9OE-00PB-SF0_Ax-UEFI-14.41.14-FlexBoot-3.9.101.signed.bin',
+      'fw_version': '82.48.1326'}
+
+#
+# FRU Write
+#
+
+- name: LFFRUEeprom
+  args:
+    force_update: false
+    fru_util: tools/platforms/sanmiguel/utils/fruid-util.py
+    fru_config: etc/fru_sanmiguel_wrt.json
+    allow_empty_value: true
+    components_info: {
+      scm: {eeprom: 10-0050, dev_file: San_Miguel_SCM_DVT},
+      pdb: {eeprom: 9-0050, dev_file: San_Miguel_PDB_DVT},
+      fio: {eeprom: 14-0050, dev_file: San_Miguel_FIO_DVT},
+      smm: {eeprom: 5-0050, dev_file: San_Miguel_SMM_Carrier_DVT},
+      smmext: {eeprom: 13-0055, dev_file: San_Miguel_SMM_Extender_DVT},
+    }
+
+#- name: SanMiguelSMMCarrierMACCheck
+#  args:
+#    driver: tools/platforms/sanmiguel/utils/r8152_6.19.2-0_fbk0_rc22.ko
+#    flash_tool: tools/platforms/sanmiguel/utils/rtunicpg.zip
+#    check_only: false
+
+# ----- SEL clear
+
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+- name: SleepTest~2min
+  proxy: controller
+  args:
+    duration: 120
+
+# AC
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+- name: SSDFlash~with_quantity_check
+  do_not_interrupt: true
+  args:
+    check_quantity: true
+    check_only: true
+#    part_numbers_skip_reset_postcheck: ['MZOL63T8HDLT-00AFB']
+#    msg_skip_reset_postcheck: "Reset: Network dropped connection on reset"
+    skip_chk_aft_flash: true
+    ssd_info:
+      MZTL67T6HBLC-00AFB:
+        vendor: samsung
+        fw_version: LDD66F2Q
+      MTFDLBT7T6THC-ABK4FABVAES:
+        vendor: micron
+        fw_version: E5FB004
+      WUL6BA176O9P8X7:
+        vendor: wd
+        fw_version: RG109W0B
+
+- name: SMARTCheck
+  args:
+    cycles: 1
+
+- name: NvmeOCPSmartlogCheck
+  args:
+    device_list: ['/dev/nvme0n1', '/dev/nvme1n1', '/dev/nvme2n1', '/dev/nvme3n1', '/dev/nvme4n1']
+    check_param: 'PCIe correctable error count'
+    expected_value: '0'
+
+- name: InstallRPM~mft
+  runner: bash
+  cmd: 'mlxfwmanager -h &> /dev/null || { cd /tmp && wget -nv http://controller/tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm && rpm -ivh --force --nosignature mft-4.35.0-6007.arm64.rpm; }'
+
+- name: MultiNICFlash~FENIC~check_only
+  timeout: 1800
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: 'North South SuperNIC'
+    device_count: 2
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '82.48.1326'
+    }
+
+- name: MultiNICFlash~BENIC~check_only
+  timeout: 3600
+#  retries: 2
+  do_not_interrupt: true
+  args:
+    check_only: true
+    device_keyword: 'Quad ConnectX-9 SuperNIC'
+    device_count: 8
+    clear_sel: False
+    postreboot: False
+    force_update: False
+    mellanox: {
+      'fw_tool': '/usr/bin/mlxfwmanager',
+      'fw_version': '82.48.1326'}
+
+- name: LFFRUEeprom~check
+  args:
+    check_only: true
+    fru_util: tools/platforms/sanmiguel/utils/fruid-util.py
+    fru_config: etc/fru_sanmiguel_chk.json
+    components_info: {
+      hpm0: {eeprom: 1-0051, dev_file: PG558},
+      hpm1: {eeprom: 3-0051, dev_file: PG558_0},
+      scm: {eeprom: 10-0050, dev_file: San_Miguel_SCM_DVT},
+      pdb: {eeprom: 9-0050, dev_file: San_Miguel_PDB_DVT},
+      fio: {eeprom: 14-0050, dev_file: San_Miguel_FIO_DVT},
+      smm: {eeprom: 5-0050, dev_file: San_Miguel_SMM_Carrier_DVT},
+      smmext: {eeprom: 13-0055, dev_file: San_Miguel_SMM_Extender_DVT},
+    }
+
+- name: SanMiguelSMMCarrierMACCheck~check_only
+  args:
+    driver: tools/platforms/sanmiguel/utils/r8152_6.19.2-0_fbk0_rc22.ko
+    flash_tool: tools/platforms/sanmiguel/utils/rtunicpg.zip
+    check_only: true
+
+#
+# Test BE NIC Config Case 1
+#
+- name: SanMiguelBENICConfigTest~config1
+  proxy: controller
+  args:
+    mft_tool: tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm
+    config_case: conf1
+    check_only: false
+    timeout: 60
+    runtime: 3000
+
+#- name: SanMiguelBENICConfigTest~config1~mstconfig
+#  proxy: controller
+#  args:
+#    mft_tool: tools/platforms/sanmiguel/rpm/mstflint-4.35.0-1.7.aarch64.rpm
+#    tool_name: mstconfig
+#    config_case: conf1
+#    devices: [
+#      ['0003:01:00.0','0001:03:00.0'],
+#      ['0006:01:00.0','0004:03:00.0'],
+#      ['000b:01:00.0','0009:03:00.0'],
+#      ['000e:01:00.0','000c:03:00.0']
+#    ]
+#    check_only: false
+#    timeout: 60
+#    runtime: 3000
+
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+- name: SanMiguelLeakCheck
+  timeout: 120
+  args:
+    leak_pins: ["Hpm0LeakDetector", "Hpm0LeakDetectorFault", "Hpm1LeakDetector", "Hpm1LeakDetectorFault"]
+
+#- name: ClementeI2CStressTest
+#  args:
+#    script_file: 'tools/platforms/clemente/utils/i2c-test-case4-v2.sh'
+#    log_folder_name: 'i2c-test-case4-result'
+
+#
+# PCI Check
+#
+# The SSD is Gen5, but the system supports Gen6.
+- name: PCICheck~ALL~BE_Case1
+  args:
+    pci_info: {
+                'FE_NIC_0': ['0005:41:00.1', '64GT/s', 'x8'],
+                'CPU0_UPHY0_1': ['0001:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY0_2': ['0003:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY1_1': ['0002:80:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_2': ['0002:c0:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_3': ['0002:e0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY1_4': ['0002:a0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY2_1': ['0004:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY2_2': ['0006:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY3_1': ['0005:40:00.0', '64GT/s', 'x8'],
+                'x1_Gen2_USB': ['0002:e1:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_BMC': ['0002:a1:00.0', '5GT/s', 'x1'],
+                'SSD_0': ['000a:a1:00.0', '32GT/s', 'x4'],
+                'FE_NIC_1': ['000d:41:00.1', '64GT/s', 'x8'],
+                'CPU1_UPHY0_1': ['0009:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY0_2': ['000b:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY1_1': ['000a:a0:00.0', '32GT/s', 'x4'],
+                'CPU1_UPHY1_2': ['000a:80:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY1_3': ['000a:e0:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY2_1': ['000c:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY2_2': ['000e:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY3_1': ['000d:40:00.0', '64GT/s', 'x8'],
+                'CPU0_BE_NIC_Upper_0': ['0001:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1': ['0003:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0': ['0004:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1': ['0006:01:00.0', '64GT/s', 'x16'],
+                'SSD_1': ['0001:06:00.0', '32GT/s', 'x4'],
+                'SSD_2': ['0004:06:00.0', '32GT/s', 'x4'],
+                'CPU1_BE_NIC_Upper_0': ['000c:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1': ['000e:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0': ['0009:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1': ['000b:01:00.0', '64GT/s', 'x16'],
+                'SSD_3': ['000c:06:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0009:06:00.0', '32GT/s', 'x4'],
+                'CPU0_GPU_0': ['0002:81:00.0', '64GT/s', 'x2'],
+                'CPU0_GPU_1': ['0002:c1:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_0': ['000a:81:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_1': ['000a:e1:00.0', '64GT/s', 'x2'],
+              }
+
+- name: MACCheck~BE_Case1
+  args:
+    device_list: [enP13s20f0np0, enP1p3s0np0, enP3s6np0, enP4p3s0np0,
+                        enP6s11np0, enP9p3s0np0, enP11s16np0, enP12p3s0np0, enP14s21np0]
+
+- name: SanMiguelBMCFailover
+  args:
+    fw_file : 'tools/platforms/sanmiguel/utils/otp'
+
+#
+# ConfigCheck
+#
+- name: ConfigCheck
+  args:
+    fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot, test_battery, test_mem_manufacturer]
+#    fava_skip_tests: [ test_fw, test_fan_speed, test_hw, test_hw_cpu_cores_count, test_nic_info, test_uuid, test_check_slot]
+#    bom_override: {'cpu_speed~overwrite': {'min_speed': 3.2, 'max_speed': 3.5}}
+
+#
+# SNCheck
+#
+
+- name: SNCheck
+  args:
+    fava_skip_tests: [test_cpu,test_dimm,test_mb]
+    nic_entries: [
+        "enP13s20f0np0",
+        "enP1p3s0f0np0",
+        "enP3s6f0np0",
+        "enP4p3s0f0np0",
+        "enP6s11f0np0",
+        "enP9p3s0f0np0",
+        "enP11s16f0np0",
+        "enP12p3s0f0np0",
+        "enP14s21f0np0"
+    ]
+
+#
+# PartCheck
+#
+- name: PartCheck
+  args:
+    fava_skip_tests: [test_motherboard, test_server, test_memory]
+
+#
+# BE NIC Case 1 IB Test
+#
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+- name: SanMiguelIBWriteTest~Case1~15mins
+#  retries: 1
+  args:
+    runtime: 900
+    nic_speed: 800000
+    avg_bw_threshold: 1440
+    port_mapping: {
+        'mlx5_0': 'enP1p3s0np0',
+        'mlx5_1': 'enP3s6np0',
+        'mlx5_2': 'enP4p3s0np0',
+        'mlx5_5': 'enP6s11np0',
+        'mlx5_6': 'enP9p3s0np0',
+        'mlx5_7': 'enP11s16np0',
+        'mlx5_8': 'enP12p3s0np0',
+        'mlx5_11': 'enP14s21np0'
+    }
+    nic_pairs: {
+        'mlx5_0': 'mlx5_2',
+        'mlx5_1': 'mlx5_5',
+        'mlx5_6': 'mlx5_8',
+        'mlx5_7': 'mlx5_11'
+    }
+
+#
+# Test BE NIC Config Case 5
+#
+- name: SanMiguelBENICConfigTest~config5
+  proxy: controller
+  args:
+    mft_tool: tools/platforms/sanmiguel/rpm/mft-4.35.0-6007.arm64.rpm
+    config_case: conf5
+    check_only: false
+    timeout: 60
+    runtime: 3000
+
+#
+# dmesg check
+#
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_sanmiguel.json
+    dump_all_errors: true
+
+- name: SELCheck
+#  retries: 2
+#  retry_delay: 60
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_sanmiguel.json
+    product: sanmiguel
+#    log_type: "redfish"
+    dump_all_errors: true
+
+#
+# SDR check
+#
+- name: SensorCheck
+  args:
+    cycles: 1
+    #excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C'
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C,HGX_GPU0_DRAM_PWR_W,HGX_GPU0_ENERGY_J,HGX_GPU0_PWR_W,HGX_GPU0_THERMAL_MARGIN_TEMP_C,HGX_GPU1_DRAM_PWR_W,HGX_GPU1_ENERGY_J,HGX_GPU1_PWR_W,HGX_GPU1_THERMAL_MARGIN_TEMP_C,HGX_GPU2_DRAM_PWR_W,HGX_GPU2_ENERGY_J,HGX_GPU2_PWR_W,HGX_GPU2_THERMAL_MARGIN_TEMP_C,HGX_GPU3_DRAM_PWR_W,HGX_GPU3_ENERGY_J,HGX_GPU3_PWR_W,HGX_GPU3_THERMAL_MARGIN_TEMP_C,NvidiaNSM_SMA_30_LEAKDETECTOR_0,NvidiaNSM_SMA_50_LEAKDETECTOR_0'
+
+
+#- name: SanMiguelBENICConfigTest~config5~mstconfig
+#  proxy: controller
+#  args:
+#    mft_tool: tools/platforms/sanmiguel/rpm/mstflint-4.35.0-1.7.aarch64.rpm
+#    tool_name: mstconfig
+#    config_case: conf5
+#    devices: [
+#      ['0003:01:00.0','0001:03:00.0'],
+#      ['0006:01:00.0','0004:03:00.0'],
+#      ['000b:01:00.0','0009:03:00.0'],
+#      ['000e:01:00.0','000c:03:00.0']
+#    ]
+#    check_only: false
+#    timeout: 60
+#    runtime: 3000
+
+
+- name: SledAcCycle~DUT
+  reboot: true
+  args:
+    always: true
+    runtime: 3000
+    product: sanmiguel
+
+# Check for missing NV FRU workaround
+- name: NPIOOBFlash~NV_FRU_Check_WA
+  retries: 1
+  retry_rand_delay: 10
+  proxy: controller
+  args:
+    allow_error: False
+    fw_util: 'None'
+    fw_file: 'tools/platforms/sanmiguel/utils/Check_NV_FRU.sh'
+    copy_fw_util: False
+    cmd: 'chmod +x {fw_file} && {fw_file}'
+
+#
+# PCI Check
+#
+# The SSD is Gen5, but the system supports Gen6.
+- name: PCICheck~ALL~BE_Case5
+  args:
+    pci_info: {
+                'FE_NIC_0': ['0005:41:00.1', '64GT/s', 'x8'],
+                'CPU0_UPHY0_1': ['0001:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY0_2': ['0003:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY1_1': ['0002:80:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_2': ['0002:c0:00.0', '64GT/s', 'x2'],
+                'CPU0_UPHY1_3': ['0002:e0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY1_4': ['0002:a0:00.0', '5GT/s', 'x1'],
+                'CPU0_UPHY2_1': ['0004:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY2_2': ['0006:00:00.0', '64GT/s', 'x16'],
+                'CPU0_UPHY3_1': ['0005:40:00.0', '64GT/s', 'x8'],
+                'x1_Gen2_USB': ['0002:e1:00.0', '5GT/s', 'x1'],
+                'x1_Gen2_BMC': ['0002:a1:00.0', '5GT/s', 'x1'],
+                'SSD_0': ['000a:a1:00.0', '32GT/s', 'x4'],
+                'FE_NIC_1': ['000d:41:00.1', '64GT/s', 'x8'],
+                'CPU1_UPHY0_1': ['0009:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY0_2': ['000b:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY1_1': ['000a:a0:00.0', '32GT/s', 'x4'],
+                'CPU1_UPHY1_2': ['000a:80:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY1_3': ['000a:e0:00.0', '64GT/s', 'x2'],
+                'CPU1_UPHY2_1': ['000c:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY2_2': ['000e:00:00.0', '64GT/s', 'x16'],
+                'CPU1_UPHY3_1': ['000d:40:00.0', '64GT/s', 'x8'],
+                'CPU0_BE_NIC_Upper_0_0': ['0001:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_0_1': ['0001:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_0': ['0003:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Upper_1_1': ['0003:01:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_0': ['0004:03:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_0_1': ['0004:03:00.1', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_0': ['0006:01:00.0', '64GT/s', 'x16'],
+                'CPU0_BE_NIC_Lower_1_1': ['0006:01:00.1', '64GT/s', 'x16'],
+                'SSD_1': ['0001:06:00.0', '32GT/s', 'x4'],
+                'SSD_2': ['0004:06:00.0', '32GT/s', 'x4'],
+                'CPU1_BE_NIC_Upper_0_0': ['000c:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_0_1': ['000c:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_0': ['000e:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Upper_1_1': ['000e:01:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_0': ['0009:03:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_0_1': ['0009:03:00.1', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_0': ['000b:01:00.0', '64GT/s', 'x16'],
+                'CPU1_BE_NIC_Lower_1_1': ['000b:01:00.1', '64GT/s', 'x16'],
+                'SSD_3': ['000c:06:00.0', '32GT/s', 'x4'],
+                'SSD_4': ['0009:06:00.0', '32GT/s', 'x4'],
+                'CPU0_GPU_0': ['0002:81:00.0', '64GT/s', 'x2'],
+                'CPU0_GPU_1': ['0002:c1:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_0': ['000a:81:00.0', '64GT/s', 'x2'],
+                'CPU1_GPU_1': ['000a:e1:00.0', '64GT/s', 'x2'],
+              }
+
+- name: InstallRPMPackage~sanmiguel~rc22
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz; tar xzfv /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz ; cd /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/; ./pre_install_sanmiguel.sh; rm /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10.tar.gz  ; rm -rf /tmp/sanmiguel_rpm_6.19.2-0_fbk0_rc22_centos10/ '
+
+#- name: InstallNVIDIAGPUDriver~610.31
+#  runner: bash
+#  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/rpm/NVIDIA-Linux-aarch64-610.31.run ; chmod +x /tmp/NVIDIA-Linux-aarch64-610.31.run ; IGNORE_CC_MISMATCH=1 NV_ALLOW_VARIABLE_VERSION_COMPILER=1 LLVM=1 LD=/usr/bin/ld.lld HOSTLD=/usr/bin/ld.lld ./NVIDIA-Linux-aarch64-610.31.run --silent ; rm /tmp/NVIDIA-Linux-aarch64-610.31.run '
+
+- name: SleepTest~10sec
+  args:
+    duration: 10
+
+- name: SanMiguelL10FEIBWriteTest~15mins
+  args:
+    runtime: 900
+    nic_speed: 400000
+    avg_bw_threshold: 320
+    port_mapping: {
+        'mlx5_6': 'enP5s10f0np0',
+        'mlx5_7': 'enP5s10f1np1',
+        'mlx5_16': 'enP13s20f0np0',
+        'mlx5_17': 'enP13s20f1np1'
+    }
+    nic_pairs: {
+        'mlx5_6': 'mlx5_16',
+        'mlx5_7': 'mlx5_17'
+    }
+
+- name: SanMiguelIBWriteTest~Case5~15mins
+#  retries: 1
+  args:
+    runtime: 900
+    avg_bw_threshold: 720
+    port_mapping: {
+        'mlx5_0': 'enP1p3s0f0np0',
+        'mlx5_1': 'enP1p3s0f1np1',
+        'mlx5_2': 'enP3s6f0np0',
+        'mlx5_3': 'enP3s6f1np1',
+        'mlx5_4': 'enP4p3s0f0np0',
+        'mlx5_5': 'enP4p3s0f1np1',
+        'mlx5_8': 'enP6s11f0np0',
+        'mlx5_9': 'enP6s11f1np1',
+        'mlx5_10': 'enP9p3s0f0np0',
+        'mlx5_11': 'enP9p3s0f1np1',
+        'mlx5_12': 'enP11s16f0np0',
+        'mlx5_13': 'enP11s16f1np1',
+        'mlx5_14': 'enP12p3s0f0np0',
+        'mlx5_15': 'enP12p3s0f1np1',
+        'mlx5_18': 'enP14s21f0np0',
+        'mlx5_19': 'enP14s21f1np1'
+    }
+    nic_pairs: {
+        'mlx5_0': 'mlx5_4',
+        'mlx5_2': 'mlx5_8',
+        'mlx5_10': 'mlx5_14',
+        'mlx5_12': 'mlx5_18',
+        'mlx5_1': 'mlx5_5',
+        'mlx5_3': 'mlx5_9',
+        'mlx5_11': 'mlx5_15',
+        'mlx5_13': 'mlx5_19',
+    }
+
+- name: SleepTest~20secs
+  args:
+    duration: 20
+
+# ----- Check CX9 Status
+- name: CheckCX9Status
+  runner: bash
+  cmd: 'ls ; cd /tmp; wget -nv http://controller/tools/platforms/sanmiguel/utils/CheckCX9Status.sh; chmod +x CheckCX9Status.sh; EC=0; ./CheckCX9Status.sh || EC=1; rm -f /tmp/CheckCX9Status.sh; exit $EC'
+
+#
+# dmesg check
+#
+- name: DMESG_check
+  #ignore_fail: '_all_'
+  args:
+    cycles: 1
+    dmesg_filters_file: etc/dmesg_filters_sanmiguel.json
+    dump_all_errors: true
+
+- name: SELCheck
+#  retries: 2
+#  retry_delay: 60
+  args:
+    cycles: 1
+    hours_threshold: 24
+    ucc_threshold : 0
+    ecc_threshold: 100
+    sel_filters_file: etc/sel_filters_sanmiguel.json
+    product: sanmiguel
+#    log_type: "redfish"
+    dump_all_errors: true
+
+#
+# SDR check
+#
+- name: SensorCheck
+  args:
+    cycles: 1
+    #excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C'
+    excluded_sensors: 'IOB0_NIC0_OSFP_TEMP_C,IOB0_NIC1_OSFP_TEMP_C,IOB1_NIC0_OSFP_TEMP_C,IOB1_NIC1_OSFP_TEMP_C,IOB2_NIC0_OSFP_TEMP_C,IOB2_NIC1_OSFP_TEMP_C,IOB3_NIC0_OSFP_TEMP_C,IOB3_NIC1_OSFP_TEMP_C,NS_NIC_OSFP_TEMP_C,HGX_GPU0_DRAM_PWR_W,HGX_GPU0_ENERGY_J,HGX_GPU0_PWR_W,HGX_GPU0_THERMAL_MARGIN_TEMP_C,HGX_GPU1_DRAM_PWR_W,HGX_GPU1_ENERGY_J,HGX_GPU1_PWR_W,HGX_GPU1_THERMAL_MARGIN_TEMP_C,HGX_GPU2_DRAM_PWR_W,HGX_GPU2_ENERGY_J,HGX_GPU2_PWR_W,HGX_GPU2_THERMAL_MARGIN_TEMP_C,HGX_GPU3_DRAM_PWR_W,HGX_GPU3_ENERGY_J,HGX_GPU3_PWR_W,HGX_GPU3_THERMAL_MARGIN_TEMP_C,NvidiaNSM_SMA_30_LEAKDETECTOR_0,NvidiaNSM_SMA_50_LEAKDETECTOR_0'
+
+
+#
+# syslog check
+#
+#- name: SysLogCheck
+#  args:
+#    #err_threshold: '<1360000'
+#    syslog_filter_file: etc/syslog_filter_clemente.txt
+
+#
+# FW info
+#
+- name: RunOOBCmd~show_fw_version
+  args:
+      cmd: 'mfg-tool version-display 2>/dev/null;hmc-util --version all'
+
+#
+# RTCDriftTest
+#
+- name: RTCDriftTest~check_only
+  continue_on_fail: false
+  args:
+    clock_sync: false
+    drift_threshold: 600
+
+#
+# SEL clear
+#
+- name: SELClear
+  timeout: 1800
+  args:
+    whitelist: {
+      'sanmiguel': [
+        'BMC-severity:OK-Event log cleared by user.',
+        'BMC-severity:OK-com.meta.RedfishClient.UnexpectedException',
+        'BMC-severity:OK-xyz.openbmc_project.Logging.Cleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Error.LogsCleared',
+        'HMC-severity:OK-xyz.openbmc_project.Logging.Cleared'
+      ],
+    }
+
+- name: L10_FDT_COMPLETE
+  runner: bash
+  cmd: "/bin/true"
