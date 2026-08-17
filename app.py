@@ -103,7 +103,6 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -609,10 +608,11 @@ def read_file_safe(path, sheet_name=None):
 def read_file_safe_cached(path, sheet_name=None):
     return read_file_safe(path, sheet_name=sheet_name)
 
+@functools.lru_cache(maxsize=4096)
 def parse_version_tuple(ver_str):
-    if not ver_str or ver_str in ['-', 'NA', 'TBD']:
+    if not ver_str or ver_str in ['-', 'NA', 'TBD', '(Empty)', 'null']:
         return ()
-    tokens = re.findall(r'[0-9]+|[a-zA-Z]+', ver_str)
+    tokens = re.findall(r'[0-9]+|[a-zA-Z]+', str(ver_str))
     parsed = []
     for t in tokens:
         if t.isdigit():
@@ -1718,10 +1718,21 @@ def compare_two_fru_sheets(rows_dvt, rows_pvt):
     }
 
 
+_YAML_PARSE_CACHE = BoundedLRUCache(maxsize=150)
+
 def parse_single_yaml_file(path, default_station_label="Station"):
     if not path or not os.path.exists(path):
         return [], default_station_label, f"File not found: {path}"
     
+    try:
+        mtime = os.path.getmtime(path)
+        cache_key = (path, default_station_label, mtime)
+        if cache_key in _YAML_PARSE_CACHE:
+            cached_items, st_label, err = _YAML_PARSE_CACHE[cache_key]
+            return [dict(it) for it in cached_items], st_label, err
+    except Exception:
+        cache_key = None
+
     try:
         with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             data = yaml.safe_load(f)
@@ -2141,7 +2152,9 @@ def parse_single_yaml_file(path, default_station_label="Station"):
                 traverse(elem, f"{current_path}[{idx}]")
 
     traverse(data, "")
-    return extracted_items, station_label, None
+    if cache_key:
+        _YAML_PARSE_CACHE[cache_key] = (extracted_items, station_label, None)
+    return [dict(it) for it in extracted_items], station_label, None
 
 
 

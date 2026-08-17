@@ -664,7 +664,7 @@ function initEventListeners() {
                 showToast('🔍 已聚焦全域搜尋框 (Cmd/Ctrl + K)', 'info');
             }
         }
-        // 2. Escape -> Close Modals & Drawers
+        // 2. Escape -> Close Modals, Drawers & Blur active input
         else if (e.key === 'Escape') {
             const modalIds = [
                 'fava-preview-modal',
@@ -673,15 +673,21 @@ function initEventListeners() {
                 'coverage-preview-modal',
                 'global-search-modal'
             ];
+            let modalClosed = false;
             modalIds.forEach(id => {
                 const el = document.getElementById(id);
                 if (el && el.style.display !== 'none') {
                     el.style.display = 'none';
+                    modalClosed = true;
                 }
             });
             const drawer = document.getElementById('debug-drawer');
             if (drawer && drawer.classList.contains('open')) {
                 drawer.classList.remove('open');
+                modalClosed = true;
+            }
+            if (!modalClosed && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+                document.activeElement.blur();
             }
         }
         // 3. Alt + 1 ~ 6 -> Switch Tabs
@@ -2390,12 +2396,12 @@ function renderBkcSingleTable() {
                     }
 
                     html += `
-                        <td class="cell-sub">${escapeHtml(item.sub_component)}</td>
-                        <td>${escapeHtml(item.meta_owner || '-')}</td>
-                        <td>${escapeHtml(item.odm_owner || '-')}</td>
-                        <td class="font-mono text-cyan">${escapeHtml(item.version || '-')}</td>
-                        <td class="font-mono">${escapeHtml(item.checksum || '-')}</td>
-                        <td class="font-mono">${escapeHtml(item.vrc || '-')}</td>
+                        <td class="cell-sub">${highlightMatch(item.sub_component, searchVal)}</td>
+                        <td>${highlightMatch(item.meta_owner || '-', searchVal)}</td>
+                        <td>${highlightMatch(item.odm_owner || '-', searchVal)}</td>
+                        <td class="font-mono text-cyan">${highlightMatch(item.version || '-', searchVal)}</td>
+                        <td class="font-mono">${highlightMatch(item.checksum || '-', searchVal)}</td>
+                        <td class="font-mono">${highlightMatch(item.vrc || '-', searchVal)}</td>
                         <td><span class="badge-signoff ${signOffClass}">${escapeHtml(signOffText)}</span></td>
                         <td>${gdriveHtml}</td>
                     </tr>`;
@@ -2524,10 +2530,10 @@ function renderBkcCompareTable() {
                     }
 
                     html += `
-                        <td class="cell-sub">${escapeHtml(item.sub_component)}</td>
-                        <td>${escapeHtml(item.odm_owner || item.meta_owner || '-')}</td>
-                        <td class="font-mono text-muted">${escapeHtml(item.base_version || '-')}</td>
-                        <td class="font-mono text-cyan" style="font-weight: 600;">${escapeHtml(item.target_version || '-')}</td>
+                        <td class="cell-sub">${highlightMatch(item.sub_component, searchVal)}</td>
+                        <td>${highlightMatch(item.odm_owner || item.meta_owner || '-', searchVal)}</td>
+                        <td class="font-mono text-muted">${highlightMatch(item.base_version || '-', searchVal)}</td>
+                        <td class="font-mono text-cyan" style="font-weight: 600;">${highlightMatch(item.target_version || '-', searchVal)}</td>
                         <td><span class="badge-signoff signoff-pending">${escapeHtml(signOffText)}</span></td>
                         <td>${statusBadge}</td>
                     </tr>`;
@@ -2891,14 +2897,14 @@ function renderFruSingleTable() {
         if (!isCollapsed) {
             secFields.forEach(field => {
                 html += `<tr>`;
-                html += `<td class="cell-group">${escapeHtml(secName)}</td>`;
-                html += `<td class="cell-sub">${escapeHtml(field.field_name || '-')}</td>`;
+                html += `<td class="cell-group">${highlightMatch(secName, searchVal)}</td>`;
+                html += `<td class="cell-sub">${highlightMatch(field.field_name || '-', searchVal)}</td>`;
 
                 activeModules.forEach(mod => {
                     const val = field.values[mod] || '';
                     html += `
                         <td class="font-mono">
-                            <div class="diff-val-same">${escapeHtml(val || '-')}</div>
+                            <div class="diff-val-same">${highlightMatch(val || '-', searchVal)}</div>
                         </td>
                     `;
                 });
@@ -3000,8 +3006,8 @@ function renderFruCompareTable() {
             secFields.forEach(field => {
                 const rowClass = field.is_diff ? 'tr-diff' : '';
                 html += `<tr class="${rowClass}">`;
-                html += `<td class="cell-group">${escapeHtml(secName)}</td>`;
-                html += `<td class="cell-sub">${escapeHtml(field.field_name || '-')}</td>`;
+                html += `<td class="cell-group">${highlightMatch(secName, searchVal)}</td>`;
+                html += `<td class="cell-sub">${highlightMatch(field.field_name || '-', searchVal)}</td>`;
 
                 activeModules.forEach(mod => {
                     const dvtVal = field.dvt_values[mod] || '';
@@ -3020,8 +3026,8 @@ function renderFruCompareTable() {
                         html += `
                             <td>
                                 <div class="cell-diff-box has-diff">
-                                    <div class="diff-val-dvt"><span class="val-label">${escapeHtml(labelBase)}:</span>${escapeHtml(dvtVal || '(empty)')}</div>
-                                    <div class="diff-val-pvt"><span class="val-label">${escapeHtml(labelTarget)}:</span>${escapeHtml(pvtVal || '(empty)')}</div>
+                                    <div class="diff-val-dvt"><span class="val-label">${escapeHtml(labelBase)}:</span>${highlightMatch(dvtVal || '(empty)', searchVal)}</div>
+                                    <div class="diff-val-pvt"><span class="val-label">${escapeHtml(labelTarget)}:</span>${highlightMatch(pvtVal || '(empty)', searchVal)}</div>
                                 </div>
                             </td>
                         `;
@@ -3029,8 +3035,8 @@ function renderFruCompareTable() {
                         html += `
                             <td>
                                 <div class="cell-diff-box is-missing-mod">
-                                    <div class="diff-val-missing"><span class="val-label">${escapeHtml(labelBase)}:</span>${escapeHtml(dvtVal || '(empty)')}</div>
-                                    <div class="diff-val-missing"><span class="val-label">${escapeHtml(labelTarget)}:</span>${escapeHtml(pvtVal || '(empty)')}</div>
+                                    <div class="diff-val-missing"><span class="val-label">${escapeHtml(labelBase)}:</span>${highlightMatch(dvtVal || '(empty)', searchVal)}</div>
+                                    <div class="diff-val-missing"><span class="val-label">${escapeHtml(labelTarget)}:</span>${highlightMatch(pvtVal || '(empty)', searchVal)}</div>
                                 </div>
                             </td>
                         `;
@@ -3038,7 +3044,7 @@ function renderFruCompareTable() {
                         html += `
                             <td>
                                 <div class="cell-diff-box">
-                                    <div class="diff-val-same">${escapeHtml(dvtVal || '-')}</div>
+                                    <div class="diff-val-same">${highlightMatch(dvtVal || '-', searchVal)}</div>
                                 </div>
                             </td>
                         `;
@@ -3316,12 +3322,12 @@ function renderMatrixTable() {
     filtered.forEach(item => {
         const rowClass = item.is_diff ? 'tr-diff' : '';
         html += `<tr class="${rowClass}">`;
-        html += `<td class="cell-group">${escapeHtml(item.group_item)}</td>`;
-        html += `<td class="cell-sub">${escapeHtml(item.attribute)}</td>`;
+        html += `<td class="cell-group">${highlightMatch(item.group_item, searchVal)}</td>`;
+        html += `<td class="cell-sub">${highlightMatch(item.attribute, searchVal)}</td>`;
         configs.forEach(cfg => {
             const val = item.values[cfg] || '-';
             const cellClass = item.is_diff ? 'matrix-val-cell cell-diff' : 'matrix-val-cell';
-            html += `<td class="${cellClass}">${escapeHtml(val)}</td>`;
+            html += `<td class="${cellClass}">${highlightMatch(val, searchVal)}</td>`;
         });
         html += `</tr>`;
     });
@@ -3435,14 +3441,14 @@ function renderMatrixCompareTable() {
     filtered.forEach(item => {
         const dt = DIFF_TYPE_LABELS[item.diff_type] || DIFF_TYPE_LABELS['same'];
         html += `<tr class="${dt.rowCls}">`;
-        html += `<td class="cell-group">${escapeHtml(item.group_item)}</td>`;
-        html += `<td class="cell-sub">${escapeHtml(item.attribute)}`;
+        html += `<td class="cell-group">${highlightMatch(item.group_item, searchVal)}</td>`;
+        html += `<td class="cell-sub">${highlightMatch(item.attribute, searchVal)}`;
         if (dt.label) html += ` <span class="badge badge-diff-${item.diff_type}">${dt.label}</span>`;
         html += `</td>`;
 
         bCfgs.forEach(cfg => {
             const val = item.base_values?.[cfg] || '-';
-            html += `<td class="matrix-val-cell" style="background:rgba(245,158,11,0.04);">${escapeHtml(val)}</td>`;
+            html += `<td class="matrix-val-cell" style="background:rgba(245,158,11,0.04);">${highlightMatch(val, searchVal)}</td>`;
         });
 
         html += `<td style="text-align:center;color:#64748b;background:rgba(30,41,59,0.5);">→</td>`;
@@ -3454,7 +3460,7 @@ function renderMatrixCompareTable() {
                                 item.target_values && Object.values(item.target_values).some(tv =>
                                     tv && !Object.values(item.base_values).includes(tv)));
             const cellCls = isCellDiff ? 'matrix-val-cell cell-diff' : 'matrix-val-cell';
-            html += `<td class="${cellCls}" style="background:rgba(34,211,238,0.04);">${escapeHtml(val)}</td>`;
+            html += `<td class="${cellCls}" style="background:rgba(34,211,238,0.04);">${highlightMatch(val, searchVal)}</td>`;
         });
 
         html += `</tr>`;

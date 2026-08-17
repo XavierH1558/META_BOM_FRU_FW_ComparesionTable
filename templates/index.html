@@ -71,7 +71,7 @@
                 </div>
                 <div class="header-search-box" style="position: relative;">
                     <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem;"></i>
-                    <input type="text" id="global-search-input" placeholder="全域搜尋 PN / 韌體 / 料號..." style="padding: 0.4rem 0.8rem 0.4rem 2.2rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 20px; color: #fff; font-size: 0.82rem; outline: none; width: 175px; transition: width 0.2s;" />
+                    <input type="text" id="global-search-input" placeholder="全域搜尋 (Cmd+K)..." title="全域搜尋 PN / 韌體 / 料號 (快捷鍵: Cmd+K 或 Ctrl+K)" style="padding: 0.4rem 0.8rem 0.4rem 2.2rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 20px; color: #fff; font-size: 0.82rem; outline: none; width: 195px; transition: width 0.2s;" />
                 </div>
                 <button class="btn btn-danger btn-sm" id="btn-open-watchlist" style="background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff; border: none; font-weight: 600;">
                     <i class="fa-solid fa-shield-halved"></i> 關鍵組件設定
@@ -150,22 +150,22 @@
 
         <!-- Navigation Tabs -->
         <nav class="tabs-nav">
-            <button class="nav-tab active" data-tab="tab-bkc">
+            <button class="nav-tab active" data-tab="tab-bkc" title="切換至 BKC 表 (快捷鍵: Alt + 1)">
                 <i class="fa-solid fa-list-check"></i>
                 <span>BKC Table</span>
                 <span class="badge" id="bkc-badge-count">0</span>
             </button>
-            <button class="nav-tab" data-tab="tab-fru">
+            <button class="nav-tab" data-tab="tab-fru" title="切換至 FRU 比對 (快捷鍵: Alt + 2)">
                 <i class="fa-solid fa-code-compare"></i>
                 <span>FRU Table Comparison</span>
                 <span class="badge badge-warning" id="fru-badge-diff">0 Diffs</span>
             </button>
-            <button class="nav-tab" data-tab="tab-matrix">
+            <button class="nav-tab" data-tab="tab-matrix" title="切換至 Build Matrix 比對 (快捷鍵: Alt + 3)">
                 <i class="fa-solid fa-table-cells"></i>
                 <span>Build Matrix Comparison</span>
                 <span class="badge badge-info" id="matrix-badge-configs">3 Configs</span>
             </button>
-            <button class="nav-tab" data-tab="tab-yaml">
+            <button class="nav-tab" data-tab="tab-yaml" title="切換至 Test Suite YAML 比對 (快捷鍵: Alt + 4)">
                 <i class="fa-solid fa-file-code"></i>
                 <span>Test Suite (YAML) 比對</span>
                 <span class="badge badge-danger" id="yaml-badge-diff">0 Diffs</span>
