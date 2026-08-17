@@ -76,7 +76,7 @@ def get_drive_service(config):
                 print("請在下方出現的連結上按住 [Ctrl + 左鍵點擊]，或複製網址至瀏覽器開啟：")
                 print("="*70 + "\n")
                 try:
-                    creds = flow.run_local_server(port=0, prompt='consent', open_browser=True, timeout_seconds=15)
+                    creds = flow.run_local_server(port=0, prompt='consent', open_browser=True, timeout_seconds=120)
                 except Exception as auth_err:
                     raise RuntimeError(f"Google Drive OAuth login timeout or error: {auth_err}")
 
